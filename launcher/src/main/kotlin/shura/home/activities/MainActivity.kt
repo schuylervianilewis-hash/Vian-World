@@ -124,6 +124,7 @@ import shura.home.helpers.REQUEST_CONFIGURE_WIDGET
 import shura.home.helpers.WIDGET_ID_BUILTIN_CLOCK
 import shura.home.helpers.REQUEST_CREATE_SHORTCUT
 import shura.home.helpers.REQUEST_SET_DEFAULT
+import shura.home.helpers.SIDEBAR_ELEMENT_CLASS_NAME
 import shura.home.helpers.UNINSTALL_APP_REQUEST_CODE
 import shura.home.interfaces.FlingListener
 import shura.home.interfaces.ItemMenuListener
@@ -234,7 +235,7 @@ class MainActivity : SimpleActivity(), FlingListener {
 
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        appLaunched(BuildConfig.APPLICATION_ID)
+        appLaunched(applicationContext.packageName)
         AppLockManager.init(this)
         setupEdgeToEdge(
             padTopSystem = listOf(binding.allAppsFragment.root, binding.widgetsFragment.root),
@@ -506,6 +507,18 @@ class MainActivity : SimpleActivity(), FlingListener {
         super.onActivityResult(requestCode, resultCode, resultData)
 
         when (requestCode) {
+            AddElementBridge.REQUEST_SIDEBAR_ELEMENT -> {
+                if (resultCode == RESULT_OK && resultData != null) {
+                    val elementId = resultData.getStringExtra("ELEMENT_ID")
+                    val displayName = resultData.getStringExtra("DISPLAY_NAME")
+                    if (!elementId.isNullOrBlank()) {
+                        addSidebarElementToHome(elementId, displayName)
+                    } else {
+                        toast("Sidebar did not return a valid element")
+                    }
+                }
+            }
+
             UNINSTALL_APP_REQUEST_CODE -> {
                 ensureBackgroundThread {
                     refreshLaunchers()
@@ -771,9 +784,39 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
     }
 
+    private fun addSidebarElementToHome(elementId: String, displayName: String?) {
+        val (page, rect) = findFirstEmptyCell()
+        val packageName = applicationContext.packageName
+        val activityName = "com.example.feature.sidebar.SidebarElementLaunchActivity"
+        val iconBitmap = ContextCompat.getDrawable(this, R.mipmap.ic_launcher)?.toBitmap()
+        val title = displayName?.takeIf { it.isNotBlank() }
+            ?: elementId.substringAfter(":").replace("_", " ").ifBlank { "Sidebar element" }
+
+        val item = HomeScreenGridItem(
+            id = null,
+            left = rect.left,
+            top = rect.top,
+            right = rect.right,
+            bottom = rect.bottom,
+            page = page,
+            packageName = packageName,
+            activityName = activityName,
+            title = title,
+            type = ITEM_TYPE_ICON,
+            className = SIDEBAR_ELEMENT_CLASS_NAME,
+            widgetId = -1,
+            shortcutId = elementId,
+            icon = iconBitmap,
+            docked = false,
+            parentId = null
+        )
+        binding.homeScreenGrid.root.storeAndShowGridItem(item)
+        LogCatcher.log("MainActivity", "Added Sidebar Home item: " + elementId)
+    }
+
     private fun findFirstEmptyCell(): Pair<Int, Rect> {
         val gridItems = homeScreenGridItemsDB.getAllItems() as ArrayList<HomeScreenGridItem>
-        val maxPage = gridItems.maxOf { it.page }
+        val maxPage = gridItems.maxOfOrNull { it.page } ?: 0
         val occupiedCells = ArrayList<Triple<Int, Int, Int>>()
         gridItems.toImmutableList().filter { it.parentId == null }.forEach { item ->
             for (xCell in item.left..item.right) {
@@ -783,7 +826,7 @@ class MainActivity : SimpleActivity(), FlingListener {
             }
         }
 
-        for (page in 0 until maxPage) {
+        for (page in 0..maxPage) {
             for (checkedYCell in 0 until config.homeRowCount - 1) {
                 for (checkedXCell in 0 until config.homeColumnCount) {
                     val wantedCell = Triple(page, checkedXCell, checkedYCell)
@@ -1147,6 +1190,19 @@ class MainActivity : SimpleActivity(), FlingListener {
     private fun performItemClick(clickedGridItem: HomeScreenGridItem) {
         when (clickedGridItem.type) {
             ITEM_TYPE_ICON -> {
+                if (clickedGridItem.className == SIDEBAR_ELEMENT_CLASS_NAME) {
+                    try {
+                        val intent = Intent().setClassName(
+                            clickedGridItem.packageName,
+                            clickedGridItem.activityName
+                        ).putExtra("ELEMENT_ID", clickedGridItem.shortcutId)
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        logKeeper.log("MainActivity", "Failed to open Sidebar element", e)
+                        toast("Unable to open this Sidebar element")
+                    }
+                    return
+                }
                 val itemId = clickedGridItem.id
                 if (itemId != null && ItemGestureManager.getLinkedWidget(this, itemId) != null && clickedGridItem.activityName.isEmpty()) {
                     openPopupWidget(clickedGridItem)
