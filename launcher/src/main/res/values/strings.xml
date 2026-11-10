@@ -187,6 +187,7 @@
     <string name="unarchiving_app">Restoring %s…</string>
     <string name="about_vian_home">About Vian World</string>
     <string name="sidebar_setup">Sidebar setup</string>
+    <string name="sidebar_setup_desc">Run the initial Sidebar overlay and permission setup again.</string>
     <string name="sidebar_setup_prompt_title">Set up Sidebar</string>
     <string name="sidebar_setup_prompt_message">Vian World includes an optional Sidebar overlay. Set it up now to enable the Sidebar handle and features.</string>
     <string name="sidebar_setup_now">Set up</string>
