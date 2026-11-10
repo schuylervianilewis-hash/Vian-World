@@ -48,7 +48,7 @@ configurations.configureEach {
 }
 
 dependencies {
-    implementation(libs.fossify.commons)
+    api(libs.fossify.commons)
     implementation(libs.androidx.biometric)
     implementation(libs.room.ktx)
     implementation(libs.room.runtime)

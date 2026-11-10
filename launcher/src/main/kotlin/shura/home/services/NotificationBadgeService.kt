@@ -17,6 +17,7 @@ import shura.home.extensions.config
 object NotificationBadgeService {
     private const val PREFS_NAME = "vian_launcher_badges"
     private const val KEY_COUNTS = "active_counts"
+    private const val SIDEBAR_NOTIFICATION_LISTENER_CLASS = "com.example.service.AppNotificationListener"
 
     fun isNotificationAccessGranted(context: Context): Boolean {
         val enabled = android.provider.Settings.Secure.getString(
@@ -24,8 +25,8 @@ object NotificationBadgeService {
             "enabled_notification_listeners"
         ) ?: return false
         val expected = ComponentName(
-            context,
-            com.example.service.AppNotificationListener::class.java
+            context.packageName,
+            SIDEBAR_NOTIFICATION_LISTENER_CLASS
         )
         return enabled.split(":").any { flattened ->
             ComponentName.unflattenFromString(flattened) == expected
