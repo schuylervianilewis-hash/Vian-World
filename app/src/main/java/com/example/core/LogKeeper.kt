@@ -83,7 +83,7 @@ object LogKeeper {
 
     @Suppress("DEPRECATION")
     private fun isLoggingAllowed(context: Context): Boolean {
-        if (!isLoggingAllowed(context)) return false
+        if (!isMasterEnabled) return false
         return try {
             context.getSharedPreferences(
                 "Prefs",
