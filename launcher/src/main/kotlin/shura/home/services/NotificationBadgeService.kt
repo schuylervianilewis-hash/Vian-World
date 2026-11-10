@@ -1,80 +1,105 @@
 package shura.home.services
 
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
-import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import org.json.JSONObject
 import shura.home.extensions.config
-import java.util.concurrent.ConcurrentHashMap
 
-class NotificationBadgeService : NotificationListenerService() {
+/**
+ * Cross-process launcher badge cache.
+ *
+ * The single notification listener is Sidebar's AppNotificationListener in the default
+ * process. Counts are persisted so :home can read them without binding a second
+ * NotificationListenerService or keeping :heavy alive.
+ */
+object NotificationBadgeService {
+    private const val PREFS_NAME = "vian_launcher_badges"
+    private const val KEY_COUNTS = "active_counts"
 
-    companion object {
-        private var instance: NotificationBadgeService? = null
-        private val badgeCounts = ConcurrentHashMap<String, Int>()
+    fun isNotificationAccessGranted(context: Context): Boolean {
+        val enabled = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners"
+        ) ?: return false
+        val expected = ComponentName(
+            context,
+            com.example.service.AppNotificationListener::class.java
+        )
+        return enabled.split(":").any { flattened ->
+            ComponentName.unflattenFromString(flattened) == expected
+        }
+    }
 
-        fun isNotificationAccessGranted(context: Context): Boolean {
-            val enabledListeners = android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                "enabled_notification_listeners"
-            ) ?: return false
-            val myPackage = context.packageName
-            return enabledListeners.split(":").any { it.startsWith(myPackage) }
+    @Suppress("DEPRECATION")
+    fun getActiveBadgeCounts(context: Context): Map<String, Int> {
+        if (!context.config.showNotificationBadges || !isNotificationAccessGranted(context)) {
+            clear(context)
+            return emptyMap()
         }
 
-        fun getActiveBadgeCounts(context: Context): Map<String, Int> {
-            if (!context.config.showNotificationBadges || !isNotificationAccessGranted(context)) {
-                badgeCounts.clear()
-                return emptyMap()
-            }
+        val raw = try {
+            context.getSharedPreferences(
+                PREFS_NAME,
+                Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
+            ).getString(KEY_COUNTS, "{}") ?: "{}"
+        } catch (_: Exception) {
+            "{}"
+        }
 
-            val service = instance
-            if (service != null) {
-                try {
-                    val activeNotifs = service.activeNotifications ?: emptyArray()
-                    val newCounts = mutableMapOf<String, Int>()
-                    for (sbn in activeNotifs) {
-                        if (shouldCountNotification(sbn)) {
-                            val pkg = sbn.packageName
-                            val count = if (sbn.notification.number > 0) sbn.notification.number else 1
-                            newCounts[pkg] = (newCounts[pkg] ?: 0) + count
-                        }
-                    }
-                    badgeCounts.clear()
-                    badgeCounts.putAll(newCounts)
-                } catch (e: Exception) {
-                    // Ignore transient exceptions
+        return try {
+            val json = JSONObject(raw)
+            buildMap {
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val count = json.optInt(key, 0)
+                    if (count > 0) put(key, count)
                 }
             }
-            return badgeCounts.toMap()
-        }
-
-        private fun shouldCountNotification(sbn: StatusBarNotification): Boolean {
-            val notification = sbn.notification ?: return false
-            val isOngoing = (notification.flags and Notification.FLAG_ONGOING_EVENT) != 0
-            val isGroupSummary = (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
-            return !isOngoing && !isGroupSummary
+        } catch (_: Exception) {
+            emptyMap()
         }
     }
 
-    override fun onListenerConnected() {
-        super.onListenerConnected()
-        instance = this
-    }
-
-    override fun onListenerDisconnected() {
-        super.onListenerDisconnected()
-        if (instance == this) {
-            instance = null
+    fun updateFromNotifications(context: Context, notifications: Array<StatusBarNotification>?) {
+        if (!context.config.showNotificationBadges) {
+            clear(context)
+            return
         }
-        badgeCounts.clear()
+
+        val counts = HashMap<String, Int>()
+        notifications.orEmpty().forEach { sbn ->
+            if (shouldCountNotification(sbn)) {
+                val packageName = sbn.packageName
+                val count = sbn.notification.number.takeIf { it > 0 } ?: 1
+                counts[packageName] = (counts[packageName] ?: 0) + count
+            }
+        }
+
+        val json = JSONObject()
+        counts.forEach { (packageName, count) -> json.put(packageName, count) }
+
+        @Suppress("DEPRECATION")
+        context.getSharedPreferences(
+            PREFS_NAME,
+            Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
+        ).edit().putString(KEY_COUNTS, json.toString()).commit()
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        // Zero background processing: counts are queried purely on-demand when user visits Home Screen
+    fun clear(context: Context) {
+        @Suppress("DEPRECATION")
+        context.getSharedPreferences(
+            PREFS_NAME,
+            Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
+        ).edit().remove(KEY_COUNTS).commit()
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        // Zero background processing: counts are queried purely on-demand when user visits Home Screen
+    private fun shouldCountNotification(sbn: StatusBarNotification): Boolean {
+        val notification = sbn.notification ?: return false
+        val isOngoing = (notification.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        val isGroupSummary = (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
+        return !isOngoing && !isGroupSummary
     }
 }

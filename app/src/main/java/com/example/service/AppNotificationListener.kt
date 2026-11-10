@@ -16,6 +16,7 @@ class AppNotificationListener : NotificationListenerService() {
         instance = this
         Log.d("AppNotificationListener", "Listener connected")
         LogKeeper.writeLog("Notification", "NotificationListenerService connected")
+        refreshLauncherBadgeCounts()
         sendBroadcast(Intent(ACTION_NOTIFICATION_POSTED))
     }
 
@@ -24,10 +25,23 @@ class AppNotificationListener : NotificationListenerService() {
         instance = null
         Log.d("AppNotificationListener", "Listener disconnected")
         LogKeeper.writeLog("Notification", "NotificationListenerService disconnected")
+        shura.home.services.NotificationBadgeService.clear(applicationContext)
+    }
+
+    private fun refreshLauncherBadgeCounts() {
+        try {
+            shura.home.services.NotificationBadgeService.updateFromNotifications(
+                applicationContext,
+                activeNotifications
+            )
+        } catch (e: Exception) {
+            Log.e("AppNotificationListener", "Unable to refresh launcher badge cache", e)
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
+        refreshLauncherBadgeCounts()
         sbn?.let {
             val intent = Intent(ACTION_NOTIFICATION_POSTED).apply {
                 putExtra("package", it.packageName)
@@ -72,6 +86,7 @@ class AppNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
+        refreshLauncherBadgeCounts()
         sbn?.let {
             val intent = Intent(ACTION_NOTIFICATION_REMOVED).apply {
                 putExtra("package", it.packageName)

@@ -49,7 +49,7 @@
             android:configChanges="orientation"
             android:exported="true"
             android:label="@string/settings"
-            android:parentActivityName=".activities.MainActivity" android:process=":heavy">
+            android:parentActivityName=".activities.MainActivity" android:process=":heavy" android:theme="@style/AppTheme">
 
             <intent-filter>
                 <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
@@ -62,38 +62,38 @@
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/gestures_and_actions"
-            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/>
+            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/ android:theme="@style/AppTheme">
 
         <activity
             android:name=".activities.AppLockActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/app_lock"
-            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/>
+            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/ android:theme="@style/AppTheme">
 
         <activity
             android:name="org.fossify.commons.activities.AboutActivity"
             android:exported="false"
             android:label="@string/about"
-            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/>
+            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/ android:theme="@style/AppTheme">
 
         <activity
             android:name="org.fossify.commons.activities.CustomizationActivity"
             android:exported="false"
             android:label="@string/customize_colors"
-            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/>
+            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/ android:theme="@style/AppTheme">
 
         <activity
             android:name=".activities.HiddenIconsActivity"
             android:exported="false"
             android:label="@string/hidden_icons"
-            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/>
+            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/ android:theme="@style/AppTheme">
 
         <activity
             android:name=".activities.LogViewerActivity"
             android:exported="false"
             android:label="@string/app_logs"
-            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/>
+            android:parentActivityName=".activities.SettingsActivity"  android:process=":heavy"/ android:theme="@style/AppTheme">
 
         <activity-alias
             android:name=".activities.SplashActivity.Red"
@@ -449,14 +449,5 @@
             </intent-filter>
         </receiver>
 
-        <service
-            android:name=".services.NotificationBadgeService"
-            android:exported="true"
-            android:label="@string/app_launcher_name"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:process=":heavy">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
     </application>
 </manifest>
