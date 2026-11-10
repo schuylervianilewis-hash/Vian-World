@@ -86,6 +86,7 @@
             android:name=".feature.sidebar.SidebarElementLaunchActivity"
             android:exported="false"
             android:process=":heavy"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:label="Sidebar element" />
 
         <activity

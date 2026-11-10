@@ -2,8 +2,12 @@ package com.example.feature.sidebar
 
 import android.app.AlertDialog
 import android.os.Bundle
+import android.appwidget.AppWidgetManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import com.example.core.HandleManager
+import com.example.feature.element.ElementViewRenderer
 import com.example.core.LogKeeper
 import com.example.feature.element.ElementActionDispatcher
 import com.example.feature.element.ElementIdParser
@@ -54,20 +58,40 @@ class SidebarElementLaunchActivity : ComponentActivity() {
                     context = this,
                     item = item,
                     onShowFolder = { showFolder(it) },
-                    onShowWidget = {
-                        Toast.makeText(
-                            this,
-                            "This widget is managed by Sidebar and cannot be opened as an action",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        finish()
-                    }
+                    onShowWidget = { widget -> showSidebarPopupWidget(widget) }
                 )
                 if (!handled) {
                     Toast.makeText(this, "Unable to open this Sidebar element", Toast.LENGTH_SHORT).show()
                 }
-                finish()
+                if (item !is SidebarItem.PopupWidget) finish()
             }
+        }
+    }
+
+    private fun showSidebarPopupWidget(widget: SidebarItem.PopupWidget) {
+        val appWidgetInfo = AppWidgetManager.getInstance(this).getAppWidgetInfo(widget.widgetId)
+        if (appWidgetInfo == null) {
+            Toast.makeText(this, "This Sidebar widget is no longer available", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+
+        try {
+            val renderer = ElementViewRenderer(
+                context = this,
+                prefs = getSharedPreferences(HandleManager.PREFS_NAME, android.content.Context.MODE_PRIVATE),
+                scope = lifecycleScope,
+                containerId = "sidebar",
+                pageId = "launcher_home",
+                onDimSidebar = { dimmed ->
+                    if (!dimmed && !isFinishing) finish()
+                }
+            )
+            renderer.showWidgetPopup(window.decorView, widget)
+        } catch (e: Exception) {
+            LogKeeper.logError(this, TAG, "Unable to show Sidebar popup widget " + widget.id, e)
+            Toast.makeText(this, "Unable to open this Sidebar widget", Toast.LENGTH_SHORT).show()
+            finish()
         }
     }
 
