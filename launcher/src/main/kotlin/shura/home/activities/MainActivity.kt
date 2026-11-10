@@ -317,7 +317,7 @@ class MainActivity : SimpleActivity(), FlingListener {
 
         @Suppress("DEPRECATION")
         val sidebarSetupCompleted = getSharedPreferences(
-            "app_prefs",
+            "FloatingReaderPrefs",
             Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
         ).getBoolean("setup_completed", false)
 
@@ -578,12 +578,16 @@ class MainActivity : SimpleActivity(), FlingListener {
         when (requestCode) {
             AddElementBridge.REQUEST_SIDEBAR_ELEMENT -> {
                 if (resultCode == RESULT_OK && resultData != null) {
-                    val elementId = resultData.getStringExtra("ELEMENT_ID")
-                    val displayName = resultData.getStringExtra("DISPLAY_NAME")
-                    if (!elementId.isNullOrBlank()) {
-                        addSidebarElementToHome(elementId, displayName)
+                    if (resultData.getBooleanExtra("OPEN_LAUNCHER_WIDGET_PICKER", false)) {
+                        showWidgetsFragment()
                     } else {
-                        toast("Sidebar did not return a valid element")
+                        val elementId = resultData.getStringExtra("ELEMENT_ID")
+                        val displayName = resultData.getStringExtra("DISPLAY_NAME")
+                        if (!elementId.isNullOrBlank()) {
+                            addSidebarElementToHome(elementId, displayName)
+                        } else {
+                            toast("Sidebar did not return a valid element")
+                        }
                     }
                 }
             }

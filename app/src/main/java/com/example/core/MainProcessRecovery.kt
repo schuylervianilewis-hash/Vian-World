@@ -118,10 +118,11 @@ object MainProcessRecovery {
      */
     fun handleProcessCrash(context: Context, threadName: String, throwable: Throwable) {
         try {
-            // 1. Strictly Main process only. Do NOT trigger recovery if crash occurred in :heavy.
+            // Only the default Sidebar process owns resident-service recovery.
+            // :home and :heavy are Android-managed UI processes and must never restart HandleService.
             val processName = LogKeeper.getProcessName(context)
-            if (processName.endsWith(":heavy")) {
-                LogKeeper.log(context, TAG, "Crash occurred in :heavy process; skipping Main recovery.")
+            if (processName != context.packageName) {
+                LogKeeper.log(context, TAG, "Crash occurred in $processName; skipping default-process recovery.")
                 return
             }
 

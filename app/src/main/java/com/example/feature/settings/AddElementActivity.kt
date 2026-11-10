@@ -165,14 +165,23 @@ class AddElementActivity : ComponentActivity() {
             startActivityForResult(iIntent, 301)
         }
         addItem(android.R.drawable.ic_menu_gallery, "Widget") {
-            val intent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
-                putExtra("ACTION_TYPE", "RETURN_ID")
-                putExtra("PAGE_ID", pageId)
-                putExtra("CONTAINER_ID", containerId)
-                putExtra("IS_HYBRID_GRID", isHybridGrid)
-                putExtra("PAGE_TYPE", pageType)
+            if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
+                // Home widgets belong to the launcher's AppWidgetHost, not Sidebar's host.
+                setResult(
+                    Activity.RESULT_OK,
+                    Intent().putExtra("OPEN_LAUNCHER_WIDGET_PICKER", true)
+                )
+                finish()
+            } else {
+                val pickerIntent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
+                    putExtra("ACTION_TYPE", "RETURN_ID")
+                    putExtra("PAGE_ID", pageId)
+                    putExtra("CONTAINER_ID", containerId)
+                    putExtra("IS_HYBRID_GRID", isHybridGrid)
+                    putExtra("PAGE_TYPE", pageType)
+                }
+                startActivityForResult(pickerIntent, 400)
             }
-            startActivityForResult(intent, 400)
         }
         
         addItem(android.R.drawable.ic_menu_gallery, "Popup Widget") {
