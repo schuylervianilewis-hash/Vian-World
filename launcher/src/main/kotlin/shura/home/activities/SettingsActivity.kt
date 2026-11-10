@@ -135,6 +135,7 @@ class SettingsActivity : SimpleActivity() {
         setupViewAppLogs()
         setupBackupAndRestore()
         setupAbout()
+        setupSidebarSetup()
         updateTextColors(binding.settingsHolder)
 
         arrayOf(
@@ -275,6 +276,14 @@ class SettingsActivity : SimpleActivity() {
             Intent(this, GesturesActivity::class.java).apply {
                 startActivity(this)
             }
+        }
+    }
+
+    private fun setupSidebarSetup() {
+        binding.settingsSidebarSetupHolder.setOnClickListener {
+            val intent = Intent().setClassName(packageName, "com.example.MainActivity")
+                .putExtra("force_welcome", true)
+            startActivity(intent)
         }
     }
 

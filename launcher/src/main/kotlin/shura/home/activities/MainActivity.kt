@@ -137,6 +137,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : SimpleActivity(), FlingListener {
+    private var sidebarSetupPromptEvaluated = false
     private var mTouchDownX = -1
     private var mTouchDownY = -1
     private var mAllAppsFragmentY = 0
@@ -228,6 +229,7 @@ class MainActivity : SimpleActivity(), FlingListener {
         private const val ANIMATION_DURATION = 150L
         private const val APP_DRAWER_CLOSE_DELAY = 300L
         private const val APP_DRAWER_STATE = "app_drawer_state"
+        private const val SIDEBAR_SETUP_PROMPT_SHOWN = "sidebar_setup_prompt_shown"
         private var isCrashHandlerInstalled = false
     }
 
@@ -304,6 +306,38 @@ class MainActivity : SimpleActivity(), FlingListener {
             requestHomeRole()
         }
 
+    }
+
+    private fun maybePromptSidebarSetup() {
+        if (sidebarSetupPromptEvaluated || isFinishing || !isDefaultLauncher()) return
+        sidebarSetupPromptEvaluated = true
+
+        val prefs = config.sharedPrefs
+        if (prefs.getBoolean(SIDEBAR_SETUP_PROMPT_SHOWN, false)) return
+
+        @Suppress("DEPRECATION")
+        val sidebarSetupCompleted = getSharedPreferences(
+            "app_prefs",
+            Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
+        ).getBoolean("setup_completed", false)
+
+        prefs.edit().putBoolean(SIDEBAR_SETUP_PROMPT_SHOWN, true).apply()
+        if (sidebarSetupCompleted) return
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.sidebar_setup_prompt_title)
+            .setMessage(R.string.sidebar_setup_prompt_message)
+            .setPositiveButton(R.string.sidebar_setup_now) { _, _ ->
+                openSidebarSetup()
+            }
+            .setNegativeButton(R.string.sidebar_setup_later, null)
+            .show()
+    }
+
+    private fun openSidebarSetup() {
+        val setupIntent = Intent().setClassName(packageName, "com.example.MainActivity")
+            .putExtra("force_welcome", true)
+        startActivity(setupIntent)
     }
 
     private fun setupWallpaperColorListener() {
@@ -391,6 +425,7 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     override fun onResume() {
         super.onResume()
+        maybePromptSidebarSetup()
         wasJustPaused = false
         refreshWallpaperSupportsDarkText()
         Handler(Looper.getMainLooper()).postDelayed({

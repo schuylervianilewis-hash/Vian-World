@@ -186,6 +186,11 @@
     <string name="unarchive_app">Restore app</string>
     <string name="unarchiving_app">Restoring %s…</string>
     <string name="about_vian_home">About Vian World</string>
+    <string name="sidebar_setup">Sidebar setup</string>
+    <string name="sidebar_setup_prompt_title">Set up Sidebar</string>
+    <string name="sidebar_setup_prompt_message">Vian World includes an optional Sidebar overlay. Set it up now to enable the Sidebar handle and features.</string>
+    <string name="sidebar_setup_now">Set up</string>
+    <string name="sidebar_setup_later">Later</string>
     <string name="about_summary">Viabhron Series • Created by Lewis</string>
     <string name="faq_about_app_title">About Vian World</string>
     <string name="faq_about_app_text">Vian World (Viabhron Series)\nPackage: shura.el.viabhronicat\nCreator: Lewis\nBuilt almost completely in Google AI Studio.</string>
