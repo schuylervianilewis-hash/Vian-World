@@ -237,6 +237,35 @@ fun MainSettingsScreen(
                 )
                 HorizontalDivider()
             }
+            item {
+                ListItem(
+                    headlineContent = { Text("Launcher Settings") },
+                    supportingContent = { Text("Customize the Home screen, app drawer, gestures, widgets, and launcher behaviour") },
+                    modifier = Modifier
+                        .clickable {
+                            context.startActivity(
+                                Intent(context, shura.home.activities.SettingsActivity::class.java)
+                            )
+                        }
+                        .testTag("settings_item_launcher")
+                )
+                HorizontalDivider()
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Sidebar Setup") },
+                    supportingContent = { Text("Reopen the initial Sidebar setup and permission flow") },
+                    modifier = Modifier
+                        .clickable {
+                            context.startActivity(
+                                Intent(context, MainActivity::class.java)
+                                    .putExtra(MainActivity.EXTRA_FORCE_WELCOME, true)
+                            )
+                        }
+                        .testTag("settings_item_sidebar_setup")
+                )
+                HorizontalDivider()
+            }
         }
     }
 }

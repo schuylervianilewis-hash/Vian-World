@@ -79,7 +79,20 @@ object LogKeeper {
         isMasterEnabled = enabled
     }
 
-    fun isEnabled(): Boolean = isMasterEnabled
+    fun isEnabled(): Boolean = isMasterEnabled && appContext?.let { isLoggingAllowed(it) } != false
+
+    @Suppress("DEPRECATION")
+    private fun isLoggingAllowed(context: Context): Boolean {
+        if (!isLoggingAllowed(context)) return false
+        return try {
+            context.getSharedPreferences(
+                "Prefs",
+                Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
+            ).getBoolean("log_keeper_enabled", true)
+        } catch (_: Exception) {
+            isMasterEnabled
+        }
+    }
 
     fun getProcessName(context: Context): String {
         cachedProcessName?.let { return it }
@@ -117,7 +130,7 @@ object LogKeeper {
      * Records a standard diagnostic or telemetry log entry to LiteReader_Log.txt
      */
     fun log(context: Context, component: String, message: String) {
-        if (!isMasterEnabled) return
+        if (!isLoggingAllowed(context)) return
         val process = getProcessName(context)
         val thread = Thread.currentThread().name
         val timestamp = dateFormat.format(Date())
@@ -129,7 +142,7 @@ object LogKeeper {
      * Records an error or caught exception to LiteReader_Log.txt (and LiteReader_CrashLog.txt if throwable is present).
      */
     fun logError(context: Context, component: String, message: String, throwable: Throwable? = null) {
-        if (!isMasterEnabled) return
+        if (!isLoggingAllowed(context)) return
         val process = getProcessName(context)
         val thread = Thread.currentThread().name
         val timestamp = dateFormat.format(Date())
@@ -152,7 +165,7 @@ object LogKeeper {
      * Records an uncaught crash to LiteReader_CrashLog.txt and LiteReader_Log.txt.
      */
     fun logCrash(context: Context, threadName: String, throwable: Throwable) {
-        if (!isMasterEnabled) return
+        if (!isLoggingAllowed(context)) return
         try {
             val process = getProcessName(context)
             val timestamp = dateFormat.format(Date())

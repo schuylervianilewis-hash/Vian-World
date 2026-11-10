@@ -324,11 +324,11 @@ class AddElementActivity : ComponentActivity() {
             }
             android.widget.Toast.makeText(this, "Added: $name", android.widget.Toast.LENGTH_SHORT).show()
         } else {
-            finishWithId(id)
+            finishWithId(id, displayName)
         }
     }
     
-    private fun finishWithId(id: String) {
+    private fun finishWithId(id: String, displayName: String? = null) {
         val targetId = com.example.feature.element.ElementPlacementHelper.assignInstanceIfNote(id)
         val containerId = intent.getStringExtra("CONTAINER_ID")
         com.example.core.LogKeeper.log(
@@ -338,6 +338,9 @@ class AddElementActivity : ComponentActivity() {
         )
         val resultIntent = Intent().apply {
             putExtra("ELEMENT_ID", targetId)
+            if (!displayName.isNullOrBlank()) {
+                putExtra("DISPLAY_NAME", displayName)
+            }
             if (containerId != null) {
                 putExtra("CONTAINER_ID", containerId)
             }

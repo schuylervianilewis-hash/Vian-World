@@ -20,6 +20,10 @@ import com.example.feature.welcome.WelcomeScreen
  */
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_FORCE_WELCOME = "force_welcome"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -28,8 +32,9 @@ class MainActivity : ComponentActivity() {
 
         val prefs = getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
         val setupCompleted = prefs.getBoolean("setup_completed", false)
+        val forceWelcome = intent.getBooleanExtra(EXTRA_FORCE_WELCOME, false)
 
-        if (setupCompleted) {
+        if (setupCompleted && !forceWelcome) {
             val intent = Intent(this, SettingsActivity::class.java)
             startActivity(intent)
             finish()
