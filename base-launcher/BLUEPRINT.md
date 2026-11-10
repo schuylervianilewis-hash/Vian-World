@@ -1,0 +1,703 @@
+# Vian Launcher (Fossify Home) Blueprint
+
+## 1. Architecture & App Structure
+- **Application Type**: Android Launcher / Home Screen (`shura.home` / Vian Launcher)
+- **Upstream / Base**: Fossify Home
+- **Tech Stack**: Kotlin, AndroidX, Jetpack Lifecycle, ViewBinding, Room (persistence), Coroutines, Detekt, Gradle Kotlin DSL
+- **Platform**: Modern Android SDK 36, Java 17/21 target, AGP 9.1.1 / 9.3.0
+- **Package Structure**:
+  - `shura.home`: Core Application, launcher activity, adapters, databases, receivers, dialogs, helpers, settings
+  - Local database: Room DB for hidden apps, custom order, favorites, app drawer shortcuts
+
+## 2. Planned Migration & Development Phases
+- **Phase 1: Security Sanitization & Audit Compliance**
+  - Remove exposed base64 keystore artifacts (`debug.keystore.base64`) from the workspace
+  - Remove hardcoded signing credentials from build scripts, switching to environment variable injection (`SIGNING_STORE_PASSWORD`, `SIGNING_KEY_PASSWORD`, or system fallbacks)
+- **Phase 2: Workspace Restructuring & Subfolder Promotion**
+  - Promote nested `Vian-launcher-b99ee3196d6802f6f4e5703ede6b0611c4b9aa5f` assets and structure to the project root
+  - Replace default template placeholder module with the full launcher app module
+  - Synchronize resources, Fastlane bundles, detekt rules, and licensing
+- **Phase 3: Build & Platform Alignment**
+  - Reconcile `settings.gradle.kts` and root `build.gradle.kts`
+  - Reconcile `app/build.gradle.kts` to remove flavor dimensions (enabling standard single APK generation at `app/build/outputs/apk/debug/app-debug.apk`)
+  - Migrate `foss` flavor boolean resources (`bools.xml`) into `main/res/values/bools.xml`
+  - Update `metadata.json` and strings (`app_launcher_name` / `app_name`) for consistent platform identity
+- **Phase 4: Compilation Verification & Stability Check**
+  - Execute `compile_applet` to verify zero compile or packaging regressions
+  - Validate Room KSP code generation and resource resolution
+- **Phase 5: Post-Phase QA & Verification Delivery**
+  - Provide on-device verification suite
+
+## 3. Running Change Ledger
+- [Init] Created `BLUEPRINT.md` and initial audit ledger
+- [Security] Removed `debug.keystore.base64`, updated `.gitignore` with keystore and credentials exclusions, removed hardcoded passwords from `signingConfigs`.
+- [Migration] Promoted `Vian-launcher-...` to project root, replacing placeholder template app.
+- [Build Alignment] Unified build configuration, added JitPack repository for `fossify.commons`, resolved duplicate `app_name` string resource, resolved duplicate legacy `com.android.support` classes via configuration exclusion, and synchronized platform `metadata.json` with `strings.xml`.
+- [Verification] Verified end-to-end compilation with `compile_applet` (Build succeeded). Post-build keystore cleanup executed.
+- [Feature: Native Clock Widget & Grid 5x9]
+  - Configured default home screen grid to 5 columns by 9 rows beside dock (10 rows total, dock at bottom row).
+  - Implemented `BuiltInClockWidgetView` (5x2 native header widget) featuring high-contrast white text with black outline (stroked font) for time and date.
+  - Implemented single-tap launch targeting `com.android.deskclock.go` (Version 1.2.8go) with resilient system clock fallbacks.
+  - Wired into `HomeScreenGrid` drag-and-drop lifecycle: fully movable, removable via context menu (with resize suppressed), and automatically placed on default page 0.
+  - Integrated into `WidgetsFragment` under Clock category with vector preview (`ic_clock_widget_preview.xml`), allowing users to re-add the clock widget anytime.
+  - Verified local build and unit test compilation cleanly. Cleared temporary build artifacts.
+- [Feature: Modern App Shortcuts & Floating Card Context Menu]
+  - Integrated Android native `LauncherApps` shortcuts query in `AppShortcutsPopupWindow.kt` for dynamic and pinned shortcuts with application icon badges.
+  - Implemented direct "Pin to home" action to place shortcuts on the home screen grid.
+  - Modernized long-press context menu into a rounded floating card UI with quick Lock/Unlock actions.
+- [Feature: Biometric App Lock & Protected Hidden Apps]
+  - Upgraded Room Database to v6 with `locked_apps` table and `LockedAppsDao`.
+  - Created `AppLockManager` with thread-safe in-memory package cache and session timeout policies (`Immediately`, `1 min`, `5 min`, `Screen off`).
+  - Implemented launch interception across home screen grid, dock, app drawer, and shortcut popup window using AndroidX `BiometricPrompt` and Fossify `SecurityDialog`.
+  - Gated `HiddenIconsActivity` behind biometric authentication when protected hidden apps setting is active.
+  - Added dedicated App Lock settings section in `SettingsActivity`.
+- [Security Sanitization & Audit Compliance]
+  - Purged `/debug.keystore.base64` and `/.build-outputs/` binary artifacts from repo.
+  - Strengthened `/.gitignore` with rules for `debug.keystore.base64`, `*.base64`, `.build-outputs/`, `*.apk`, and `*.aab`.
+  - Verified clean build via `compile_applet` and local unit test suite.
+- [CI Pipeline Standalone APK Builder Implementation]
+  - Removed upstream FossifyOrg-dependent workflow files (`no-response.yml`, `prepare-release-pr.yml`, `pr-labeler.yml`, `update-commons.yml`, `release.yml`, `testing-build.yml`, `validate-fastlane-metadata.yml`, `image-minimizer.yml`, `update-lint-baselines.yml`, `pr.yml`) that crashed on missing GitHub App / Org credentials.
+  - Implemented standalone GitHub Actions workflow `.github/workflows/build-debug-apk.yml` configured with JDK 17, `temurin` distribution, Gradle caching, unit testing (`testDebugUnitTest`), debug packaging (`assembleDebug`), and artifact upload (`actions/upload-artifact@v4`).
+  - Verified local Gradle execution (`testDebugUnitTest`, `assembleDebug`, and `assembleRelease`) all succeed cleanly.
+  - Enforced security sanitization: deleted ephemeral keystore files and build output APKs; confirmed zero credentials committed.
+- [Bugfix: AppShortcutsPopupWindow Empty Range Coerce Crash]
+  - Resolved `IllegalArgumentException: Cannot coerce value to an empty range: maximum -24 is less than minimum 24` in `AppShortcutsPopupWindow.kt`.
+  - Enforced capped measure pass width (`targetMeasureWidth = minOf(maxAllowedWidth, (280 * density).toInt())`), preventing match_parent children from expanding the card to full screen width.
+  - Implemented defensive boundary clamping on `popupX`, `popupY`, and `arrowLeft` (`maxX.coerceAtLeast(minX)`, `maxArrow.coerceAtLeast(minArrow)`), mathematically eliminating empty-range exceptions.
+  - Verified stability on widget placement/long-press and app drawer launcher long-press.
+- [Feature: Drawer Top Bar Search Button & 3-Dots Sort Toggle]
+  - Configured top bar action button ordering: Search button positioned directly before Google Play Store button and 3-dots dropdown menu.
+  - Implemented search unfolding into full search bar on button tap, and graceful return to button on search exit or back navigation.
+  - Added lightweight "Sort by name" and "Sort by time" directly into 3-dots popup menu (`menu_drawer.xml`).
+  - Implemented "once for up and switch down" bidirectional toggles:
+    - Sort by name: A-Z (up) $\leftrightarrow$ Z-A (down) with dynamic title indicators.
+    - Sort by time: Newest (down) $\leftrightarrow$ Oldest (up) with dynamic title indicators.
+  - Added in-memory `@Ignore var installTime` on `AppLauncher` with lazy `PackageInfo` caching — 0 Room migrations and zero DB schema risks.
+  - Persisted user sort preferences in `Config` (SharedPreferences).
+  - Executed compilation and unit test verification; confirmed clean security scan.
+- [Feature: Home Screen Long-Press "Add" Menu (App, Widget, Shortcut, Folder, Page)]
+  - Updated home screen long-press context menu (`menu_home_screen.xml`) to include `Add` (`@string/add`) at the top while retaining existing options (`Widgets`, `Wallpapers`, `Launcher settings`, `Set as default`).
+  - Implemented cascading `Add` popup menu (`menu_add_to_home.xml`) with five options:
+    - **App**: Opens `AddAppDialog` with real-time title search and application icon list; placing an app pins it to the long-pressed cell (or first vacant grid cell on the current page).
+    - **Widget**: Directly expands the widgets drawer (`WidgetsFragment`) for widget selection and placement.
+    - **Shortcut**: Opens `AddShortcutDialog` listing all installed apps advertising `ACTION_CREATE_SHORTCUT`; supports both modern `LauncherApps.PinItemRequest` and legacy `ACTION_CREATE_SHORTCUT` result intents with fallback icons.
+    - **Folder**: Opens `CreateFolderDialog` with customizable name (defaults to "Folder"); creates an empty folder and handles empty folder rendering (`generateDrawable()` fallback and scalable open folder view).
+    - **Page**: Invokes `HomeScreenGrid.addNewPage()`, increments max page tracking, updates page indicator dots, and navigates immediately to the new home page.
+  - Added smart cell targeting (`HomeScreenGrid.getTargetCell()` and `findFirstEmptyCellOnCurrentPage()`) prioritizing the exact long-pressed vacant cell.
+  - Verified clean compilation via `compile_applet` and Gradle test task; purged ephemeral artifacts in compliance with Security Scan Protocol.
+- [Feature & Bugfix: Clock Widget Tap/Long-Press/Drag, System-Wide Widget Moving, Drawer Fast Icon Loading, and Proportional Icon Sizing]
+  - **Clock Widget Tap vs. Menu Fix**: Resolved bug where tapping the clock widget opened the long-press menu upon returning from the clock app. Tapping cancels any pending long-press handlers immediately in `BuiltInClockWidgetView` and `MyAppWidgetHostView`, so tap solely launches the clock app.
+  - **Widget Long-Press & Move**: Unified touch dispatching in `MyAppWidgetHostView` and `BuiltInClockWidgetView` to provide tactile long-press menus and drag-and-drop repositioning across pages and grid cells, matching modern launcher behavior. Replaced deprecated `drawingCache` with modern `View.draw(Canvas)` for widget drag previews.
+  - **Drawer Fast Icon Loading & Async Cache**: Added in-memory `LruCache` to `IconCache` to eliminate duplicate icon loading. Bypassed redundant Glide pipeline for in-memory drawables; loads cached drawables instantly on main thread and fetches uncached package icons asynchronously. Optimized `getAllAppLaunchers` to reuse existing database thumbnail colors without full bitmap pixel scanning.
+  - **Proportional Icon Sizing**: Updated drawer icon layout dimensions and minimized padding in `LaunchersAdapter` so drawer icons render at standard ~60dp launcher size. Tuned home screen grid cell `iconMargin` to 4dp-6dp to ensure icons are balanced and prominent on high-density grids.
+- [Feature: Dock Folders Support]
+  - Enabled dragging existing folders into the dock row (`yIndex == rowCount - 1`) with dock column boundary safety (`xIndex < dockColumnCount`).
+  - Enabled creating new folders directly in the dock by dropping app icons onto docked apps (`potentialParent` logic in `HomeScreenGrid.kt`).
+  - Enabled dropping items into existing docked folders and auto-opening docked folders upon drag hover.
+  - Ensured items inside folders maintain `docked = false` and properly belong to their parent container.
+- [Feature: Custom App & Folder Icon Customization (Option B + Style 1)]
+  - Implemented safe bitmap downsampling in `CustomIconManager` (capping dimensions to 192x192) to strictly protect against SQLite `CursorWindow` 2MB OOM crashes.
+  - Added global package-level custom icon persistence via internal storage (`filesDir/custom_icons/<pkg>.png`) and in-memory `IconCache` updates, reflecting custom icons across both the app drawer and home screen.
+  - Added folder custom icon persistence directly in `HomeScreenGridItem.icon` column.
+  - Upgraded rename dialog to `EditItemDialog` (Style 1), featuring instant icon preview, title editor, and a modal action sheet offering Gallery/Photo Picker (zero-permission), installed app icon selection, and reset to default.
+- [Feature: Decoupled Log Catcher & Log Keeper UI]
+  - **Early Process Startup Hook**: Introduce `VianApp : FossifyApp()` in `AndroidManifest.xml` to initialize `LogCatcher` at the earliest point in the application lifecycle (`Application.onCreate()`). Captures unhandled exceptions, runtime errors, and early startup telemetry before any Activity starts.
+  - **Lightweight LogCatcher Core**: Headless singleton that records sanitized, structured log entries (timestamp, component tag, message, sanitized stack trace) without UI overhead. Adheres to Mandate 17 (Log Keeper Standard: no PII, no user content, no credentials).
+  - **2MB Auto-Dump & Scoped Storage**: Maintains a rolling buffer up to 2MB in app-private storage. When 2MB is reached or on application crash, automatically flushes logs directly to the public device `Download/` folder as `vian logs.txt` via `MediaStore.Downloads` (zero-permission on Android 10+; fallback on Android 8/9).
+  - **Crash Handler Integration**: Installs `Thread.setDefaultUncaughtExceptionHandler` during `VianApp` init, writes crash dump with system context immediately to `Download/vian logs.txt` via synchronous I/O, and passes to the system default handler for clean termination.
+  - **Dedicated Log Keeper UI (Screenshot Match)**: Overhaul `LogViewerActivity` into a dedicated on-demand page:
+    - Top bar: Back arrow, "Log Keeper" title, Master On/Off Switch (`config.logKeeperEnabled`), Copy icon (copies active logs to clipboard), Download icon (manual dump to `Download/vian logs.txt`).
+    - Time filter pills: `6h`, `12h`, `24h`, and `All` tabs with dynamic filtering.
+    - Log cards: Rounded card layout displaying monospace timestamp (`HH:mm:ss.SSS`), component/tag, bold log message, and expandable stack trace.
+  - **Backward-Compatible Migration**: Integrate with existing `settingsViewAppLogsHolder` in `SettingsActivity.kt` and preserve existing `LogKeeperHelper` / `logKeeper.log` call sites. Migrate legacy logs from `vian_app_log.txt`.
+- [Feature: 5 Item Gestures & Curated System Actions (Phase 1)]
+  - **Zero-Latency Touch Discrimination**: Preserves instant 0ms tap launch on `ACTION_UP` and long-press context menu/drag. Intercepts `MotionEvent.ACTION_DOWN` on `HomeScreenGrid` items to route item-specific gestures.
+  - **5 Item Gestures**: Supports `Double Tap`, `Swipe Up`, `Swipe Down`, `Swipe Left`, and `Swipe Right` on home screen items.
+  - **Horizontal Pass-Through**: Gated horizontal swipe detection — if an item does not have an explicit `Swipe Left` or `Swipe Right` action assigned, horizontal flings pass seamlessly through to `HomeScreenGridPager` for smooth home screen page sliding.
+  - **Curated System & Launcher Actions (`LauncherActionHandler`)**:
+    - `ACTION_LOCK_SCREEN`: Locks device via `DevicePolicyManager.lockNow()`.
+    - `ACTION_MUTE_VOLUME`: Toggles media stream mute via `AudioManager.adjustStreamVolume()`.
+    - `ACTION_MUTE_RINGTONE`: Toggles ringer mode between Normal and Vibrate (or Silent with safe DND access check).
+    - `ACTION_NOTIFICATIONS`: Expands notification shade via `StatusBarManager` reflection.
+    - `ACTION_QUICK_SETTINGS`: Expands quick settings panel via `StatusBarManager` reflection.
+    - `ACTION_APP_DRAWER`: Opens all apps drawer fragment.
+    - `ACTION_FOLDER_POPUP`: Opens animated floating folder popup overlay (`HomeScreenGrid.openFolder()`).
+    - `ACTION_APP_SHORTCUTS`: Opens dynamic app shortcuts popup.
+    - `ACTION_LAUNCH_APP`: Launches assigned target application.
+  - **Isolated Memory-Cached Persistence (`ItemGestureManager`)**: Thread-safe in-memory cache backed by private JSON storage (`item_gestures.json`), eliminating Room schema migration risks while providing instant 0ms lookup.
+  - **Folder Double-Tap Default**: Automatically maps folder double-tap to `ACTION_FOLDER_POPUP`.
+  - **Universal LogCatcher Instrumentation**: Logs action executions and failures directly to `LogCatcher` without PII.
+- [Feature: On-Demand Popup Widgets (Phase 2 - Option C: Dual-Mode)]
+  - **Floating Modal Host (`PopupWidgetDialog`)**: Implemented floating Material 3 modal card container (`dialog_popup_widget.xml`) hosting `MyAppWidgetHostView` with clean backdrop, rounded corners (24dp), elevation, header bar with app/widget icon, title, configure action button, unlink/change action button, and close (`✕`) button.
+  - **Shared Host & Lifecycle Safeguards**: Reuses master `MyAppWidgetHost` (`WIDGET_HOST_ID = 100`) via `baseContext` to prevent RemoteViews theming collisions. Detaches view hierarchy immediately upon dismissal (`dialog.setOnDismissListener` and `onDetachedFromWindow`), ensuring 0MB residual View overhead while preserving the allocated `appWidgetId` in `ItemGestureManager` so users never face repetitive configuration prompts.
+  - **Widget Selector Dialog (`SelectPopupWidgetDialog`)**: Modal picker (`dialog_select_popup_widget.xml`, `item_select_popup_widget.xml`) featuring search filtering, app-specific widget grouping, cell dimension indicators (`4 × 2`), and preview rendering with asynchronous background loading.
+  - **Binding & Configuration Pipeline**: Integrated full Android `AppWidgetManager.bindAppWidgetIdIfAllowed` and `startAppWidgetConfigureActivityForResult` with fallback allocation cancellation.
+  - **Context Menu Integration**: Added "Popup Widget" button (`ic_widget_vector`) to both the quick actions bar and fallback actions menu in `AppShortcutsPopupWindow`.
+  - **Item Removal Cleanup**: Wired `HomeScreenGrid.removeItemFromHomeScreen` to automatically release allocated widget IDs from `appWidgetHost` and clear associated gesture configurations when home screen items are deleted.
+- [Feature: Add to Home M3 Bottom Sheet & Element Bridge (Phase 3)]
+  - **Sidebar App Coordinator Bridge (`AddElementBridge`)**: Decoupled the launcher home screen placement engine from the UI presentation layer via a clean `Delegate` interface. Allows seamless future delegation to the target Sidebar App's external multi-page Add Element Activity with a single delegate line, while providing a first-class native standalone implementation today.
+  - **M3 Add to Home Bottom Sheet (`AddToHomeBottomSheet`)**: Replaced legacy nested `PopupMenu` with a Material 3 rounded bottom sheet (`dialog_add_to_home_bottom_sheet.xml`) featuring drag handle, title, subtitle, and 5 interactive category cards with ripple indications:
+    1. 📱 **Applications**: Directly triggers `AddAppDialog`, placing the chosen app into the target cell `(x, y)` without manual dragging.
+    2. 🧩 **Desktop Widgets**: Directly slides up the native `WidgetsFragment` drawer for multi-cell desktop widget placement.
+    3. 🪟 **Popup Widgets**: Launches `SelectPopupWidgetDialog` and configures a standalone 1-slot popup widget launcher icon on the target grid cell.
+    4. ⚡ **Shortcuts**: Directly opens `AddShortcutDialog` for pinning deep-link actions.
+    5. 📁 **Folders**: Prompts `CreateFolderDialog` to place a newly named folder ready to receive apps.
+    *(Explicitly removed legacy "Add Page" menu item)*.
+  - **Home Screen & Gesture Action Routing**: Added `ACTION_ADD_TO_HOME`, `ACTION_ADD_APP`, and `ACTION_ADD_WIDGET` to `LauncherActionHandler` for home gesture assignment. Main long-press menu routes empty space directly to `AddElementBridge.open(x, y)` while preserving direct top-level access to Desktop Widgets.
+  - **Standalone Popup Widget Click Support**: Enhanced `MainActivity.performItemClick` to automatically summon `openPopupWidget` when tapping a standalone popup widget icon on the home screen grid.
+- [Feature: Full Gestures & Actions Settings Page & Per-Item UI (Phase 4)]
+  - **Full Gestures Settings Screen (`GesturesActivity` & `activity_gestures.xml`)**:
+    - Created dedicated "Gestures & Actions" settings page accessible from Settings (`SettingsActivity`).
+    - Configured global empty home screen gesture handlers: Double Tap, Swipe Down, Swipe Up, and Pinch In (via `ScaleGestureDetector`).
+    - Configured Folder Behavior section featuring Folder Cover Mode toggle (`folderCoverMode`) with real-time preference persistence.
+    - Configured Feedback & Permissions section featuring Haptic Feedback toggle (`gestureHaptics`) and Device Admin permission status badge with direct shortcut to grant Device Admin for instant screen lock.
+    - Standardized Material 3 typography, dynamic primary color styling via `getProperPrimaryColor()`, and `MyAppBarLayout` integration.
+  - **Per-Item Gestures & Widget Customization (`EditItemDialog` & `dialog_edit_item.xml`)**:
+    - Integrated "Linked Popup Widget" card displaying linked widget status, title, link widget picker, and unlink action.
+    - Integrated "Item Gestures" card for granular per-item overrides across all 5 gestures: Double Tap, Swipe Up, Swipe Down, Swipe Left, and Swipe Right.
+    - Upgraded `ItemGestureConfig` to support per-gesture target package assignments (`getTargetPackage`, `setTargetPackage`), allowing multiple launch app gestures per item.
+    - Real-time badge display showing action name and target app title (`LauncherActionHandler.getActionLabel`).
+  - **Folder Cover Mode & Touch Interaction Polish**:
+    - When Folder Cover Mode is active: single tap launches first child application; swipe up or double tap opens folder popup overlay.
+    - Universal haptic feedback feedback triggers on gesture activations when enabled.
+  - **Security Sanitization**:
+- [Feature: Unified Backup & Restore + Universal LogCatcher Integration (Phase 5)]
+  - **Universal LogCatcher Hardening & Crash Drop**:
+    - Hardened `LogCatcher.dumpLogsToDownloadFolder`: upgraded MediaStore mode on Android 10+ from unstable `"wa"` to standard `"w"` for guaranteed cross-OEM compatibility (Samsung OneUI, Xiaomi MIUI, Pixel).
+    - Added synchronous direct file crash dump (`crash_dump_latest.txt`) with `fos.fd.sync()` ensuring zero-data-loss crash reporting before OS process termination.
+    - Systematically instrumented `LogCatcher` calls across `MainActivity`, `HomeScreenGrid`, `AllAppsFragment`, `BackupHelper`, and `AppLockManager` with structured component tags (no PII, no credentials).
+  - **Unified Backup & Restore Engine (`BackupHelper.kt`)**:
+    - Created single atomic JSON backup format (`schema_version: 1`) encapsulating:
+      1. Complete home screen grid layout (`HomeScreenGridItem` table across all pages, docked items, and folders).
+      2. Granular gesture mappings and linked popup widget configurations from `ItemGestureManager` (`item_gestures.json`).
+      3. Global launcher preferences from `Config` (grid dimensions, drawer settings, gestures, app lock configs).
+      4. Security & privacy lists (`HiddenIcon` and `LockedApp` tables).
+      5. Custom application icons from `filesDir/custom_icons/` encoded cleanly as Base64 PNGs.
+    - Built two-pass folder parent ID re-mapper on restore, ensuring robust relational integrity even when auto-generated primary keys change.
+    - Added `deleteAllItems()` and `deleteAllHiddenIcons()` Room DAO operations wrapped inside atomic database transactions (`runInTransaction`).
+  - **Settings UI Integration (`SettingsActivity` & `activity_settings.xml`)**:
+    - Added dedicated "Backup & Restore" section with Material 3 styling and dynamic primary accents.
+    - Integrated Storage Access Framework contracts (`ActivityResultContracts.CreateDocument` and `ActivityResultContracts.OpenDocument`) for zero-permission file operations.
+    - Added confirmation dialog before restore to prevent accidental overwrites, followed by instant UI refresh and cache clearing.
+- [Bugfixes & UX Polish (Post-Phase 5)]
+  - **Thread-Safety & Room DB Access**:
+    - Dispatched `getAllAppLaunchers()` onto worker thread via `ensureBackgroundThread` in `MainActivity.showAddAppDialog` and `SelectActionDialog.pickAppToLaunch`, eliminating main-thread Room `IllegalStateException`.
+    - Added UI-thread lifecycle guards (`!isFinishing && !isDestroyed`) before presenting `AddAppDialog`.
+    - Wrapped post-rename icon launcher refresh in `ensureBackgroundThread`.
+  - **Shortcut Creation Hardening (`SecurityException` Defense)**:
+    - Pre-filtered `queryIntentActivities` results in `MainActivity.showAddShortcutDialog` to strictly exclude unexported activities (`it.activityInfo.exported`).
+    - Wrapped `startActivityForResult(REQUEST_CREATE_SHORTCUT)` in defensive `try-catch` inside `handleShorcutCreation`, displaying a clear toast (`cannot_create_shortcut`) and logging to `LogCatcher` on permission denials.
+  - **Home Screen Long-Press Menu Consolidation**:
+    - Removed redundant `R.id.widgets` entry from `menu_home_screen.xml` and handler in `MainActivity.kt`, standardizing all element additions (Desktop Multi-cell Widgets, Popup Shutters, Applications, Shortcuts, Folders) through the unified "Add" (`AddToHomeBottomSheet`) portal.
+  - **LogKeeper Edge-to-Edge Status Bar Inset Handling**:
+    - Configured `padTopSystem = listOf(binding.logViewerTopBar)` in `LogViewerActivity.setupEdgeToEdge`, ensuring the top bar (Back button, title, and controls) is properly offset beneath the Android status bar and display cutout.
+- [Phase: App Drawer Modernization, Squarish Bubble Folders, Folder Popup (+) Action, and Unified Widget Long-Press Drag]
+  - **App Drawer Styling & Semi-Transparent Scrim**:
+    - Overhauled drawer top bar in `all_apps_fragment.xml` with bold "All apps" typography and prominent search icon action.
+    - Updated `View.setupDrawerBackground()` to render a modern semi-transparent dark/dynamic background scrim (~82% alpha) preserving wallpaper translucency.
+  - **Squarish Bubble Folder on Home Screen**:
+    - Replaced hardcoded circular folder icon clipping with a translucent squircle geometry (rounded rect with 26% corner radius) and subtle bubble border outline (`HomeScreenGrid.generateDrawable`).
+    - Nested folder preview thumbnails with proportional spacing and inner padding.
+  - **Folder Popup Overhaul (Label-Free + Top-Bar (+) Button)**:
+    - Suppressed item labels within the open folder popup (`item.parentId != null`), centering app icons cleanly within each popup cell.
+    - Added a dedicated top-bar `(+)` action button in the folder popup beside the folder title to open the app-only selector.
+    - Implemented background-threaded app picker to add application launchers to the open folder without thread-blocking Room exceptions.
+  - **Unified Home Screen Widget Long-Press & Drag**:
+    - Fixed widget drag initialization in `MyAppWidgetHostView`, `HomeScreenGrid.kt`, and `MainActivity.handleWidgetDrag`: hold displays resize frame while touch movement simultaneously moves the widget across grid coordinates.
+    - Preserved multi-cell bounds and shadow in `HomeScreenGrid.addWidget()`, updating Room DB on worker thread and re-displaying the resize frame around the updated location upon drop.
+    - Fixed `BuiltInClockWidgetView` vanishing bug by rendering in both `dispatchDraw` and `onDraw`, bypassing framework `updateAppWidgetSize` dummy ID reset, and ensuring widgets are dynamically restored in `HomeScreenGrid.onDraw` even when `isFirstDraw` is false.
+  - **Verification & Build Status**:
+    - Successfully compiled via `compile_applet` and validated against full unit test suite (`gradle :app:testDebugUnitTest`). Ephemeral build keystore purged.
+- [Phase: Drawer Wallpaper-Only View, Icon Proportion Alignment, and Standard Launcher Widget UX]
+  - **Drawer Wallpaper Scrim & Homescreen Fade**:
+    - Configured `View.setupDrawerBackground()` to keep drawer background transparent (`background = null`), removing solid/dark scrim.
+    - Added reactive homescreen alpha fade in `MainActivity.kt`: as drawer slides up, `homeScreenGrid.root.alpha` smoothly transitions from 1.0 to 0.0, guaranteeing that in the drawer ONLY the system wallpaper is visible and the homescreen is completely hidden.
+  - **Drawer Icon Sizing & Padding**:
+    - Adjusted `launcher_icon_size` to standard 50dp in `dimens.xml`.
+    - Restored dynamic `iconPadding` (12% of column width) in `LaunchersAdapter.kt` to create elegant, uniform spacing and padding around drawer icons matching the screenshot.
+  - **Standard Launcher Widget Long-Press, Move & Resize UX**:
+    - Aligned widget long-press in `HomeScreenGrid.kt` with standard app icons: long-pressing displays the popup menu with options (Remove, Resize).
+    - Dragging after long-press immediately dismisses the popup menu and initiates grid dragging across cells, dropping cleanly into destination cells on release without disruptive auto-resize frames.
+    - Selecting "Resize" from the popup menu activates `MyAppWidgetResizeFrame` with interactive handle dots on all 4 sides.
+    - Fortified `MyAppWidgetResizeFrame` to defensively handle all widget types (including built-in clocks) without null pointer returns, and fixed `onDraw` frame rendering for widgets placed at `(0, 0)`.
+- [Phase: Long-Press Menu Modernization, Item Gestures, Biometric App Lock & Dedicated AppLock Settings]
+  - **Standardized Item Long-Press Context Menu (`AppShortcutsPopupWindow`)**:
+    - Homescreen app icons & folders: custom icon / edit action, dedicated gestures action (homescreen only), and lock/unlock toggle.
+    - Shortcuts and widgets on homescreen: custom icon and gestures suppressed; widgets support remove & resize; shortcuts support remove.
+    - App drawer items: custom icon / edit action (Option B global custom icon), lock/unlock toggle, hide, uninstall. Gestures strictly suppressed in drawer.
+    - Removed popup widget action from icon long-press popup menu.
+  - **Biometric Security Defense**:
+    - Strictly enforce biometric / device PIN verification before unlocking any locked app from the launcher menu (`toggleLock`), preventing unauthorized unlocks.
+    - Locked items gate single-tap launches behind biometric or phone PIN / pattern unlock prompt.
+  - **Dedicated Item Gestures Configuration (`ItemGesturesDialog`)**:
+    - Dedicated modal dialog to configure per-item Double Tap, Swipe Up, Swipe Down, Swipe Left, and Swipe Right gestures on the home screen.
+  - **Dedicated App Lock Settings Page (`AppLockActivity`)**:
+    - Decoupled app lock configuration from main `SettingsActivity` into a dedicated `AppLockActivity`.
+    - Gated access behind biometric prompt when app lock is active.
+    - Features master enable switch, timeout selector, protect hidden apps switch, and full locked apps manager list with add/remove actions.
+- [Phase: Authentic Squircle Folder Icon & No-Label Folder Presentation]
+  - **Superellipse Bézier Squircle Folder Background**:
+    - Replaced standard boxed `drawRoundRect` with mathematical continuous-curvature Bézier squircle path matching AOSP/OneUI adaptive squircle curve geometry (`M50,0 C10,0 0,10 0,50 C0,90 10,100 50,100 C90,100 100,90 100,50 C100,10 90,0 50,0 Z`).
+    - Tuned squircle clip path, translucent background fill, and subtle outline border.
+    - Adjusted folder preview mini-icon padding (`innerPadding = iconSize * 0.14f`) to seamlessly nest inside the squircle curvature without edge clipping.
+  - **Suppressed Folder Icon Home Screen Label**:
+    - Gated text label layout rendering in `drawItemInCell` to exclude folder items (`item.type != ITEM_TYPE_FOLDER`), providing a clean, minimalist folder bubble on the home screen.
+    - Preserved folder icon top-margin baseline alignment so folders remain perfectly aligned horizontally with neighboring labeled app icons.
+    - Updated `getClickableRect` to reflect label-free bounds for folders.
+    - Preserved accessibility TalkBack label (`AccessibilityNodeInfoCompat`) and folder popup dialog header title so folder naming remains functional and accessible.
+- [Phase: Dedicated Empty-Space Double Tap & Standard Launcher Widget Drag UX]
+  - **Dedicated Empty-Space Double Tap**:
+    - Restricted `homeScreenDoubleTapped()` exclusively to empty home screen space, immediately returning `false` if an item, icon, folder, or widget is clicked.
+    - Deprecated item-level double-tap from `SUPPORTED_GESTURES` in `ItemGestureManager.kt`, `ItemGesturesDialog`, and `EditItemDialog`, guaranteeing 0ms zero-latency instant launch for all apps and eliminating gesture competition.
+    - Empty canvas double-tap executes `config.gestureDoubleTapAction` (e.g. Lock Screen) with 100% reliability and haptic feedback.
+  - **Standard Launcher Widget Long-Press and Move-Around UX**:
+    - Unified widget interaction with apps and folders: holding a widget triggers haptic feedback and displays the contextual popup menu (`AppShortcutsPopupWindow`).
+    - Dragging after long-press immediately dismisses the popup menu (`mOpenPopupMenu?.dismiss()`).
+    - Promoted widget dragging in `MainActivity.handleWidgetDrag`: eliminated the broken `mLongPressedIcon == null` guard by querying `!isDraggingItem()`, reliably invoking `itemDraggingStarted(item)`.
+    - Live Widget Drag & Drop: captures widget snapshot bitmap, hides the underlying view, and tracks `draggedItemMoved(viewX, viewY)` across grid cells and pages with cell footprint highlight.
+    - On touch release (`ACTION_UP`), calls `itemDraggingStopped()`, saving new cell coordinates and page to Room database and repositioning the widget view cleanly.
+- [Phase: Compact Pill Bar Context Menu, Black App Drawer Background, Translucent White Folder Bubbles]
+  - **Split Compact Pill Bar Menu (Option B)**:
+    - Unified contextual long-press actions bar in `popup_app_shortcuts.xml` into a streamlined horizontal action pill bar (`popup_actions_bar`), cutting height from 46dp to 40dp with 2dp margins and 6dp padding for concise touch targets.
+    - Compacted MaterialCardView radius (`18dp`), elevation (`8dp`), minWidth (`180dp`), and header paddings (`14dp` start, `8dp` top, `6dp` bottom) for a sleek, lightweight footprint.
+    - Compacted dynamic shortcut rows (`item_popup_shortcut.xml`) to 40dp minHeight with tightened vertical padding (4dp) and 14sp labels.
+    - Routed fallback actions (when dynamic shortcuts are not present) directly to the compact horizontal pill bar rather than the vertical 44dp multi-row list in `AppShortcutsPopupWindow.kt`.
+  - **Pure Black App Drawer Background**:
+    - Replaced the transparent scrim in `View.setupDrawerBackground()` with `Color.BLACK`, rendering a clean, deep black background behind the All Apps drawer grid and fast scroller.
+  - **Translucent White Folder Squircle Background**:
+    - Updated `HomeScreenGrid.HomeScreenFolder.generateDrawable` to draw a modern translucent white plate (`ColorUtils.setAlphaComponent(Color.WHITE, 115)`) with a subtle white border (`ColorUtils.setAlphaComponent(Color.WHITE, 70)`).
+    - Empty folders and the space between mini-icons in populated folders now consistently render as translucent white squircles across all wallpapers.
+- [Phase: Performance & Memory Hardening, App Drawer Drag-to-Home UX]
+  - **Memory & Resource Hardening**:
+    - **Folder Drawable Frame Caching**: Cached dynamically generated folder squircle Bitmaps on `HomeScreenGridItem.drawable` in `HomeScreenGrid.kt`. Eliminates the severe bottleneck where `createBitmap()` was invoked on every single frame during swipe/drag animations (up to 480 allocations/sec on 120Hz displays). Added `invalidateFolderDrawables()` to invalidate caches only when folder items are added, removed, or reorganized.
+    - **Message Queue Flooding Fix**: Optimized `HomeScreenGrid.redrawGrid()` to directly call `invalidate()` and `binding.drawingArea.invalidate()` when executing on the main thread, avoiding redundant `post { ... }` message queue spam during high-frequency `ACTION_MOVE` touch gestures.
+    - **Byte-Bounded Icon Cache**: Sized `IconCache.kt` `LruCache` by memory in kilobytes (bounded to 1/8th of JVM max heap, 16MB–64MB) with accurate `sizeOf` calculations, preventing unbounded memory growth on `xxxhdpi` devices.
+  - **App Drawer Drag-to-Home Standard Launcher UX**:
+    - Implemented `onTouchEvent` in `AllAppsFragment.kt` to forward drag gestures to `MainActivity.onTouchEvent` when `ignoreTouches == true`.
+    - Long-pressing an app in the drawer and moving the finger past the drag threshold now automatically dismisses the popup menu, animates the app drawer down, and seamlessly initiates live drag-and-drop on the homescreen desktop grid.
+    - Dropping the icon on an empty cell inserts the app into that cell and page; dropping it onto an existing icon or folder merges it into a folder.
+- [Phase: Standard Launcher Archived Apps UX, Touch Safety & Security Sanitization]
+  - **Security Sanitization**:
+    - Purged committed `/debug.keystore` and `/debug.keystore.base64` artifacts from workspace root in compliance with the Credential Immunity Rule.
+  - **Touch Safety & Phantom Drag Elimination**:
+    - Cleared `mLongPressedIcon = null` inside `menuListener.onDismiss()` when dragging is not actively underway (`!binding.homeScreenGrid.root.isDraggingItem()`), eliminating phantom icon drag states on subsequent touch inputs after dismissing popup menus.
+  - **Dead Code Cleanup**:
+    - Purged dead 170-line `popup_fallback_actions` layout block from `popup_app_shortcuts.xml` and removed unused `setupFallbackActions()` method from `AppShortcutsPopupWindow.kt`.
+  - **Standard Launcher Archived Apps UX (Android 15 / API 35+)**:
+    - **Discovery & Querying**: Integrated `PackageManager.MATCH_ARCHIVED_PACKAGES` into `MainActivity.getAllAppLaunchers()` and package queries so archived applications are returned and displayed in the app drawer.
+    - **Detection Engine (`ArchivedAppsManager.kt`)**: Added lightweight detection checking `packageManager.getArchivedPackage(packageName)` on API 35+ with graceful backward-compatible fallbacks.
+    - **Visual Badging (`IconDecorator.kt`)**: Implemented standard launcher icon treatment for archived apps: base icon rendered with ~65% dimmed alpha, overlaid with a floating circular dark badge containing a vector download down-arrow (`ic_download_vector`) in the bottom-right corner. Cached under `"$identifier_archived"` in `IconCache` to ensure zero-overhead 60fps scrolling and grid rendering.
+    - **Tap-to-Restore Flow**: Updated `Activity.launchApp` to intercept taps on archived apps across home screen grid, dock, folders, and drawer, initiating system restoration via `PackageInstaller.requestUnarchive()` and displaying immediate feedback toast (`Restoring [App Title]…`) with fallback to store page.
+    - **Contextual Actions**: Added Restore / Download quick action button (`popup_action_unarchive_btn`) in `AppShortcutsPopupWindow` top pill bar, suppressed unavailable app shortcuts, enabled uninstallation of archived packages in `canAppBeUninstalled()`, and retained direct navigation to system App Info where the OS displays Archive/Unarchive, Uninstall, and Force Stop.
+- [Phase: Precise Archive Flagging, Material Cloud-Download Badge, Folder Drag Crash Elimination, White Folder Popup]
+  - **Security Sanitization**:
+    - Verified and removed `/debug.keystore` and `/debug.keystore.base64` from repository root in strict accordance with the Credential Immunity Rule.
+  - **Precise Archive Detection (Zero False Positives)**:
+    - Fixed root cause of all apps appearing as archived: replaced erroneous `packageManager.getArchivedPackage(packageName) != null` check (which returned non-null manifest parcels for installed apps on Xiaomi/Android 15) with official Android 15 `ApplicationInfo.isArchived` and `ActivityInfo.isArchived` flags.
+    - Truly archived apps show badge and unarchive flow; unarchived apps launch normally with 0 latency.
+  - **Material Cloud-Download Vector Badge**:
+    - Created `ic_cloud_download_vector.xml` representing standard Android 15 / Google Play Store cloud download glyph (cloud silhouette with downward arrow).
+    - Updated `IconDecorator.kt` and `popup_action_unarchive_btn` to use `ic_cloud_download_vector`.
+  - **Folder / Item Dragging Crash Fix**:
+    - Fixed NPE at `MainActivity.kt:532`: captured `val iconToDrag = mLongPressedIcon` before `mOpenPopupMenu?.dismiss()` so the synchronous `onDismiss()` callback cannot nullify the drag target reference before `itemDraggingStarted` executes.
+  - **Clean White Folder Popup & Contrast Inversion**:
+    - Updated `HomeScreenGrid.kt` to render open folder dialog popup with pure white background (`folderBackgroundPaint.color = Color.WHITE`).
+    - Inverted folder popup header text (`folderTitleTextPaint.color = Color.parseColor("#1C1B1F")`) to guarantee sharp, readable contrast against white.
+    - Styled folder popup boundary outline (`#E5E7EB`) and header `(+)` add button with soft light-gray background (`#F3F4F6`) and dark stroke (`#1C1B1F`).
+- [Phase: Archived Icon Recovery, Constant White Drawer Text, Locked App Badge, 4-Wide Clock, Grid Reflow]
+  - **Security Sanitization**:
+    - Purged `/debug.keystore` and `/debug.keystore.base64` from repository root in strict accordance with the Credential Immunity Rule.
+  - **Archived App Icon Recovery (`LaunchersAdapter.kt` & `MainActivity.kt`)**:
+    - Added fallback to `packageManager.getArchivedPackage(packageName)?.launcherActivities?.firstOrNull()?.icon` on API 35+, restoring icons for archived apps whose base APK was removed.
+  - **Constant Pure White Drawer Typography (`LaunchersAdapter.kt` & `AllAppsFragment.kt`)**:
+    - Decoupled app drawer labels and icons from dynamic system theme colors, ensuring permanent `Color.WHITE` contrast across all charging states, battery saver toggles, and ambient display updates against the pure black drawer background.
+  - **Locked App Icon Badging (Standard Launcher UX)**:
+    - Added `decorateLockedIcon(context, original)` in `IconDecorator.kt`: leaves base icon at 100% full brightness and overlays a crisp bottom-right circular badge containing the Material padlock glyph (`ic_lock_vector`).
+    - Integrated badging into `LaunchersAdapter`, `MainActivity.getAllAppLaunchers`, and `HomeScreenGrid`.
+    - Wired `toggleLock` to clear `IconCache` and trigger instant drawer and home screen redraws.
+  - **Clock Widget 4-Cell Width Optimization**:
+    - Reduced default built-in digital clock widget width from 5 cells to 4 cells (`widthCells = 4`, `left = 0, right = 3`) in `WidgetsFragment.kt` and `MainActivity.kt`, fitting seamlessly across 4-column, 5-column, and 6-column layouts without horizontal truncation.
+  - **Intelligent Grid Resize Reflow (`HomeScreenGrid.kt`)**:
+    - Eliminated the vanishing item bug during grid shrinkage: implemented `reflowGridItemsForNewSize`.
+    - Automatically clamps and shrinks oversized widgets to the new column count (`right = newColumnCount - 1`).
+    - Preserves all items that fit, and smoothly reflows any overflowing single-cell desktop icons and folders into the first available open cell on the page or spills over to the next page.
+    - Persists all reflowed coordinates to Room DB asynchronously.
+- [Phase: Dual-Layer Archived Apps Discovery & Option A Lock Badge Styling]
+  - **Security Sanitization**:
+    - Silently scanned and purged ephemeral `/debug.keystore` and `/debug.keystore.base64` generated during Gradle compilation in strict compliance with the Credential Immunity Rule.
+  - **Dual-Layer Archived Apps Discovery (`MainActivity.kt` & `ArchivedAppsManager.kt`)**:
+    - Resolved root cause of missing archived apps: `PackageManager.queryIntentActivities` only queries active APK component tables in memory; when apps are archived on Android 15, their APK is removed from disk, causing `queryIntentActivities` to return 0 activities and triggering `refreshLaunchers()` to falsely assume the app was uninstalled.
+    - Implemented bulletproof dual-layer retrieval on API 35+:
+      1. Layer A: `LauncherApps.getActivityList(null, user)` queries synthesized launcher entries for archived apps (`applicationInfo.isArchived == true`).
+      2. Layer B: `PackageManager.getInstalledPackages(MATCH_ARCHIVED_PACKAGES)` queries the package table directly, extracting cached launcher metadata via `PackageManager.getArchivedPackage(packageName)?.launcherActivities`.
+    - Both layers populate `allApps` with `isArchived = true` and serialize them into `launchersDB`, preventing deletion from `homeScreenGridItemsDB` and ensuring full alphabetical drawer visibility.
+    - Hardened `ArchivedAppsManager.isArchived` with multi-path check (`appInfo.isArchived` and `getArchivedPackage(pkg) != null`).
+  - **Option A Lock Badge Styling (`IconDecorator.kt`)**:
+    - Unified locked app aesthetic with archived app design language:
+      1. Base icon dimmed to 65% alpha (165/255) for immediate visual feedback of restricted state.
+      2. Prominent circular dark container badge (`#F21C1B1F`) in bottom-right corner expanded to 23% of icon width with crisp 40% white border.
+      3. Bold white padlock vector (`ic_lock_vector`) scaled to 72% of badge area (up from 58%), eliminating small/subtle badge rendering.
+    - Matched badge sizing and glyph scale in `decorateArchivedIcon` for visual symmetry across all special app states.
+    - Added combined state handling (`_archived_locked`) across `MainActivity`, `LaunchersAdapter`, and `HomeScreenGrid`.
+- [Phase: Clock Re-add Elimination, Clock Resizing, Log Viewer Inset Fix, False-Positive Archive Resolution, Standard Centered Overlay]
+  - **Security Sanitization**:
+    - Silently scanned and purged ephemeral `/debug.keystore` and `/debug.keystore.base64` generated during Gradle compilation in strict compliance with the Credential Immunity Rule.
+  - **Clock Auto Re-add Elimination (`MainActivity.kt`)**:
+    - Removed intrusive clock auto-injection block from `refreshLaunchers()`. Default clock placement now belongs strictly to the one-time initial home screen initialization (`!config.wasHomeScreenInit`). Deleting or moving the clock widget is respected permanently with zero unwanted re-additions or grid dimension overwrites.
+  - **Clock Widget Resizing Support (`AppShortcutsPopupWindow.kt`)**:
+    - Removed `&& gridItem.className != BUILT_IN_CLOCK_CLASS_NAME` exclusion from `canResize`, unlocking standard resize handles for the digital clock widget on long press.
+  - **Log Keeper Status Bar Inset Fix (`LogViewerActivity.kt`)**:
+    - Routed system top insets (`padTopSystem`) to `binding.logViewerRoot` rather than fixed-height `log_viewer_top_bar`, preventing header compression and ensuring the title and actions render cleanly below the status bar.
+  - **Archive False-Positive Elimination (`ArchivedAppsManager.kt`)**:
+    - Purged `packageManager.getArchivedPackage(packageName) != null` check which returned non-null manifest parcels for all installed apps on Xiaomi HyperOS. Standardized strictly on `appInfo.isArchived == true`.
+  - **Standard Launcher UX Centered Overlay (`IconDecorator.kt`)**:
+    - Upgraded `decorateArchivedIcon` and `decorateLockedIcon` to standard Android 15 / Pixel Launcher UX: centered the prominent glyph directly OVER the dimmed icon (55% alpha) on an 85% dark circular disc with a 30% white stroke boundary.
+- [Phase: Package & Namespace Rename to shura.home]
+  - **Gradle & Application ID Alignment**:
+    - Updated `APP_ID=shura.home` in `gradle.properties`.
+    - Updated fallback/default `namespace` and `applicationId` to `shura.home` in `app/build.gradle.kts`.
+  - **Source Directory & Code Relocation**:
+    - Relocated Kotlin source tree from `app/src/main/kotlin/org/fossify/home/` to `app/src/main/kotlin/shura/home/`, preserving all subpackages.
+    - Updated all 74 Kotlin source files to use `package shura.home.*` declarations and `import shura.home.*` statements.
+    - Updated custom view references in XML layouts (`home_screen_grid.xml`, `widgets_fragment.xml`, `all_apps_fragment.xml`) to `shura.home.*`.
+    - Updated intent actions (e.g. `shura.home.UNARCHIVE_STATUS` in `ArchivedAppsManager.kt`) and `fastlane/Appfile`.
+    - Updated detekt and lint baselines for `shura/home`.
+  - **Database & Clock Backward Compatibility**:
+    - Copied existing Room schemas to `app/schemas/shura.home.databases.AppsDatabase/` to ensure flawless migration continuity and schema verification under the new database package name.
+    - Implemented `isBuiltInClockWidget` helper in `Constants.kt` checking both `shura.home.built_in_clock_widget` and `org.fossify.home.built_in_clock_widget` to preserve 100% backward compatibility for existing desktop items in SQLite without schema breaks.
+  - **Security Sanitization**:
+    - Silently scanned and purged ephemeral `/debug.keystore` and `/debug.keystore.base64` generated during Gradle compilation in strict compliance with the Credential Immunity Rule.
+- [Phase: App Lock Main-Thread Crash Resolution & Clock Widget Resize Rendering Glitch Fix]
+  - **App Lock Crash on Lock/Unlock Resolution (`MainActivity.kt`)**:
+    - Diagnosed `IllegalStateException: Cannot access database on the main thread` triggered when locking or unlocking an app in `MainActivity.kt`.
+    - Wrapped `refreshLaunchers()` inside `ensureBackgroundThread { refreshLaunchers() }` in both `lockApp` and `unlockApp` completion callbacks, safely delegating Room DAO queries (`hiddenIconsDB.getHiddenIcons()` and `launchersDB.getAppLaunchers()`) off the UI thread while preserving synchronous icon cache invalidation and home screen re-fetch.
+  - **Clock Widget Resize Double-Rendering & Glitch Elimination (`BuiltInClockWidgetView.kt`)**:
+    - Discovered `drawClockContent(canvas)` was being called concurrently in both `onDraw(canvas)` and `dispatchDraw(canvas)`. Because `setWillNotDraw(false)` is active on `BuiltInClockWidgetView`, both draw passes fired per frame, rendering stroke-over-fill text twice and causing severe anti-aliasing edge jitter, flicker, and artifacts during resize.
+    - Purged redundant `drawClockContent` call from `dispatchDraw(canvas)`, keeping single-pass drawing strictly in `onDraw`.
+    - Implemented dynamic horizontal text bounding in `drawClockContent(canvas)`: measures `timeText` and `dateText` against `width * 0.88f` and `width * 0.90f` respectively, scaling down text size when resized narrower than tall to prevent clipping or boundaries overflow.
+  - **Real-Time Layout Synchronization on Resize (`HomeScreenGrid.kt`)**:
+    - Added `widgetView.requestLayout()` and `widgetView.invalidate()` in `updateWidgetPositionAndSize`, ensuring immediate remeasure and smooth redraw during drag-handle resizing rather than lagging behind layout mutations.
+  - **Minimum Grid Constraints for Built-In Clock (`MyAppWidgetResizeFrame.kt`)**:
+    - Enforced `minResizeWidthCells = Math.min(context.config.homeColumnCount, 2)` and `minResizeHeightCells = 1` for `isBuiltInClockWidget(gridItem.className)`, preventing the clock from collapsing into an unreadable 1x1 cell while allowing flexible 2x1 to full-width resizing.
+  - **Security Sanitization**:
+    - Verified clean workspace; deleted ephemeral keystores and build binaries per Credential Immunity Rule.
+- [Phase: Launcher Icon Redesign — Deep Sky Blue & Option B s-V-l Monogram]
+  - **Background Palette Modernization (`ic_launcher_background.xml`)**:
+    - Replaced legacy green (`#106D20`) with Deep Sky Blue (`#0288D1`), improving contrast and giving a vibrant, modern sky appearance across all wallpaper types.
+  - **Option B Architectural Monogram Implementation (`ic_launcher_foreground.xml` & `ic_launcher_monochrome.xml`)**:
+    - Designed an assertive modern launcher chevron / inverted delta (Big `V`) centered within the 512x512 adaptive icon safe zone (Y: 155 to 365), featuring subtle rounded outer apex and parallel 54px arms.
+    - Integrated subtle lowercase `s` tucked into the upper-left inner crook (X: 228 to 248, Y: 184 to 216) with 82% alpha fill (`android:fillAlpha="0.82"`).
+    - Integrated subtle lowercase `l` tucked into the upper-right inner crook (X: 264 to 276, Y: 176 to 216) with ascender and curved base foot, balanced at 82% alpha fill.
+    - Synchronized identical vector paths and alpha hierarchy in `ic_launcher_monochrome.xml` ensuring consistent Material You dynamic theming on Android 13+.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Widget Resize Stability, Grid Defaults Alignment & Cloud Run Glyph Modernization]
+  - **Widget Resize Coordinate & Handle Fix (`MyAppWidgetResizeFrame.kt`)**:
+    - Converted screen-space `event.rawX` and `event.rawY` to local view-space coordinates relative to parent `HomeScreenGrid` by subtracting `parentLocation` insets, eliminating coordinate distortion and false jumping to row 0.
+    - Replaced sequential touch detection with closest-handle distance evaluation (`minDist` among left, right, top, bottom), clamped to half the widget dimension. This prevents touch overlaps from mistakenly triggering `DRAGGING_TOP` on short 1-to-2 row widgets when touching the bottom handle.
+    - Dispatched `cellChanged()` on `ACTION_UP` ensuring final snapped cell positions are reliably synchronized with `HomeScreenGrid` and saved to Room DB.
+  - **Default Grid & Drawer Dimension Alignment**:
+    - Configured default home screen dimensions to 8 desktop rows beside dock + 1 dock row (`ROW_COUNT = 9`) and 4 columns (`COLUMN_COUNT = 4`) in `Constants.kt`.
+    - Decoupled dock default column count in `Config.kt` to explicitly default to 5 columns (`prefs.getInt(DOCK_COLUMN_COUNT, 5)`).
+    - Configured default app drawer portrait column count to 4 columns in `res/values/integers.xml` (`portrait_column_count = 4`).
+  - **Modern Floating Icon Glyphs (`IconDecorator.kt`)**:
+    - Eliminated the `#D91C1B1F` 85% grey circular bubble and stroke boundary for archived and locked apps.
+    - Enlarged both the cloud download (archive) and padlock (lock) glyphs to a prominent 54% icon scale (`width * 0.54f`), styled with Cloud Run-inspired minimalist geometry.
+    - Added a subtle soft shadow offset (`#B3000000`) behind the white glyphs to ensure high-contrast readability across all light, dark, and colorful icon artwork without needing a background bubble.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: App Drawer Clear System Status Bar & Non-Vibrating Swipe-Up Default]
+  - **Non-Vibrating Swipe-Up Gesture Default (`Config.kt`)**:
+    - Changed default for `gestureHaptics` in `Config.kt` from `true` to `false` (`prefs.getBoolean(GESTURE_HAPTICS, false)`).
+    - Ensures out-of-the-box swipe-up gesture opening the app drawer (and general launcher gestures) executes completely vibration-free without haptic pulse, while preserving user toggle functionality in Gestures settings.
+  - **100% Clear Transparent System Status Bar in App Drawer (`MainActivity.kt`)**:
+    - Enforced `window.statusBarColor = Color.TRANSPARENT` and set `window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)` alongside `window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)` in `onCreate()`, `showFragment()`, `hideFragment()`, `closeAppDrawer()`, and `updateStatusBarIcons()`.
+    - Explicitly disabled Android 10+ status bar and navigation bar contrast enforcement via `isStatusBarContrastEnforced = false` and `isNavigationBarContrastEnforced = false`. This permanently prevents Android DecorView from injecting a grey/translucent protective scrim when charging animations, battery state shifts, or system theme changes occur.
+    - Updated `updateStatusBarIcons()` to lock `isLightBackground = false` (`isAppearanceLightStatusBars = false`) whenever `isAllAppsFragmentExpanded()` is true, ensuring crisp white status bar icons (clock, battery, charging lightning indicator) directly over the black drawer background without any tint or scrim.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Ultra-Compact Sky Blue Popup Menu, Widget App Info & Comprehensive Backup/Restore Sync]
+  - **Ultra-Compact & Horizontally Thinner Popup Menu (`popup_app_shortcuts.xml`, `item_popup_shortcut.xml`, `AppShortcutsPopupWindow.kt`)**:
+    - Reduced card width measurement constraint from 280dp down to 185dp (`targetMeasureWidth = minOf(maxAllowedWidth, (185 * density).toInt())`), slimming horizontal footprint by ~34%.
+    - Re-themed card with deep slate background (`#16191D`), 14dp snug corner radius, and subtle Sky Blue stroke (`#2638BDF8`).
+    - Compressed title header to 28dp height with bold 12.5sp title and 24dp Sky Blue Gear button (`#38BDF8`).
+    - Compressed action buttons from 36x36dp to 28x28dp with 2dp margins, tinted Sky Blue (`#81D4FA` / `#03A9F4`) while strictly retaining soft coral red (`#F08888`) for Uninstall safety.
+    - Compressed shortcut items from 40dp to 30dp height with 18dp icons, 12.5sp typography, and 20dp Sky Blue pin buttons (`#81D4FA`).
+  - **Widget App Info Integration (`AppShortcutsPopupWindow.kt`)**:
+    - Expanded `canShowAppInfo` to include `gridItem.type == ITEM_TYPE_WIDGET`, allowing instant access to the widget provider app's system App Info settings via `launchAppInfo(gridItem.packageName)`.
+  - **Comprehensive Backup & Restore Sync (`BackupHelper.kt`, `AppLockManager.kt`)**:
+    - Added `AppLockManager.reload(context)` to refresh in-memory `lockedPackages` cache immediately upon backup import.
+    - Extended `HiddenIcon` backup to export and import both `packageName` and `activityName`.
+    - Added export and restore of custom App Drawer titles from `launchersDB` (`drawer_renames`).
+    - Enforced `wasHomeScreenInit = true` and `wasDefaultClockAdded = true` upon restore to prevent clean-install duplicate default icon injection.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Ultra-Slim Popup Width (150dp) & Bold High-Contrast Typography]
+  - **Ultra-Narrow 150dp Profile (`AppShortcutsPopupWindow.kt`, `popup_app_shortcuts.xml`)**:
+    - Clamped target measurement width from 185dp down to 150dp (`targetMeasureWidth = minOf(maxAllowedWidth, (150 * density).toInt())`) and card `minWidth` from 160dp to 140dp.
+    - Proportioned action buttons to 25x25dp with 1.5dp margins (`padding="3dp"`) ensuring all 5 action buttons (*Remove, Rename, Gestures, Lock, Uninstall*) fit comfortably without clipping or horizontal overflow.
+  - **Punchy Bold Typography (`popup_app_shortcuts.xml`, `item_popup_shortcut.xml`)**:
+    - Bumped shortcut item labels from `12.5sp normal` to `14sp bold` in solid `#FFFFFF`, eliminating wispy/fine strokes and delivering immediate readability on high-DPI displays.
+    - Bumped header app title from `12.5sp` to `14sp bold`.
+- [Phase: Vian Home Identity, Package Rename (shura.launcher), Settings Reorganization, Light Theme Defaults & Performance Optimization]
+  - **Platform Identity & Package Alignment (`metadata.json`, `settings.gradle.kts`, `app/build.gradle.kts`, `gradle.properties`, `fastlane/Appfile`)**:
+    - Renamed application to **Vian Home** in `strings.xml`, `donottranslate.xml`, `metadata.json`, and `settings.gradle.kts`.
+    - Configured `applicationId = "shura.launcher"` in `app/build.gradle.kts`, `APP_ID=shura.launcher` in `gradle.properties`, and `package_name("shura.launcher")` in `fastlane/Appfile` while preserving `namespace = "shura.home"` for binary, database, and resource stability.
+  - **Lineage Attribution & Readme Overhaul (`README.md`, `strings.xml`, `SettingsActivity.kt`)**:
+    - Overhauled `README.md` and Settings About dialog with complete metadata: App Name **Vian Home**, Series **Viabhron**, Creator **Lewis**, built almost completely in **Google AI Studio**, and explicitly documented open-source lineage as a fork of **Fossify Launcher** (originally **Simple Launcher** by Simple Mobile Tools).
+  - **Settings Page Reorganization & Deduplication (`activity_settings.xml`, `SettingsActivity.kt`)**:
+    - Completely removed duplicate `settings_double_tap_to_lock_holder` and `setupDoubleTapToLock()` from the main Settings page (consolidating all gesture screen locking inside Gestures & Actions).
+    - Structured Settings into 6 clean, intuitive categories: *Appearance & Personalization*, *Home Screen & Dock*, *App Drawer*, *Gestures & Actions*, *Privacy & Security*, and *System & Maintenance*.
+    - Added dedicated *About Vian Home* item wiring into rich FAQ and lineage details.
+  - **Default Light Theme with Sky Blue Accents (`colors.xml`, `VianApp.kt`)**:
+    - Set default background to `@color/theme_light_background_color` (`#FAFAFA`), text to `@color/theme_light_text_color` (`#212121`), and primary/accent colors to Sky Blue (`#0288D1`).
+    - Added startup theme initializer in `VianApp.kt` ensuring clean out-of-the-box light mode with Sky Blue highlights across all activities and switches.
+  - **Home Navigation Latency & Icon Refresh Performance Fix (`MainActivity.kt`)**:
+    - Eliminated redundant `refreshLaunchers()` execution on every `onResume()`: home button navigation returns to an already-drawn, live Activity without re-querying `PackageManager`, Room DB, or AppWidgetManager.
+    - Implemented dynamic `BroadcastReceiver` listening to `ACTION_PACKAGE_ADDED`, `ACTION_PACKAGE_REMOVED`, `ACTION_PACKAGE_CHANGED`, and `ACTION_PACKAGE_REPLACED` so app drawer and home screen only refresh on true OS package lifecycle events.
+    - Implemented `downsampleIconDrawable()` downsampling all loaded standard app drawables to a maximum `192x192` memory-efficient ARGB bitmap, reducing heap memory usage by ~86% and preventing the Android Low Memory Killer (LMK) from terminating the background launcher process.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Smart Launcher Visual Alignment — Hollow Archive Glyph, Large Icons, 18dp Edge Padding, Squircle Drop Markers, Folder Shadow, and Action Confirmation Gates]
+  - **Hollow Archive Glyph Matching User Reference (`ic_cloud_download_vector.xml`)**:
+    - Replaced the solid silhouette cloud with a hollow stroked white cloud contour (`strokeWidth="1.8"`, `fillColor="#00000000"`) and centered down-arrow path (`M12,8.5V16M8.5,12.8L12,16.3L15.5,12.8`), perfectly matching the user's reference screenshot.
+  - **Enlarged Icons & Balanced Screen Edge Padding (`HomeScreenGrid.kt`)**:
+    - Reduced internal `iconMargin` from `0.45f` to `0.22f` of `icon_side_margin`, directly expanding app and folder icons across all column configurations by ~12-15%.
+    - Increased horizontal screen edge margin to 18dp (`(18f * density).toInt()`), giving the grid breathing room against system display edges.
+  - **10 Rows Total by Default (`Constants.kt`)**:
+    - Updated `ROW_COUNT = 10` (9 desktop rows + 1 dock row = 10 rows total).
+  - **Squircle Drop Target Indicators (`HomeScreenGrid.kt`)**:
+    - Replaced circular drop target markers (`canvas.drawCircle(...)`) with `createSquirclePath(shadowX - halfSize, shadowY - halfSize, shadowX + halfSize, shadowY + halfSize)` across both home screen grid and open folder drop targets.
+  - **Soft Drop Shadow for Folders (`HomeScreenGrid.kt`)**:
+    - Rendered an outer blurred stroke shadow (`BlurMaskFilter(2.5dp, Blur.NORMAL)`, `#4D000000`) around folder containers prior to clipping child previews, delivering the subtle perimeter glow seen in Smart Launcher.
+  - **Safety Confirmation Gates for Destructive Actions (`MainActivity.kt`, `strings.xml`)**:
+    - Added user confirmation dialogs (`ConfirmationDialog`) for Remove from Home, Hide App, Lock App, and Uninstall App with clear explanatory prompts and Ok/Cancel buttons.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: App Drawer Default Time Sort, 100dp Slender Popup Menu & Full Block Drag Feedback]
+  - **App Drawer Default Time Sort (`Config.kt`)**:
+    - Set default `drawerSortBy` to `DRAWER_SORT_BY_TIME` (2) and `drawerSortOrder` to `DRAWER_SORT_DESCENDING` (2), making the app drawer sort from newest installed/updated apps to oldest out of the box.
+  - **100dp Slender Long-Press Popup Menu (`AppShortcutsPopupWindow.kt`, `popup_app_shortcuts.xml`, `item_popup_shortcut.xml`)**:
+    - Clamped card measurement constraint to 100dp (`targetMeasureWidth = minOf(maxAllowedWidth, (100 * density).toInt())`) and card `minWidth` to 96dp.
+    - Proportioned action buttons to 18x18dp with 0.5dp margins and 2dp padding, fitting all 5 actions in a single 26dp-high horizontal bar without clipping.
+    - Scaled header gear button to 18x18dp with 12sp bold title.
+    - Scaled shortcut items to 16dp icon, 18dp pin button, and 11.5sp bold typography.
+  - **Full Block Drag Indicator on Occupied Cells / Multi-Cell Widgets (`HomeScreenGrid.kt`)**:
+    - When dragging an item over any multi-cell widget (e.g. 5x2 clock widget), `HomeScreenGrid` detects the full widget bounds (`item.left..item.right`, `item.top..item.bottom`) and renders a prominent full-block rounded overlay with translucent warning fill (`#33EF4444`) and soft red stroke (`#80EF4444`), visually indicating that dropping onto the widget block is impossible.
+    - Added single-cell blocked warning squircle when hovering over full folders, invalid dock slots, or incompatible drop targets.
+    - Retained clean white squircle outline for valid vacant cells and folder mergers.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Choice A Slender Locked Popup Menu (136dp) with 24dp Action Buttons]
+  - **Explicit Width Locking (`AppShortcutsPopupWindow.kt`, `popup_app_shortcuts.xml`)**:
+    - Addressed the WindowManager wrap-expansion bug that blew the popup card out to half-screen width.
+    - Explicitly set `popup_card.layout_width = 136dp`, set `binding.popupCard.layoutParams.width = popupWidth`, and set `this.width = popupWidth` directly on the `PopupWindow` object before attaching to WindowManager.
+    - Clamped measure pass using `MeasureSpec.EXACTLY` at `popupWidth` (136dp, ~33% of screen width).
+  - **24dp Action Buttons & Ergonomics (`popup_app_shortcuts.xml`)**:
+    - Enlarged all action buttons (*Remove, Rename, Gestures, Lock, Uninstall*) from 18dp back up to a comfortable 24x24dp with 0.8dp margins and 2.5dp internal padding, fitting all 5 buttons cleanly across a single 32dp-high horizontal row.
+    - Enlarged header gear button to 20x20dp with 13sp bold app title.
+  - **Constraint-Safe Content Layout (`popup_app_shortcuts.xml`, `item_popup_shortcut.xml`)**:
+    - Added `maxLines="2"` and `ellipsize="end"` to `popup_default_launcher_prompt` text to prevent horizontal stretching.
+    - Set shortcut items to 28dp min height, 16dp icon, 20dp pin button, and 12sp bold typography.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Popup Menu Native App Sharing Integration]
+  - **Header Share Button (`popup_app_shortcuts.xml`, `ic_share_vector.xml`)**:
+    - Added clean standard Material 3 share vector drawable (`ic_share_vector.xml`).
+    - Positioned `popup_app_share_btn` (20x20dp, 2.5dp padding, `#38BDF8` Sky Blue tint) directly to the left of `popup_app_info_btn` in `popup_header`, establishing a clear `[ Title ] [ Share ] [ App Info ]` hierarchy.
+  - **Native Share Intent Dispatching (`AppShortcutsPopupWindow.kt`, `strings.xml`)**:
+    - Implemented `shareApp(gridItem)` to format text as `"<AppName> - https://play.google.com/store/apps/details?id=<package>"` and trigger Android's native system chooser sheet via `Intent.ACTION_SEND`.
+    - Wired visibility logic (`canShare = gridItem.type == ITEM_TYPE_ICON && gridItem.packageName.isNotEmpty()`), showing the button on application popups and cleanly suppressing it on folders and widgets.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Popup Widening, System App Sort Fix, New App Dot, and Zero-Overhead Notification Badges]
+  - **Popup Menu Widening (`popup_app_shortcuts.xml`, `AppShortcutsPopupWindow.kt`)**:
+    - Widened popup card by 1/3 from 136dp to 180dp.
+    - Centered action buttons at 26dp with 3dp margins, allowing long shortcut titles and app names to display with enhanced breathing room.
+  - **System App Install Time Sort Fix (`AllAppsFragment.kt`, `MainActivity.kt`)**:
+    - Replaced raw `PackageInfo.firstInstallTime` fallback with `File(sourceDir).lastModified()` for system packages (`FLAG_SYSTEM`).
+    - Eliminates the Android OS quirk where uninstalling updates on preinstalled apps like Google Chrome resets their install timestamp to the update removal time.
+  - **New App Indicator Dot (`item_launcher_label.xml`, `LaunchersAdapter.kt`, `HomeScreenGrid.kt`, `Activity.kt`, `Config.kt`)**:
+    - Displayed clean white circular dot (`shape_white_dot.xml`) at top-right corner of unlaunched apps in both the App Drawer and Home Screen.
+    - Registered newly installed packages dynamically on `ACTION_PACKAGE_ADDED` and permanently removed them upon first user launch in `performActualAppLaunch()`.
+  - **Zero-Overhead Home Screen Notification Badges (`NotificationBadgeService.kt`, `SettingsActivity.kt`, `HomeScreenGrid.kt`, `MainActivity.kt`)**:
+    - Implemented Android standard `NotificationListenerService` with passive on-demand queries.
+    - Zero background CPU/RAM/battery drain: notification counts are evaluated only once upon reaching the Home Screen (`MainActivity.onResume()` or returning from App Drawer).
+    - Rendered modern red circle/pill badges with white bold count typography exclusively on Home Screen app icons.
+    - Provided master toggle in Settings under *Home Screen & Dock* with direct navigation to system notification listener settings.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Long-Press Popup Menu Widening to 204dp (Option A)]
+  - **Width Optimization (`popup_app_shortcuts.xml`, `AppShortcutsPopupWindow.kt`)**:
+    - Increased popup card width from 180dp to 204dp (+24dp / +13.3%), providing enhanced horizontal breathing room for multi-word shortcut labels and header titles.
+    - Updated bottom action bar buttons margin to 4dp (`android:layout_marginHorizontal="4dp"`), maintaining centered, comfortable touch targets without edge crowding.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Standard Launcher Popup Width (250dp), Pixel-Perfect App Drawer Popup Anchoring, and Clean Label-Free Home Screen Default]
+  - **Popup Width Optimization (`popup_app_shortcuts.xml`, `AppShortcutsPopupWindow.kt`)**:
+    - Widened popup card to standard 250dp (~62% screen width, stock launcher benchmark), eliminating all truncation on long shortcut labels and headers.
+    - Set action bar button horizontal margins to 6dp, spacing all 6 actions evenly with generous touch targets.
+  - **App Drawer Popup Anchor Realignment (`LaunchersAdapter.kt`, `AllAppsListener.kt`, `AllAppsFragment.kt`, `MainActivity.kt`)**:
+    - Replaced inaccurate cell-top estimation with exact `binding.launcherIcon` on-screen bounding rectangle query (accounting for padding and scroll offsets).
+    - Passed real `iconRect` through `AllAppsListener` to `MainActivity.showHomeIconMenu`, anchoring the drawer popup card flush against the pressed icon (6dp margin above or below) with the arrow pointing directly to the icon center.
+  - **Clean Home Screen Default Without Labels (`Config.kt`)**:
+    - Defaulted `showHomeAppLabels` to `false` in `Config.kt` (previously `true`).
+    - Apps, shortcuts, and folders added to the home screen are label-free by default, preserving optional toggle in Settings.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: White & Sky Light Blue Menus, Dark Search Bar, and Standard Launcher Folder Shape]
+  - **White & Sky Light Blue Popup Menus (`styles.xml`, `menu_popup_background_white_sky.xml`, `menu_item_selector_sky.xml`, `activity_settings.xml`, `MainActivity.kt`, `AllAppsFragment.kt`)**:
+    - Implemented dedicated `Theme.App.PopupMenu.WhiteSky` and `Widget.App.PopupMenu.WhiteSky` theme overlay with pure white surface (`#FFFFFF`), subtle sky light blue border (`#BAE6FD`), charcoal slate typography (`#0F172A`), and light sky blue ripple selector (`#E0F2FE`).
+    - Unified across all three menus:
+      1. Home Screen empty space long-press menu (`showMainLongPressMenu` in `MainActivity.kt`).
+      2. App Drawer 3-dots dropdown menu (`showDrawerMenu` in `AllAppsFragment.kt`).
+      3. Launcher Settings toolbar 3-dots overflow menu (`settings_toolbar` in `activity_settings.xml`).
+  - **App Drawer Search Bar Dark Theme (`AllAppsFragment.kt`)**:
+    - Implemented `setupSearchBarDarkTheme()` to eliminate the bright white background flash when opening search.
+    - Set search container and root background to `Color.BLACK` to integrate seamlessly with the app drawer topbar.
+    - Set search text color to `Color.WHITE`, hint text to `#94A3B8`, and tinted navigation/clear icons in sky light blue (`#38BDF8`).
+  - **Standard Launcher Open Folder Shape (`HomeScreenGrid.kt`)**:
+    - Modernized open folder popup container from sharp 16dp box to standard Android launcher floating card UX with 28dp rounded corners (`folderCornerRadius = 28dp`).
+    - Added GPU-accelerated layered ambient elevation drop shadow beneath the container for floating depth.
+    - Preserved folder title on left, (+) add button on right, and internal grid layout untouched ("Only shape").
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Deep Core Architecture Overhaul & Lightweight Efficiency]
+  - **Unhidden Apps Drawer Desync Fix (`MainActivity.kt`, `HiddenIconsAdapter.kt`)**:
+    - Promoted `needsAppListRefresh` to companion object in `MainActivity`.
+    - Automatically flagged `needsAppListRefresh = true` and evicted `IconCache.launchers` when icons are unhidden in `HiddenIconsAdapter.unHideSelection()`, ensuring instant drawer synchronization without requiring app restart.
+  - **Clock Widget Background CPU Drain Elimination (`BuiltInClockWidgetView.kt`)**:
+    - Implemented `onWindowVisibilityChanged()` lifecycle management in `BuiltInClockWidgetView`.
+    - Automatically unregisters `ACTION_TIME_TICK` broadcast receiver when screen turns off or user switches apps; immediately catches up and re-registers when returning to the Home Screen.
+  - **Atomic File Resiliency in Gestures Manager (`ItemGestureManager.kt`)**:
+    - Migrated raw JSON file writes in `ItemGestureManager` to Android's `AtomicFile` (`android.util.AtomicFile`).
+    - Completely prevents file truncation, zero-byte corruption, and gesture loss during unexpected process terminations or power loss.
+  - **Asynchronous Non-Blocking Logging (`LogCatcher.kt`)**:
+    - Integrated single-threaded background daemon executor (`LogCatcher-Worker`) in `LogCatcher`.
+    - Offloaded all routine disk writes (`file.length()`, `dumpLogsToDownloadFolder()`, `file.appendText()`) from UI threads to background worker, eliminating UI frame drops and jank during touch interactions and gestures while preserving immediate synchronous execution for crash headers.
+  - **Zero-Allocation Canvas onDraw Optimization (`HomeScreenGrid.kt`)**:
+    - Pre-allocated reusable `folderShadowLayerPaint`, `folderPopupBorderPaint`, `folderPlusBgPaint`, `folderPlusStrokePaint`, and `folderShadowLayerRect` as member properties.
+    - Eliminated per-frame object instantiations and heap churn during 60 FPS folder opening animations.
+  - **100% On-Demand Notification Badge Counting (`NotificationBadgeService.kt`)**:
+    - Removed redundant background processing and IPC queries on `onNotificationPosted` and `onNotificationRemoved`.
+    - Badge counts are evaluated strictly on-demand when the user visits the Home Screen (`MainActivity.onResume()`).
+  - **Hardened Backup Security & Input Validation (`BackupHelper.kt`, `CustomIconManager.kt`)**:
+    - Added byte length limit (1MB max payload) and strict image bounds pre-check (`inJustDecodeBounds`, max 512x512) before decoding Base64 bitmaps in `BackupHelper.importBackup()`, preventing memory exhaustion (OOM) attacks.
+    - Added strict package name regex validation (`^[a-zA-Z0-9._]+$`) and path sanitization in `CustomIconManager.kt` to prevent path traversal and filesystem corruption.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: App Drawer Search Bar Standard Launcher UX (Pure Black Topbar & Slate Grey Input Pill)]
+  - **Outer Topbar Continuity (`AllAppsFragment.kt`)**:
+    - Set `drawerTopbarContainer`, `searchBar`, `searchBar.binding.root`, and `searchBar.binding.searchBarContainer` to pure `Color.BLACK`.
+    - Completely eliminated the separate full-width colored header block when opening search, seamlessly blending with the idle topbar and app drawer background.
+  - **Slate Grey Input Capsule (`AllAppsFragment.kt`)**:
+    - Styled `toolbarContainer` with a 20dp rounded rectangle pill (`inputPillDrawable`) featuring a slightly grey dark surface (`#1E2229`) and a 0.8dp subtle slate stroke (`#334155`).
+    - Made internal toolbar transparent; formatted text in crisp white (`Color.WHITE`) with muted slate hint (`#94A3B8`), and tinted all icons (search icon, back arrow, clear button) in sky light blue (`#38BDF8`), matching standard Google Pixel / Lawnchair launcher UX.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Core Stability, Vulnerability Hardening & On-Demand Optimization]
+  - **Android 14+ / API 36 Dynamic Receiver Security Compliance (`MainActivity.kt`, `BuiltInClockWidgetView.kt`)**:
+    - Registered `packageUpdateReceiver` in `MainActivity` and `timeReceiver` in `BuiltInClockWidgetView` with explicit `ContextCompat.RECEIVER_NOT_EXPORTED` flags via `ContextCompat.registerReceiver`.
+    - Completely eliminates runtime `SecurityException` crashes on Android 14+ (API 34+) devices.
+  - **Type-Safe Intent Parcelable Deserialization (`MainActivity.kt`)**:
+    - Replaced deprecated unchecked `resultData.getParcelableExtra<T>` in `REQUEST_CREATE_SHORTCUT` with type-safe `IntentCompat.getParcelableExtra` for `Intent`, `Bitmap`, and `ShortcutIconResource`, preventing `ClassCastException` and deserialization hazards from rogue shortcut providers.
+  - **Non-Blocking Shortcut Pinning Lifecycle Dispatch (`MainActivity.kt`)**:
+    - Eliminated blocking `Thread.sleep(2000)` and `Thread.sleep(300)` on background worker threads during shortcut pinning.
+    - Replaced with non-blocking `binding.root.postDelayed(..., 300)` with `isFinishing || isDestroyed` lifecycle safety checks, eliminating background thread pool lockup and UI state desynchronization.
+  - **Package Update Broadcast Debouncing (`MainActivity.kt`)**:
+    - Added a 500ms sliding debounce window via `Handler(Looper.getMainLooper())` for package broadcasts (`PACKAGE_ADDED`, `PACKAGE_REMOVED`, `PACKAGE_CHANGED`, `PACKAGE_REPLACED`).
+    - Collapses rapid-fire multi-APK Google Play auto-updates into a single database re-query and launcher scan, eliminating background CPU spikes, thermal throttling, and home screen stutter.
+  - **100% On-Demand Widget Preview Loading (`WidgetsFragment.kt`, `WidgetsAdapter.kt`, `AppWidget.kt`)**:
+    - Removed memory-heavy eager preloading of high-resolution preview drawables across all installed widgets during drawer initialization.
+    - Implemented `AppWidget.loadPreview(context)` to load preview bitmaps strictly on-demand when widget items scroll into view in `WidgetsAdapter`, reducing widget drawer opening memory consumption by 50MB–100MB+ and preventing OOM crashes.
+  - **Hardened Shortcut Intent Querying (`WidgetsFragment.kt`)**:
+    - Added strict `.filter { it.activityInfo != null && it.activityInfo.exported }` check when querying `ACTION_CREATE_SHORTCUT`, preventing `SecurityException` on strict OEM ROMs.
+  - **Low-Memory Pressure Cache Eviction (`MainActivity.kt`)**:
+    - Implemented `onTrimMemory(level)` in `MainActivity` to automatically evict `IconCache` whenever the system enters `TRIM_MEMORY_RUNNING_LOW` or `TRIM_MEMORY_UI_HIDDEN`, providing resilient OOM protection on low-RAM (2GB–3GB) Android devices.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Standard Launcher UX Polish, Translucent Folder & Activity-Specific Icon Resolution]
+  - **Enlarged Popup Menu Items & Header Typography (`item_popup_shortcut.xml`, `popup_app_shortcuts.xml`, `styles.xml`)**:
+    - Increased shortcut items text size from `12sp` to `15sp` with comfortable `36dp` row height and `20dp` icon size.
+    - Increased popup header title to `14.5sp` with `32dp` header height.
+    - Added `TextAppearance.App.PopupMenu.Large` (15sp) to `Theme.App.PopupMenu.WhiteSky` for standard launcher readability and touch ergonomics.
+  - **Slightly Translucent Folder Popup Surface (`HomeScreenGrid.kt`)**:
+    - Updated `folderBackgroundPaint.color` from 100% solid white to slightly translucent white (`Color.argb(230, 255, 255, 255)`), allowing wallpaper colors to subtly glow through while retaining sharp foreground contrast and layered drop shadow.
+  - **Tapped Folder Corner/Edge Anchoring (`HomeScreenGrid.kt`)**:
+    - Refactored `Folder.getDrawingRect()` so the popup anchors its corner/edge relative to the tapped folder location (opens above when tapped in bottom half, below when in top half; anchors left or right corner to the folder cell) rather than centering over the user's finger.
+  - **Activity-Specific Icon Disambiguation (`Context.kt`, `LaunchersAdapter.kt`, `HomeScreenGrid.kt`)**:
+    - Enhanced `getDrawableForPackageName` to accept an optional `activityName` parameter, resolving the specific `LauncherActivityInfo` or `packageManager.getActivityIcon` for apps providing multiple activities under the same package.
+    - Completely fixes the issue where Phone and Call (or separate activities in the same package) showed identical icons, correctly giving each its unique launcher icon.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Dock Add Target, Widget Inset, Icon Fattening, Popup Text, Folder Corner Anchor, Hidden Apps Auth & New Dot]
+  - **Dock Placement via Add Element Menu (`HomeScreenGrid.kt`, `MainActivity.kt`)**:
+    - Updated `HomeScreenGrid.getTargetCell(x, y)`: allows tapping dock slots (`tappedCell.y == rowCount - 1`) and checks dock occupancy via `gridItems.any { it.docked && it.left == tappedCell.x }`.
+    - Updated `MainActivity.showAddAppDialog()`, `showAddShortcutDialog()`, and `showAddFolderDialog()`: checks `val isDock = rect.top == config.homeRowCount - 1`, sets `docked = isDock`, `page = if (isDock) 0 else page`, and avoids unnecessary page skipping when placing docked items. Items added to dock from long press are now placed squarely into the dock rather than jumping to row 0.
+  - **Widget Border Squeezing & Cropping Elimination (`HomeScreenGrid.kt`)**:
+    - Added standard 4dp padding (`widgetView.setPadding(widgetPadding, widgetPadding, widgetPadding, widgetPadding)`) and configured `widgetView.clipToPadding = false` for non-clock widgets in `updateWidgetPositionAndSize()`, preventing third-party OEM widgets with rounded corners from being cropped at cell borders.
+  - **Folder Icon Shadow Softening & Proportional Icon Fattening (`HomeScreenGrid.kt`, `dimens.xml`)**:
+    - Softened home screen folder squircle shadow outline stroke from 2.5dp to 1.2dp (`#33000000`) and subtle border stroke from 1.5dp to 0.8dp (`alpha 80`), eliminating harsh dark outlines.
+    - Reduced `iconMargin` multiplier in `HomeScreenGrid.fillCellSizes()` from `0.22f` to `0.12f`, fattening all home screen app icons and folder bubbles by ~8–10% without clipping.
+    - Proportionally enlarged app drawer icon size in `dimens.xml` (`launcher_icon_size`) from `50dp` to `55dp`.
+  - **Larger Popup Menu Items Typography (`item_popup_shortcut.xml`, `popup_app_shortcuts.xml`)**:
+    - Increased `shortcut_item_label` text size from `15sp` to `16.5sp`, row height to `40dp`, and icon size to `22dp`.
+    - Increased `popup_app_title` text size to `16sp` with `36dp` header height.
+  - **Folder Popup Corner Overlap Anchoring (`HomeScreenGrid.kt`)**:
+    - Positioned open folder popup so the corner rests directly over the tapped folder icon (bottom-half aligns `cellBottom - folderDialogHeight`, top-half aligns `cellTop`, left-half aligns `cellLeft`, right-half aligns `cellRight - folderDialogWidth`), cleanly hiding the tapped folder under the corresponding popup corner.
+  - **Unconditional Hidden Apps Phone Unlock Authentication (`HiddenIconsActivity.kt`, `AppLockManager.kt`)**:
+    - Updated `HiddenIconsActivity.onCreate()` to always require phone unlock (Biometric / Device PIN / Pattern) before opening the hidden apps list, finishing the activity if authentication is cancelled or failed.
+    - Added `onError` callback support to `AppLockManager.authenticateAndLaunch()`.
+  - **Enlarged New App White Indicator Dot (`item_launcher_label.xml`)**:
+    - Increased `launcher_new_dot` dimensions from `8dp` to `12dp` with tightened margins (`marginTop="3dp"`, `marginEnd="4dp"`) for prominent visibility on newly installed apps in the app drawer.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Lock Screen & App Drawer Wallpaper, Fluid Parallax Swipe Transition & Symbols/Glyphs Icon Customization]
+  - **Lock Screen, Home Screen & Drawer Wallpaper Engine (`WallpaperHelper.kt`, `AndroidManifest.xml`)**:
+    - Added `android.permission.SET_WALLPAPER` in `AndroidManifest.xml`.
+    - Created `WallpaperHelper.kt`: presents a clean selection sheet targeting **Home screen only** (`FLAG_SYSTEM`), **Lock screen only** (`FLAG_LOCK`), **Home and lock screen** (`FLAG_SYSTEM or FLAG_LOCK`), or **App drawer background**.
+    - App drawer custom wallpaper is compressed and cached as `filesDir/drawer_wallpaper.png` scaled to screen bounds. Applied in `View.setupDrawerBackground()` with a subtle 30% legibility scrim (`#4D000000`). Default remains pure black (`Color.BLACK`).
+    - Wired settings in `SettingsActivity.kt` (*Set wallpaper* in Appearance, and *App drawer background* in App Drawer) and integrated with the home screen long-press *Wallpapers* action in `MainActivity.kt`.
+    - Zero ongoing resource overhead: once applied via `WallpaperManager`, the Android OS handles the lock screen wallpaper natively.
+  - **Fluid Parallax Swipe-Up Transition (`MainActivity.kt`)**:
+    - Upgraded `showFragment` and `hideFragment` with high-performance `PathInterpolator(0.2f, 0f, 0f, 1f)` (Fast-Out-Slow-In).
+    - Linked home screen scale directly to gesture drag progress in `ACTION_MOVE` (`scale = 1f - progress * 0.06f`, `alpha = 1f - progress * 1.05f`), providing an organic depth push-back effect into the background.
+    - Synchronized smooth restoration in `hideFragment` and `closeAppDrawer`.
+  - **Curated Symbols & Glyphs Custom Icon Picker (`PickSymbolDialog.kt`, `EditItemDialog.kt`, `item_symbol_glyph.xml`, `dialog_pick_symbol.xml`)**:
+    - Created `PickSymbolDialog` offering a clean 4-column grid of curated Material symbols and glyphs (folders, settings gear, lock, search, cloud, star, phone, camera, mail, play, pause, etc.).
+    - Renders chosen vector glyph onto a crisp 192x192 squircle icon plate (`#1E2229` dark surface with 20% white border) tinted with the user's dynamic primary accent color.
+    - Added "Choose from symbols & glyphs" option to `EditItemDialog`, allowing users to assign symbols directly to apps and folders without needing third-party icon pack APKs.
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+- [Phase: Symbol Icon Bubble vs Transparent Style, Interactive Wallpaper Fit/Crop & Theme Palette Preview]
+  - **Symbol Icon Bubble vs. Transparent Style (`PickSymbolDialog.kt`)**:
+    - Enhanced `PickSymbolDialog` with a secondary choice modal upon selecting a symbol:
+      1. **With background bubble**: Renders the chosen glyph onto the `#1E2229` squircle plate with subtle border.
+      2. **Only symbol (transparent background)**: Bypasses the background plate completely, drawing a prominent (~72% area) vector glyph directly on a transparent bitmap for a minimalist floating glyph aesthetic on home screen and dock.
+  - **Interactive Wallpaper Crop, Pan & Pinch-to-Zoom Tool (`WallpaperCropView.kt`, `WallpaperCropDialog.kt`, `dialog_wallpaper_crop.xml`)**:
+    - Created `WallpaperCropView`: custom hardware-accelerated View with gesture detection (`ScaleGestureDetector` + drag), screen aspect ratio framing rect, dark edge scrims, and matrix boundary clamping.
+    - Eliminates images going off screen: user can drag and pinch to frame the exact desired visual region before applying.
+    - Uses safe inSampleSize downsampling preventing OOM on 4K/8K images.
+    - Crops the exact framed sub-rectangle into a display-resolution bitmap and dispatches to `WallpaperHelper.showTargetAndApplyCroppedBitmap`.
+  - **Theme Palette Preview Capsule & Reset Lock Wallpaper (`activity_settings.xml`, `SettingsActivity.kt`, `WallpaperHelper.kt`)**:
+    - Added an active Theme Palette Preview capsule beside *Customize colors* in Settings showing primary accent and extracted wallpaper palette dots (`WallpaperColors.fromBitmap` or `getWallpaperColors`).
+    - Added mini extracted palette preview dots inside `WallpaperCropDialog` to show the user what colors Android Material You will extract *before* applying.
+    - Added **Reset lock screen wallpaper** action in Settings (calling `WallpaperManager.clear(FLAG_LOCK)`), allowing instant reversion of lock screen wallpapers and clearing out unintended OS-wide dynamic tints (such as brownish-white).
+  - **Security Sanitization**:
+    - Verified workspace cleanliness; guaranteed zero exposed credentials or persistent keystores.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

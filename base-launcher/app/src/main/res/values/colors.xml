@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sky Blue Theme Accents (replacing legacy yellow/green) -->
+    <color name="color_primary">#0288D1</color>
+    <color name="default_primary_color">#0288D1</color>
+    <color name="default_accent_color">#0288D1</color>
+    <color name="default_app_icon_color">#0288D1</color>
+    <color name="default_widget_text_color">#0288D1</color>
+
+    <!-- Default Light Theme for Settings & Sub-Activities -->
+    <color name="theme_light_background_color">#FAFAFA</color>
+    <color name="theme_light_text_color">#212121</color>
+    <color name="default_background_color">#FAFAFA</color>
+    <color name="default_text_color">#212121</color>
+
+    <color name="semitransparent_navigation">#33000000</color>
+</resources>

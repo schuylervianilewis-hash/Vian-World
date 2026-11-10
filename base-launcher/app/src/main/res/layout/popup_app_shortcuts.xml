@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/popup_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="vertical">
+
+    <ImageView
+        android:id="@+id/popup_arrow_top"
+        android:layout_width="14dp"
+        android:layout_height="7dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_bubble_arrow_up"
+        android:visibility="gone"
+        app:tint="#16191D" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/popup_card"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        app:cardBackgroundColor="#16191D"
+        app:cardCornerRadius="14dp"
+        app:cardElevation="6dp"
+        app:cardPreventCornerOverlap="false"
+        app:strokeColor="#2638BDF8"
+        app:strokeWidth="0.8dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Top Header with App Name and Gear Icon -->
+            <RelativeLayout
+                android:id="@+id/popup_header"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:gravity="center_vertical"
+                android:paddingStart="12dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/popup_app_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_centerVertical="true"
+                    android:layout_marginEnd="4dp"
+                    android:layout_toStartOf="@id/popup_app_share_btn"
+                    android:ellipsize="end"
+                    android:singleLine="true"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:id="@+id/popup_app_share_btn"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_centerVertical="true"
+                    android:layout_marginEnd="2dp"
+                    android:layout_toStartOf="@id/popup_app_info_btn"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/share_app"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_share_vector"
+                    app:tint="#38BDF8" />
+
+                <ImageView
+                    android:id="@+id/popup_app_info_btn"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/app_info"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_settings_gear_vector"
+                    app:tint="#38BDF8" />
+            </RelativeLayout>
+
+            <View
+                android:id="@+id/popup_header_divider"
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
+                android:background="#1AFFFFFF" />
+
+            <!-- Shortcuts Container -->
+            <LinearLayout
+                android:id="@+id/popup_shortcuts_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp" />
+
+            <!-- Horizontal Action Pill Bar (24dp buttons in single clean row) -->
+            <LinearLayout
+                android:id="@+id/popup_actions_bar"
+                android:layout_width="match_parent"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp">
+
+                <ImageView
+                    android:id="@+id/popup_action_unarchive_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/unarchive_app"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_cloud_download_vector"
+                    android:visibility="gone"
+                    app:tint="#03A9F4" />
+
+                <ImageView
+                    android:id="@+id/popup_action_remove_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/remove"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_cross_vector"
+                    app:tint="#81D4FA" />
+
+                <ImageView
+                    android:id="@+id/popup_action_rename_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/custom_icon"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_rename_vector"
+                    app:tint="#81D4FA" />
+
+                <ImageView
+                    android:id="@+id/popup_action_gestures_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/gestures"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_touch_vector"
+                    app:tint="#81D4FA" />
+
+                <ImageView
+                    android:id="@+id/popup_action_hide_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/hide_icon"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_hide_vector"
+                    app:tint="#81D4FA" />
+
+                <ImageView
+                    android:id="@+id/popup_action_lock_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/lock_app"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_lock_vector"
+                    app:tint="#81D4FA" />
+
+                <ImageView
+                    android:id="@+id/popup_action_uninstall_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/uninstall"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_delete_vector"
+                    app:tint="#F08888" />
+
+                <ImageView
+                    android:id="@+id/popup_action_resize_btn"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_marginHorizontal="6dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/resize"
+                    android:padding="2.5dp"
+                    android:src="@drawable/ic_resize_vector"
+                    app:tint="#81D4FA" />
+
+            </LinearLayout>
+
+            <!-- Set as Default Launcher Prompt (constrained so it cannot expand width) -->
+            <LinearLayout
+                android:id="@+id/popup_default_launcher_prompt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#15FFFFFF"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:padding="6dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:text="@string/set_as_default_to_enable_shortcuts"
+                    android:textColor="#94A3B8"
+                    android:textSize="10.5sp" />
+
+                <TextView
+                    android:id="@+id/popup_btn_set_default"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:text="@string/set_default"
+                    android:textColor="#38BDF8"
+                    android:textSize="11.5sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <ImageView
+        android:id="@+id/popup_arrow_bottom"
+        android:layout_width="14dp"
+        android:layout_height="7dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_bubble_arrow_down"
+        android:visibility="gone"
+        app:tint="#16191D" />
+
+</LinearLayout>

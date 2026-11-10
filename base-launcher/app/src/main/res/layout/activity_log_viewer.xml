@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/log_viewer_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:orientation="vertical">
+
+    <!-- Top Action Bar -->
+    <RelativeLayout
+        android:id="@+id/log_viewer_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="12dp">
+
+        <ImageView
+            android:id="@+id/log_viewer_back_btn"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:padding="10dp"
+            android:src="@drawable/ic_arrow_back_vector"
+            app:tint="?attr/colorControlNormal" />
+
+        <TextView
+            android:id="@+id/log_viewer_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="8dp"
+            android:layout_toEndOf="@id/log_viewer_back_btn"
+            android:text="@string/log_keeper"
+            android:textColor="?attr/colorControlNormal"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <!-- Actions on right: Switch, Copy, Download -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <org.fossify.commons.views.MyMaterialSwitch
+                android:id="@+id/log_viewer_master_switch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp" />
+
+            <ImageView
+                android:id="@+id/log_viewer_copy_btn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/copy_logs"
+                android:padding="8dp"
+                android:src="@drawable/ic_copy_vector"
+                app:tint="?attr/colorControlNormal" />
+
+            <ImageView
+                android:id="@+id/log_viewer_download_btn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/download_logs"
+                android:padding="8dp"
+                android:src="@drawable/ic_download_vector"
+                app:tint="?attr/colorControlNormal" />
+
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Time Filter Pills / Tabs (6h, 12h, 24h, All) -->
+    <LinearLayout
+        android:id="@+id/log_viewer_time_pills"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal"
+        android:weightSum="4">
+
+        <!-- 6h -->
+        <RelativeLayout
+            android:id="@+id/tab_filter_6h"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/tab_text_6h"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="@string/log_filter_6h"
+                android:textColor="?attr/colorControlNormal"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <View
+                android:id="@+id/tab_indicator_6h"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_alignParentBottom="true"
+                android:background="@color/color_primary"
+                android:visibility="invisible" />
+        </RelativeLayout>
+
+        <!-- 12h -->
+        <RelativeLayout
+            android:id="@+id/tab_filter_12h"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/tab_text_12h"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="@string/log_filter_12h"
+                android:textColor="?attr/colorControlNormal"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <View
+                android:id="@+id/tab_indicator_12h"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_alignParentBottom="true"
+                android:background="@color/color_primary"
+                android:visibility="invisible" />
+        </RelativeLayout>
+
+        <!-- 24h -->
+        <RelativeLayout
+            android:id="@+id/tab_filter_24h"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/tab_text_24h"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="@string/log_filter_24h"
+                android:textColor="?attr/colorControlNormal"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <View
+                android:id="@+id/tab_indicator_24h"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_alignParentBottom="true"
+                android:background="@color/color_primary"
+                android:visibility="invisible" />
+        </RelativeLayout>
+
+        <!-- All -->
+        <RelativeLayout
+            android:id="@+id/tab_filter_all"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/tab_text_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="@string/log_filter_all"
+                android:textColor="?attr/colorControlNormal"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <View
+                android:id="@+id/tab_indicator_all"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_alignParentBottom="true"
+                android:background="@color/color_primary"
+                android:visibility="visible" />
+        </RelativeLayout>
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1F000000" />
+
+    <!-- Content / Recycler area -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/log_viewer_recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp"
+            android:scrollbars="vertical" />
+
+        <TextView
+            android:id="@+id/log_viewer_placeholder"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:padding="24dp"
+            android:text="@string/no_logs_found"
+            android:textColor="?attr/colorControlNormal"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+</LinearLayout>

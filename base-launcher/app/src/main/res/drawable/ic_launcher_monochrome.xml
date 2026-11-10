@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- Big V: Modern Assertive Launcher Chevron -->
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M 140 155 L 178 155 Q 186 155 186 163 L 250 285.3 Q 256 275 262 285.3 L 326 163 Q 326 155 334 155 L 372 155 Q 380 155 380 163 L 264 351.5 Q 256 365 248 351.5 L 132 163 Q 132 155 140 155 Z" />
+    <!-- Subtle Tiny s: Tucked in Upper-Left Crook -->
+    <path
+        android:fillAlpha="0.82"
+        android:fillColor="#ffffff"
+        android:pathData="M 246 191 C 246 186 242 184 238 184 C 233 184 228 187 228 192 C 228 197 232 200 236 201 L 240 202 C 245 204 248 207 248 211 C 248 215 244 218 238 218 C 232 218 228 215 228 210 L 234 210 C 234 213 236 214.5 238 214.5 C 241 214.5 243 213 243 211 C 243 208.5 241 207 237 205.5 L 233 204 C 229 202.5 224 200 224 192 C 224 184.5 230 180.5 238 180.5 C 246 180.5 250 185.5 250 191 Z" />
+    <!-- Subtle Tiny l: Tucked in Upper-Right Crook with Base Foot -->
+    <path
+        android:fillAlpha="0.82"
+        android:fillColor="#ffffff"
+        android:pathData="M 264 179 C 264 177.3 265.3 176 267 176 L 268 176 C 269.7 176 271 177.3 271 179 L 271 211 C 271 213.5 272.5 214.5 275 214.5 L 276 214.5 C 277 214.5 277.5 215 277.5 216 C 277.5 217 277 217.5 276 217.5 L 274.5 217.5 C 270 217.5 264 215 264 210 Z" />
+</vector>
