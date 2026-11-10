@@ -174,6 +174,8 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
     }
 
+    private var isPackageUpdateReceiverRegistered = false
+
     private val packageUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
@@ -302,25 +304,10 @@ class MainActivity : SimpleActivity(), FlingListener {
             requestHomeRole()
         }
 
-        setupWallpaperColorListener()
-
-        val packageFilter = IntentFilter().apply {
-            addAction(Intent.ACTION_PACKAGE_ADDED)
-            addAction(Intent.ACTION_PACKAGE_REMOVED)
-            addAction(Intent.ACTION_PACKAGE_CHANGED)
-            addAction(Intent.ACTION_PACKAGE_REPLACED)
-            addDataScheme("package")
-        }
-        ContextCompat.registerReceiver(
-            this,
-            packageUpdateReceiver,
-            packageFilter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
     }
 
     private fun setupWallpaperColorListener() {
-        if (isOreoMr1Plus()) {
+        if (isOreoMr1Plus() && wallpaperColorChangeListener == null) {
             val wallpaperManager = WallpaperManager.getInstance(this)
             wallpaperColorChangeListener = OnColorsChangedListener { colors, which ->
                 if (which and WallpaperManager.FLAG_SYSTEM != 0) {
@@ -379,6 +366,26 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     override fun onStart() {
         super.onStart()
+
+        // Home-only observers exist only while the genuine Home Activity is visible.
+        if (!isPackageUpdateReceiverRegistered) {
+            val packageFilter = IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addDataScheme("package")
+            }
+            ContextCompat.registerReceiver(
+                this,
+                packageUpdateReceiver,
+                packageFilter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            isPackageUpdateReceiverRegistered = true
+        }
+
+        setupWallpaperColorListener()
         binding.homeScreenGrid.root.appWidgetHost.startListening()
     }
 
@@ -445,20 +452,47 @@ class MainActivity : SimpleActivity(), FlingListener {
             logKeeper.log("MainActivity", "appWidgetHost.stopListening() failed in onStop", e)
         }
 
+        packageUpdateDebounceHandler.removeCallbacks(packageUpdateDebounceRunnable)
+        if (isPackageUpdateReceiverRegistered) {
+            try {
+                unregisterReceiver(packageUpdateReceiver)
+            } catch (_: Exception) {
+                // Receiver may already have been removed by the platform.
+            } finally {
+                isPackageUpdateReceiverRegistered = false
+            }
+        }
+        wallpaperColorChangeListener?.let { listener ->
+            try {
+                WallpaperManager.getInstance(this).removeOnColorsChangedListener(listener)
+            } catch (_: Exception) {
+                // The wallpaper manager may already have detached the listener.
+            } finally {
+                wallpaperColorChangeListener = null
+            }
+        }
+
         wasJustPaused = false
     }
 
     override fun onDestroy() {
         super.onDestroy()
         packageUpdateDebounceHandler.removeCallbacksAndMessages(null)
-        try {
-            unregisterReceiver(packageUpdateReceiver)
-        } catch (e: Exception) {
-            // Receiver already unregistered
+        if (isPackageUpdateReceiverRegistered) {
+            try {
+                unregisterReceiver(packageUpdateReceiver)
+            } catch (_: Exception) {
+            } finally {
+                isPackageUpdateReceiverRegistered = false
+            }
         }
-        if (isOreoMr1Plus() && wallpaperColorChangeListener != null) {
-            WallpaperManager.getInstance(this)
-                .removeOnColorsChangedListener(wallpaperColorChangeListener!!)
+        wallpaperColorChangeListener?.let { listener ->
+            try {
+                WallpaperManager.getInstance(this).removeOnColorsChangedListener(listener)
+            } catch (_: Exception) {
+            } finally {
+                wallpaperColorChangeListener = null
+            }
         }
     }
 
