@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_launcher_name">Vian Home</string>
+    <string name="app_launcher_name">Vian World</string>
     <string name="all_apps">All apps</string>
     <string name="play_store">Play Store</string>
     <string name="hidden_apps">Hidden apps</string>
@@ -185,12 +185,12 @@
     <string name="unarchive">Restore</string>
     <string name="unarchive_app">Restore app</string>
     <string name="unarchiving_app">Restoring %s…</string>
-    <string name="about_vian_home">About Vian Home</string>
+    <string name="about_vian_home">About Vian World</string>
     <string name="about_summary">Viabhron Series • Created by Lewis</string>
-    <string name="faq_about_app_title">About Vian Home</string>
-    <string name="faq_about_app_text">Vian Home (Viabhron Series)\nPackage: shura.launcher\nCreator: Lewis\nBuilt almost completely in Google AI Studio.</string>
+    <string name="faq_about_app_title">About Vian World</string>
+    <string name="faq_about_app_text">Vian World (Viabhron Series)\nPackage: shura.el.viabhronicat\nCreator: Lewis\nBuilt almost completely in Google AI Studio.</string>
     <string name="faq_fork_title">Open-Source Lineage</string>
-    <string name="faq_fork_text">Vian Home is an independent open-source fork of Fossify Launcher (originally Simple Launcher by Simple Mobile Tools), enhanced with modern gesture dispatching, floating card shortcuts, zero-overhead Log Keeper, and refined Material 3 design.</string>
+    <string name="faq_fork_text">Vian World launcher is an independent open-source fork of Fossify Launcher (originally Simple Launcher by Simple Mobile Tools), enhanced with modern gesture dispatching, floating card shortcuts, zero-overhead Log Keeper, and refined Material 3 design.</string>
     <string name="home_screen_and_dock">Home screen &amp; Dock</string>
     <string name="privacy_and_security">Privacy &amp; Security</string>
     <string name="system_and_maintenance">System &amp; Maintenance</string>
