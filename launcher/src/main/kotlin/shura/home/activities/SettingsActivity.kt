@@ -493,7 +493,10 @@ class SettingsActivity : SimpleActivity() {
 
     private fun setupViewAppLogs() {
         binding.settingsViewAppLogsHolder.setOnClickListener {
-            startActivity(Intent(this, LogViewerActivity::class.java))
+            val intent = Intent().setClassName(packageName, "com.example.LogKeeperActivity").apply {
+                putExtra("extra_launch_source", "SOURCE_SETTINGS")
+            }
+            startActivity(intent)
         }
         // Long press triggers a deliberate test crash, so the crash-logging
         // pipeline can be verified without waiting for a real bug. Debug/testing

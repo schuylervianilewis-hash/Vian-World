@@ -1,48 +1,24 @@
 package shura.home.helpers
 
-import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import androidx.core.content.ContextCompat
-import shura.home.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
-import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Lightweight, headless log and error catcher.
+ * Compatibility facade for existing launcher call sites.
  *
- * Responsibilities:
- * - Runs continuously starting in [VianApp.onCreate].
- * - Zero UI overhead or activity lifecycle coupling.
- * - Respects the master toggle in [Config.logKeeperEnabled].
- * - Maintains a rolling buffer up to 2MB in app-private storage.
- * - Flushes to the public Download directory as "vian logs.txt" when reaching 2MB,
- *   upon an uncaught application crash, or on explicit user request.
- * - Sanitizes all entries per Mandate 17 (no PII, credentials, or user content).
+ * Log storage and uncaught-exception handling are owned by Sidebar's LogKeeper.
+ * This class intentionally does not install a Thread default exception handler
+ * and does not create a second private log store.
  */
 object LogCatcher {
-    private const val INTERNAL_LOG_DIR = "logs"
-    private const val ACTIVE_LOG_FILE = "vian_internal.log"
-    private const val LEGACY_LOG_FILE = "vian_app_log.txt"
-    private const val PUBLIC_FILE_NAME = "vian logs.txt"
-    private const val MAX_LOG_SIZE_BYTES = 2L * 1024L * 1024L // 2 MB cap
-
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-    private val timeOnlyFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-
-    @Volatile
-    private var isInitialized = false
-    private lateinit var appContext: Context
-    private var defaultExceptionHandler: Thread.UncaughtExceptionHandler? = null
-
     data class LogEntry(
         val timestampMillis: Long,
         val timestampDisplay: String,
@@ -51,341 +27,158 @@ object LogCatcher {
         val throwableDetails: String? = null
     )
 
+    interface Backend {
+        fun log(tag: String, message: String, throwable: Throwable?)
+        fun logCrash(threadName: String, throwable: Throwable)
+        fun readLogs(): String
+        fun clearLogs()
+        fun setEnabled(enabled: Boolean)
+    }
+
+    @Volatile
+    private var backend: Backend? = null
+
+    fun setBackend(value: Backend) {
+        backend = value
+    }
+
     fun init(context: Context) {
-        if (isInitialized) return
-        synchronized(this) {
-            if (isInitialized) return
-            appContext = context.applicationContext
-
-            migrateLegacyLogsIfNeeded()
-            installCrashHandler()
-            isInitialized = true
-
-            log("System", "LogKeeper initialized")
-        }
-    }
-
-    private fun isLoggingEnabled(): Boolean {
-        return try {
-            Config(appContext).logKeeperEnabled
-        } catch (e: Exception) {
-            true
-        }
-    }
-
-    private val logExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "LogCatcher-Worker").apply { isDaemon = true }
+        // The Application installs Sidebar LogKeeper in every process.
     }
 
     fun log(tag: String, message: String, throwable: Throwable? = null) {
-        if (!isLoggingEnabled()) return
-
-        try {
-            val now = System.currentTimeMillis()
-            val timestampStr = dateFormat.format(Date(now))
-            val sb = java.lang.StringBuilder()
-            sb.append(timestampStr)
-                .append(" [").append(tag).append("] ")
-                .append(message)
-                .append("\n")
-
-            if (throwable != null) {
-                sb.append(throwable.stackTraceToString().trimEnd()).append("\n")
-            }
-            val entryText = sb.toString()
-
-            logExecutor.execute {
-                try {
-                    val file = getActiveLogFile()
-                    if (file.exists() && file.length() >= MAX_LOG_SIZE_BYTES) {
-                        dumpLogsToDownloadFolder(isAutoDump = true)
-                        file.writeText("")
-                    }
-                    file.appendText(entryText)
-                } catch (ignored: Exception) {
-                }
-            }
-        } catch (ignored: Exception) {
-            // Logging must never crash the host application.
-        }
+        backend?.log(tag, message, throwable)
     }
 
     fun logCrash(throwable: Throwable) {
-        try {
-            val now = System.currentTimeMillis()
-            val header = buildCrashHeader(throwable, now)
-
-            val file = getActiveLogFile()
-            file.appendText("\n$header\n")
-
-            // Immediately dump entire log history + crash header to Download folder
-            dumpLogsToDownloadFolder(isCrash = true)
-        } catch (ignored: Exception) {
-        }
+        backend?.logCrash(Thread.currentThread().name, throwable)
     }
 
-    private fun buildCrashHeader(throwable: Throwable, timestampMillis: Long): String {
-        return buildString {
-            appendLine("================================================================================")
-            appendLine("CRASH DETECTED: ${dateFormat.format(Date(timestampMillis))}")
-            appendLine("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            appendLine("Android OS: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
-            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
-            appendLine("Exception: ${throwable.javaClass.name}: ${throwable.message ?: "No error message"}")
-            appendLine("Stack Trace:")
-            appendLine(throwable.stackTraceToString().trimEnd())
-            appendLine("================================================================================")
-        }
+    fun getRawLogs(): String = backend?.readLogs().orEmpty()
+
+    fun clearLogs() {
+        backend?.clearLogs()
     }
 
-    private fun installCrashHandler() {
-        defaultExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                logCrash(throwable)
-            } catch (ignored: Exception) {
-            } finally {
-                defaultExceptionHandler?.uncaughtException(thread, throwable)
-            }
-        }
+    fun setLoggingEnabled(enabled: Boolean) {
+        backend?.setEnabled(enabled)
     }
 
-    private fun getActiveLogFile(): File {
-        val dir = File(appContext.filesDir, INTERNAL_LOG_DIR)
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
-        val file = File(dir, ACTIVE_LOG_FILE)
-        if (!file.exists()) {
-            file.createNewFile()
-        }
-        return file
-    }
-
-    private fun migrateLegacyLogsIfNeeded() {
-        try {
-            val legacyFile = File(appContext.filesDir, LEGACY_LOG_FILE)
-            if (legacyFile.exists() && legacyFile.length() > 0) {
-                val legacyContent = legacyFile.readText()
-                val activeFile = getActiveLogFile()
-                activeFile.appendText(legacyContent)
-                legacyFile.delete()
-            }
-        } catch (ignored: Exception) {
-        }
-    }
-
-    @Synchronized
     fun getLogEntries(): List<LogEntry> {
-        val entries = mutableListOf<LogEntry>()
-        try {
-            val file = getActiveLogFile()
-            if (!file.exists() || file.length() == 0L) return entries
+        val raw = getRawLogs()
+        if (raw.isBlank()) return emptyList()
 
-            val lines = file.readLines()
-            var currentTimestamp: Long? = null
-            var currentTimestampStr: String? = null
-            var currentTag: String? = null
-            var currentMessage: StringBuilder? = null
-            val currentStack = StringBuilder()
+        val parser = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+        val display = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+        val entries = ArrayList<LogEntry>()
+        var timestampMillis = 0L
+        var timestampDisplay = ""
+        var tag = ""
+        var message = ""
+        val stack = StringBuilder()
 
-            for (line in lines) {
-                // Check if this line is a new entry header: "2026-10-03 10:45:12.345 [TAG] Message"
-                val match = entryRegex.find(line)
-                if (match != null) {
-                    // Flush previous entry
-                    if (currentTimestamp != null && currentTag != null && currentMessage != null) {
-                        entries.add(
-                            LogEntry(
-                                timestampMillis = currentTimestamp,
-                                timestampDisplay = currentTimestampStr ?: "",
-                                tag = currentTag,
-                                message = currentMessage.toString(),
-                                throwableDetails = if (currentStack.isNotEmpty()) currentStack.toString().trim() else null
-                            )
-                        )
-                    }
-
-                    val dateStr = match.groupValues[1]
-                    val parsedDate = try { dateFormat.parse(dateStr) } catch (e: Exception) { null }
-                    currentTimestamp = parsedDate?.time ?: System.currentTimeMillis()
-                    currentTimestampStr = if (parsedDate != null) timeOnlyFormat.format(parsedDate) else dateStr
-                    currentTag = match.groupValues[2]
-                    currentMessage = StringBuilder(match.groupValues[3])
-                    currentStack.clear()
-                } else if (line.startsWith("===") || line.startsWith("CRASH DETECTED:")) {
-                    // Handle crash header as a prominent CRASH entry
-                    if (currentTimestamp != null && currentTag != null && currentMessage != null) {
-                        entries.add(
-                            LogEntry(
-                                timestampMillis = currentTimestamp,
-                                timestampDisplay = currentTimestampStr ?: "",
-                                tag = currentTag,
-                                message = currentMessage.toString(),
-                                throwableDetails = if (currentStack.isNotEmpty()) currentStack.toString().trim() else null
-                            )
-                        )
-                    }
-                    currentTimestamp = System.currentTimeMillis()
-                    currentTimestampStr = timeOnlyFormat.format(Date(currentTimestamp))
-                    currentTag = "CRASH"
-                    currentMessage = StringBuilder("Application Crash Detected")
-                    currentStack.clear()
-                    currentStack.appendLine(line)
-                } else {
-                    if (currentStack.isNotEmpty() || line.startsWith("\tat ") || line.contains("Exception") || line.contains("Error")) {
-                        currentStack.appendLine(line)
-                    } else if (currentMessage != null) {
-                        currentMessage.append(" ").append(line)
-                    }
-                }
-            }
-
-            // Flush final entry
-            if (currentTimestamp != null && currentTag != null && currentMessage != null) {
+        fun flush() {
+            if (timestampMillis != 0L) {
                 entries.add(
                     LogEntry(
-                        timestampMillis = currentTimestamp,
-                        timestampDisplay = currentTimestampStr ?: "",
-                        tag = currentTag,
-                        message = currentMessage.toString(),
-                        throwableDetails = if (currentStack.isNotEmpty()) currentStack.toString().trim() else null
+                        timestampMillis = timestampMillis,
+                        timestampDisplay = timestampDisplay,
+                        tag = tag,
+                        message = message,
+                        throwableDetails = stack.toString().trim().ifBlank { null }
                     )
                 )
             }
-        } catch (ignored: Exception) {
+            stack.clear()
         }
-        return entries
-    }
 
-    private val entryRegex = Regex("""^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d{3})\s\[([^\]]+)\]\s(.*)$""")
-
-    @Synchronized
-    fun getRawLogs(): String {
-        return try {
-            val file = getActiveLogFile()
-            if (file.exists()) file.readText() else ""
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    @Synchronized
-    fun clearLogs() {
-        try {
-            val file = getActiveLogFile()
-            if (file.exists()) {
-                file.writeText("")
+        raw.lineSequence().forEach { line ->
+            if (line.startsWith("[")) {
+                val timestampEnd = line.indexOf("] ")
+                if (timestampEnd > 1) {
+                    val fields = ArrayList<String>(3)
+                    var remaining = line.substring(timestampEnd + 2)
+                    repeat(3) {
+                        if (!remaining.startsWith("[")) return@repeat
+                        val fieldEnd = remaining.indexOf("] ")
+                        if (fieldEnd <= 1) return@repeat
+                        fields.add(remaining.substring(1, fieldEnd))
+                        remaining = remaining.substring(fieldEnd + 2)
+                    }
+                    if (fields.size == 3) {
+                        val parsed = try { parser.parse(line.substring(1, timestampEnd)) } catch (_: Exception) { null }
+                        if (parsed != null) {
+                            flush()
+                            timestampMillis = parsed.time
+                            timestampDisplay = display.format(Date(timestampMillis))
+                            tag = fields[2].removePrefix("ERROR:")
+                            message = remaining
+                            return@forEach
+                        }
+                    }
+                }
             }
-        } catch (ignored: Exception) {
+            if (timestampMillis != 0L && line.isNotBlank()) {
+                if (stack.isNotEmpty()) stack.append('\n')
+                stack.append(line)
+            }
         }
+        flush()
+        return entries.asReversed()
     }
 
-    /**
-     * Dumps logs directly into the public device Download folder as "vian logs.txt".
-     */
-    @Synchronized
     fun dumpLogsToDownloadFolder(
-        context: Context = appContext,
+        context: Context,
         isCrash: Boolean = false,
         isAutoDump: Boolean = false
     ): Boolean {
-        val rawContent = getRawLogs()
-        if (rawContent.isBlank()) return false
-
-        val prefix = if (isCrash) "CRASH DUMP:\n" else if (isAutoDump) "AUTO 2MB FLUSH:\n" else ""
-        val contentToSave = "$prefix$rawContent\n"
-
-        // Emergency local crash persistence: write synchronously to internal storage to survive OOM / killed process
-        if (isCrash) {
-            try {
-                val emergencyCrashFile = File(context.filesDir, "crash_dump_latest.txt")
-                FileOutputStream(emergencyCrashFile, false).use { fos ->
-                    fos.write(contentToSave.toByteArray(Charsets.UTF_8))
-                    fos.flush()
-                    try {
-                        fos.fd.sync()
-                    } catch (ignored: Exception) {
-                    }
-                }
-            } catch (ignored: Exception) {
-            }
+        val raw = getRawLogs()
+        if (raw.isBlank()) return false
+        val prefix = when {
+            isCrash -> "CRASH DUMP:\n"
+            isAutoDump -> "AUTO DUMP:\n"
+            else -> ""
         }
+        val content = prefix + raw + "\n"
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val fileName = "vian_world_logs_" + stamp + ".txt"
 
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+ Scoped Storage via MediaStore.Downloads (Zero permissions required)
-                val resolver = context.contentResolver
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, PUBLIC_FILE_NAME)
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                     put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }
-
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                    ?: resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
-
-                if (uri != null) {
-                    // Use standard "w" mode rather than "wa" for robust compatibility across all Android 10-15 OEM ROMs
-                    resolver.openOutputStream(uri, "w")?.use { outputStream ->
-                        outputStream.write(contentToSave.toByteArray(Charsets.UTF_8))
-                        outputStream.flush()
-                    }
-                    true
-                } else {
-                    saveDirectlyToFile(context, contentToSave)
-                }
+                val uri = context.contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    values
+                ) ?: return saveFallback(context, fileName, content)
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(content.toByteArray(Charsets.UTF_8))
+                    it.flush()
+                } ?: return false
+                true
             } else {
-                saveDirectlyToFile(context, contentToSave)
+                saveFallback(context, fileName, content)
             }
-        } catch (e: Exception) {
-            // Fallback to app external files dir on any storage failure
-            saveToExternalFilesFallback(context, contentToSave)
+        } catch (_: Exception) {
+            saveFallback(context, fileName, content)
         }
     }
 
-    private fun saveDirectlyToFile(context: Context, content: String): Boolean {
+    private fun saveFallback(context: Context, fileName: String, content: String): Boolean {
         return try {
-            val hasPermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED
-
-            val targetDir = if (hasPermission) {
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            } else {
-                context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-            }
-
-            if (!targetDir.exists()) {
-                targetDir.mkdirs()
-            }
-
-            val targetFile = File(targetDir, PUBLIC_FILE_NAME)
-            FileOutputStream(targetFile, true).use { fos ->
-                fos.write(content.toByteArray(Charsets.UTF_8))
-                fos.flush()
-                try {
-                    fos.fd.sync()
-                } catch (ignored: Exception) {
-                }
+            val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                ?: context.filesDir
+            if (!directory.exists() && !directory.mkdirs()) return false
+            FileOutputStream(File(directory, fileName), false).use {
+                it.write(content.toByteArray(Charsets.UTF_8))
+                it.flush()
+                it.fd.sync()
             }
             true
-        } catch (e: Exception) {
-            saveToExternalFilesFallback(context, content)
-        }
-    }
-
-    private fun saveToExternalFilesFallback(context: Context, content: String): Boolean {
-        return try {
-            val fallbackDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-            val fallbackFile = File(fallbackDir, PUBLIC_FILE_NAME)
-            FileOutputStream(fallbackFile, true).use { fos ->
-                fos.write(content.toByteArray(Charsets.UTF_8))
-                fos.flush()
-            }
-            true
-        } catch (ignored: Exception) {
+        } catch (_: Exception) {
             false
         }
     }

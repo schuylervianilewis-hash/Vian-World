@@ -57,6 +57,7 @@ class LogViewerActivity : SimpleActivity() {
         binding.logViewerMasterSwitch.isChecked = config.logKeeperEnabled
         binding.logViewerMasterSwitch.setOnCheckedChangeListener { _, isChecked ->
             config.logKeeperEnabled = isChecked
+            LogCatcher.setLoggingEnabled(isChecked)
             if (isChecked) {
                 toast(R.string.logging_enabled)
                 loadLogs()
