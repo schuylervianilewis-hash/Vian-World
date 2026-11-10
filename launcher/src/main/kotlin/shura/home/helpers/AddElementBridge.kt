@@ -10,6 +10,7 @@ import shura.home.dialogs.AddToHomeBottomSheet
  * Element Activity requires modifying only the delegate implementation.
  */
 object AddElementBridge {
+    const val REQUEST_SIDEBAR_ELEMENT = 55
 
     interface Delegate {
         fun openAddElementUi(

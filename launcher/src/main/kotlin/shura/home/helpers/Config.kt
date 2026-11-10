@@ -1,12 +1,26 @@
 package shura.home.helpers
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import org.fossify.commons.helpers.BaseConfig
 import shura.home.R
 
-class Config(context: Context) : BaseConfig(context) {
+class Config(context: Context) : BaseConfig(MultiProcessPreferencesContext(context.applicationContext)) {
     companion object {
         fun newInstance(context: Context) = Config(context)
+    }
+
+    /**
+     * Launcher Settings run in :heavy: while Home runs in :home. Keep the established
+     * Fossify "Prefs" store, but ask Android to refresh it when each process reads it.
+     * The Home Activity also re-reads its preferences on resume after Settings closes.
+     */
+    private class MultiProcessPreferencesContext(base: Context) : ContextWrapper(base) {
+        @Suppress("DEPRECATION")
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            return super.getSharedPreferences(name, mode or Context.MODE_MULTI_PROCESS)
+        }
     }
 
     val sharedPrefs: android.content.SharedPreferences get() = prefs
