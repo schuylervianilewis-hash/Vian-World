@@ -162,7 +162,7 @@ class SidebarHomeElementProvider : ContentProvider() {
         private const val KEY_ID = "id"
         private const val KEY_LABEL = "label"
         private const val KEY_ICON = "icon"
-        private const val ICON_SIZE = 64
+        private const val ICON_SIZE = 80
         private const val TORCH_GLOW = 0xFFFFC928.toInt()
         private const val BLUE_GLOW = 0xFFFF9900.toInt()
         private const val EINK_GLOW = 0xFFE6C280.toInt()
