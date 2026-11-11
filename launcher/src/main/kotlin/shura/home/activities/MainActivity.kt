@@ -138,6 +138,7 @@ import kotlin.math.min
 
 class MainActivity : SimpleActivity(), FlingListener {
     private var sidebarSetupCheckAttempted = false
+    private var pendingSidebarElementPlacement: Pair<Int, Rect>? = null
     private var mTouchDownX = -1
     private var mTouchDownY = -1
     private var mAllAppsFragmentY = 0
@@ -483,6 +484,7 @@ class MainActivity : SimpleActivity(), FlingListener {
             newDockColumnCount = config.dockColumnCount
         )
         binding.homeScreenGrid.root.updateColors()
+        binding.homeScreenGrid.root.refreshSidebarElementIcons()
         binding.allAppsFragment.root.onResume()
         refreshHomeScreenBadges()
     }
@@ -583,17 +585,27 @@ class MainActivity : SimpleActivity(), FlingListener {
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         super.onActivityResult(requestCode, resultCode, resultData)
 
+        if (requestCode == AddElementBridge.REQUEST_SIDEBAR_ELEMENT &&
+            (resultCode != RESULT_OK || resultData == null)
+        ) {
+            pendingSidebarElementPlacement = null
+        }
+
         when (requestCode) {
             AddElementBridge.REQUEST_SIDEBAR_ELEMENT -> {
                 if (resultCode == RESULT_OK && resultData != null) {
                     if (resultData.getBooleanExtra("OPEN_LAUNCHER_WIDGET_PICKER", false)) {
+                        pendingSidebarElementPlacement = null
                         showWidgetsFragment()
                     } else {
                         val elementId = resultData.getStringExtra("ELEMENT_ID")
                         val displayName = resultData.getStringExtra("DISPLAY_NAME")
                         if (!elementId.isNullOrBlank()) {
-                            addSidebarElementToHome(elementId, displayName)
+                            val preferredPlacement = pendingSidebarElementPlacement
+                            pendingSidebarElementPlacement = null
+                            addSidebarElementToHome(elementId, displayName, preferredPlacement)
                         } else {
+                            pendingSidebarElementPlacement = null
                             toast("Sidebar did not return a valid element")
                         }
                     }
@@ -865,21 +877,52 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
     }
 
+    fun showAddSidebarElementPicker(x: Float? = null, y: Float? = null) {
+        pendingSidebarElementPlacement = getPlacementCell(x, y)
+        val pickerIntent = Intent().setClassName(
+            packageName,
+            "com.example.feature.settings.AddElementActivity"
+        ).apply {
+            putExtra("SIDEBAR_HOME_PICKER", true)
+            putExtra("CONTAINER_ID", "sidebar")
+        }
+
+        try {
+            startActivityForResult(pickerIntent, AddElementBridge.REQUEST_SIDEBAR_ELEMENT)
+        } catch (e: Exception) {
+            pendingSidebarElementPlacement = null
+            LogCatcher.log("MainActivity", "Unable to open Sidebar element picker: " + e.message)
+            toast("Unable to open Sidebar elements")
+        }
+    }
+
     private val sidebarElementPlacementLock = Any()
 
-    private fun addSidebarElementToHome(elementId: String, displayName: String?) {
+    private fun addSidebarElementToHome(
+        elementId: String,
+        displayName: String?,
+        preferredPlacement: Pair<Int, Rect>?
+    ) {
         val packageName = applicationContext.packageName
         val activityName = "com.example.feature.sidebar.SidebarElementLaunchActivity"
-        val title = displayName?.takeIf { it.isNotBlank() }
-            ?: elementId.substringAfter(":").replace("_", " ").ifBlank { "Sidebar element" }
 
-        // Serialize placement and keep the Room read and insert off the UI thread.
+        // Resolve the authoritative label/icon/state in Sidebar's main process, and re-check
+        // the original target cell against Room before inserting.
         ensureBackgroundThread {
             synchronized(sidebarElementPlacementLock) {
                 if (isFinishing || isDestroyed) return@synchronized
 
-                val (page, rect) = findFirstEmptyCell()
-                val iconBitmap = ContextCompat.getDrawable(this, R.mipmap.ic_launcher)?.toBitmap()
+                val (page, rect) = preferredPlacement?.let {
+                    findNearestEmptyCellOnPage(it.first, it.second.left, it.second.top)
+                } ?: findFirstEmptyCell()
+
+                val elementInfo = shura.home.helpers.SidebarHomeElementClient
+                    .load(this, listOf(elementId))[elementId]
+                val title = displayName?.takeIf { it.isNotBlank() }
+                    ?: elementInfo?.label?.takeIf { it.isNotBlank() }
+                    ?: elementId.substringAfter(":").replace("_", " ").ifBlank { "Sidebar element" }
+                val iconBitmap = elementInfo?.icon
+                    ?: ContextCompat.getDrawable(this, android.R.drawable.ic_menu_view)?.toBitmap()
                 val item = HomeScreenGridItem(
                     id = null,
                     left = rect.left,
@@ -896,7 +939,13 @@ class MainActivity : SimpleActivity(), FlingListener {
                     shortcutId = elementId,
                     icon = iconBitmap,
                     docked = false,
-                    parentId = null
+                    parentId = null,
+                    drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
+                        this,
+                        iconBitmap,
+                        elementInfo?.isActive == true,
+                        elementInfo?.glowColor ?: 0
+                    )
                 )
                 binding.homeScreenGrid.root.storeAndShowGridItemFromBackground(item) {
                     if (!isFinishing && !isDestroyed) {
@@ -905,6 +954,40 @@ class MainActivity : SimpleActivity(), FlingListener {
                     }
                 }
             }
+        }
+    }
+
+    private fun findNearestEmptyCellOnPage(
+        page: Int,
+        targetX: Int,
+        targetY: Int
+    ): Pair<Int, Rect> {
+        val occupied = HashSet<Pair<Int, Int>>()
+        homeScreenGridItemsDB.getAllItems()
+            .filter { it.parentId == null && !it.docked && it.page == page }
+            .forEach { item ->
+                for (x in item.left..item.right) {
+                    for (y in item.top..item.bottom) {
+                        occupied.add(x to y)
+                    }
+                }
+            }
+
+        val nearest = (0 until config.homeRowCount - 1)
+            .flatMap { y -> (0 until config.homeColumnCount).map { x -> x to y } }
+            .filterNot { occupied.contains(it) }
+            .minWithOrNull(
+                compareBy<Pair<Int, Int>>(
+                    { abs(it.first - targetX) + abs(it.second - targetY) },
+                    { it.second },
+                    { it.first }
+                )
+            )
+
+        return if (nearest != null) {
+            Pair(page, Rect(nearest.first, nearest.second, nearest.first, nearest.second))
+        } else {
+            findFirstEmptyCell()
         }
     }
 
@@ -1623,7 +1706,7 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     fun getPlacementCell(x: Float? = null, y: Float? = null): Pair<Int, Rect> {
         val targetCell = if (x != null && y != null) {
-            binding.homeScreenGrid.root.getTargetCell(x, y)
+            binding.homeScreenGrid.root.findNearestEmptyCell(x, y)
                 ?: binding.homeScreenGrid.root.findFirstEmptyCellOnCurrentPage()
         } else {
             binding.homeScreenGrid.root.findFirstEmptyCellOnCurrentPage()
