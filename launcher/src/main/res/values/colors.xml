@@ -14,4 +14,17 @@
     <color name="default_text_color">#212121</color>
 
     <color name="semitransparent_navigation">#33000000</color>
+
+    <!-- Shared light Material 3 palette for Launcher Settings and its subpages. -->
+    <color name="settings_background">#FFFBFE</color>
+    <color name="settings_surface">#FFFBFE</color>
+    <color name="settings_card">#F7F2FA</color>
+    <color name="settings_primary">#6750A4</color>
+    <color name="settings_on_primary">#FFFFFF</color>
+    <color name="settings_on_surface">#1C1B1F</color>
+    <color name="settings_on_surface_variant">#49454F</color>
+    <color name="settings_outline">#79747E</color>
+    <color name="settings_outline_variant">#CAC4D0</color>
+    <color name="settings_divider">#E7E0EC</color>
+    <color name="settings_ripple">#1F6750A4</color>
 </resources>
