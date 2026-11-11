@@ -69,6 +69,7 @@ import shura.home.helpers.ITEM_TYPE_FOLDER
 import shura.home.helpers.ITEM_TYPE_ICON
 import shura.home.helpers.ITEM_TYPE_SHORTCUT
 import shura.home.helpers.ITEM_TYPE_WIDGET
+import shura.home.helpers.SIDEBAR_ELEMENT_CLASS_NAME
 import shura.home.helpers.WIDGET_HOST_ID
 import shura.home.models.HomeScreenGridItem
 import kotlin.math.abs
@@ -313,8 +314,28 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
         ensureBackgroundThread {
             val providers = appWidgetManager.installedProviders
             gridItems = context.homeScreenGridItemsDB.getAllItems() as ArrayList<HomeScreenGridItem>
+            val sidebarElementInfos = shura.home.helpers.SidebarHomeElementClient.load(
+                context,
+                gridItems.filter { it.className == SIDEBAR_ELEMENT_CLASS_NAME }.map { it.shortcutId }
+            )
             gridItems.toImmutableList().forEach { item ->
                 if (item.type == ITEM_TYPE_ICON) {
+                    if (item.className == SIDEBAR_ELEMENT_CLASS_NAME) {
+                        val info = sidebarElementInfos[item.shortcutId]
+                        if (info != null) {
+                            if (info.label.isNotBlank()) item.title = info.label
+                            item.icon = info.icon
+                            item.drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
+                                context,
+                                info.icon,
+                                info.isActive,
+                                info.glowColor
+                            ) ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                        } else {
+                            item.drawable = context.getDrawable(android.R.drawable.ic_menu_view)
+                        }
+                        return@forEach
+                    }
                     val isArchived = shura.home.helpers.ArchivedAppsManager.isArchived(context, item.packageName)
                     item.isArchived = isArchived
                     val isLocked = shura.home.helpers.AppLockManager.isAppLocked(item.packageName)
@@ -2358,6 +2379,71 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
             }
         }
         return null
+    }
+
+    /**
+     * Returns the closest available desktop cell to the supplied long-press position.
+     * Unlike getTargetCell, this also works when the original cell is occupied.
+     */
+    fun findNearestEmptyCell(x: Float, y: Float): Point? {
+        val adjustedX = x - sideMargins.left
+        val adjustedY = y - sideMargins.top
+        val target = cells.entries.firstOrNull { (_, rect) ->
+            rect.contains(adjustedX.toInt(), adjustedY.toInt())
+        }?.key ?: return findFirstEmptyCellOnCurrentPage()
+
+        val occupied = HashSet<Point>()
+        gridItems.filterVisibleOnCurrentPageOnly()
+            .filter { it.parentId == null && !it.docked }
+            .forEach { item ->
+                for (col in item.left..item.right) {
+                    for (row in item.top..item.bottom) {
+                        occupied.add(Point(col, row))
+                    }
+                }
+            }
+
+        return (0 until (rowCount - 1))
+            .flatMap { row -> (0 until columnCount).map { col -> Point(col, row) } }
+            .filterNot { occupied.contains(it) }
+            .minWithOrNull(
+                compareBy<Point>(
+                    { abs(it.x - target.x) + abs(it.y - target.y) },
+                    { it.y },
+                    { it.x }
+                )
+            )
+    }
+
+    /** Refreshes only Sidebar item icons/state once; it never registers a watcher. */
+    fun refreshSidebarElementIcons() {
+        ensureBackgroundThread {
+            val sidebarItems = gridItems.filter {
+                it.className == SIDEBAR_ELEMENT_CLASS_NAME && it.shortcutId.isNotBlank()
+            }
+            if (sidebarItems.isEmpty()) return@ensureBackgroundThread
+
+            val infos = shura.home.helpers.SidebarHomeElementClient.load(
+                context,
+                sidebarItems.map { it.shortcutId }
+            )
+            sidebarItems.forEach { item ->
+                val info = infos[item.shortcutId]
+                if (info != null) {
+                    if (info.label.isNotBlank()) item.title = info.label
+                    item.icon = info.icon
+                    item.drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
+                        context,
+                        info.icon,
+                        info.isActive,
+                        info.glowColor
+                    ) ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                } else {
+                    item.drawable = context.getDrawable(android.R.drawable.ic_menu_view)
+                }
+            }
+            post { redrawGrid() }
+        }
     }
 
     fun findFirstEmptyCellOnCurrentPage(): Point? {
