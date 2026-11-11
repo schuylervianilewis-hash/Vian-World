@@ -3,26 +3,30 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/gestures_coordinator"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/settings_background">
 
     <org.fossify.commons.views.MyAppBarLayout
         android:id="@+id/gestures_appbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent">
+        android:background="@color/settings_surface">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/gestures_toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:background="@color/settings_surface"
             app:title="@string/gestures_and_actions"
-            app:titleTextColor="#FFFFFF" />
+            app:titleTextColor="@color/settings_on_surface"
+            app:navigationIconTint="@color/settings_on_surface" />
     </org.fossify.commons.views.MyAppBarLayout>
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/gestures_nested_scrollview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@color/settings_background"
         android:clipToPadding="false"
         android:overScrollMode="never"
         android:paddingStart="16dp"
@@ -45,7 +49,7 @@
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp"
                 android:text="@string/home_screen_gestures"
-                android:textColor="#A2E070"
+                android:textColor="@color/settings_primary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -53,10 +57,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="#1F2A1A"
+                app:cardBackgroundColor="@color/settings_card"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:strokeColor="#25FFFFFF"
+                app:strokeColor="@color/settings_outline_variant"
                 app:strokeWidth="0.6dp">
 
                 <LinearLayout
@@ -81,7 +85,7 @@
                             android:layout_height="32dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_double_tap_vector"
-                            app:tint="#D5E0C8" />
+                            app:tint="@color/settings_primary" />
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -94,7 +98,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/gesture_double_tap"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -103,7 +107,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:textColor="#A2E070"
+                                android:textColor="@color/settings_primary"
                                 android:textSize="13sp" />
                         </LinearLayout>
                     </LinearLayout>
@@ -112,7 +116,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="0.6dp"
                         android:layout_marginStart="60dp"
-                        android:background="#15FFFFFF" />
+                        android:background="@color/settings_divider" />
 
                     <!-- Swipe Down Row -->
                     <LinearLayout
@@ -131,7 +135,7 @@
                             android:layout_height="32dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_swipe_down_vector"
-                            app:tint="#D5E0C8" />
+                            app:tint="@color/settings_primary" />
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -144,7 +148,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/gesture_swipe_down"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -153,7 +157,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:textColor="#A2E070"
+                                android:textColor="@color/settings_primary"
                                 android:textSize="13sp" />
                         </LinearLayout>
                     </LinearLayout>
@@ -162,7 +166,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="0.6dp"
                         android:layout_marginStart="60dp"
-                        android:background="#15FFFFFF" />
+                        android:background="@color/settings_divider" />
 
                     <!-- Swipe Up Row -->
                     <LinearLayout
@@ -181,7 +185,7 @@
                             android:layout_height="32dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_swipe_up_vector"
-                            app:tint="#D5E0C8" />
+                            app:tint="@color/settings_primary" />
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -194,7 +198,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/gesture_swipe_up"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -203,7 +207,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:textColor="#A2E070"
+                                android:textColor="@color/settings_primary"
                                 android:textSize="13sp" />
                         </LinearLayout>
                     </LinearLayout>
@@ -212,7 +216,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="0.6dp"
                         android:layout_marginStart="60dp"
-                        android:background="#15FFFFFF" />
+                        android:background="@color/settings_divider" />
 
                     <!-- Pinch In Row -->
                     <LinearLayout
@@ -231,7 +235,7 @@
                             android:layout_height="32dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_touch_vector"
-                            app:tint="#D5E0C8" />
+                            app:tint="@color/settings_primary" />
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -244,7 +248,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/gesture_pinch_in"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -253,7 +257,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:textColor="#A2E070"
+                                android:textColor="@color/settings_primary"
                                 android:textSize="13sp" />
                         </LinearLayout>
                     </LinearLayout>
@@ -269,7 +273,7 @@
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp"
                 android:text="@string/folder_behavior"
-                android:textColor="#A2E070"
+                android:textColor="@color/settings_primary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -277,10 +281,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="#1F2A1A"
+                app:cardBackgroundColor="@color/settings_card"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:strokeColor="#25FFFFFF"
+                app:strokeColor="@color/settings_outline_variant"
                 app:strokeWidth="0.6dp">
 
                 <LinearLayout
@@ -299,7 +303,7 @@
                         android:layout_height="32dp"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_folder_vector"
-                        app:tint="#D5E0C8" />
+                        app:tint="@color/settings_primary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -312,7 +316,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/folder_cover_mode"
-                            android:textColor="#FFFFFF"
+                            android:textColor="@color/settings_on_surface"
                             android:textSize="15sp"
                             android:textStyle="bold" />
 
@@ -321,7 +325,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="@string/folder_cover_mode_desc"
-                            android:textColor="#A0B098"
+                            android:textColor="@color/settings_on_surface_variant"
                             android:textSize="12sp" />
                     </LinearLayout>
 
@@ -343,7 +347,7 @@
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp"
                 android:text="@string/feedback_and_permissions"
-                android:textColor="#A2E070"
+                android:textColor="@color/settings_primary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -351,10 +355,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="#1F2A1A"
+                app:cardBackgroundColor="@color/settings_card"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:strokeColor="#25FFFFFF"
+                app:strokeColor="@color/settings_outline_variant"
                 app:strokeWidth="0.6dp">
 
                 <LinearLayout
@@ -379,7 +383,7 @@
                             android:layout_height="32dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_vibrate_vector"
-                            app:tint="#D5E0C8" />
+                            app:tint="@color/settings_primary" />
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -392,7 +396,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/gesture_haptics"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -401,7 +405,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="@string/gesture_haptics_desc"
-                                android:textColor="#A0B098"
+                                android:textColor="@color/settings_on_surface_variant"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -417,7 +421,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="0.6dp"
                         android:layout_marginStart="60dp"
-                        android:background="#15FFFFFF" />
+                        android:background="@color/settings_divider" />
 
                     <!-- Screen Lock Admin Status Row -->
                     <LinearLayout
@@ -436,7 +440,7 @@
                             android:layout_height="32dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_lock_vector"
-                            app:tint="#D5E0C8" />
+                            app:tint="@color/settings_primary" />
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -449,7 +453,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/action_lock_screen"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -458,7 +462,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:textColor="#A0B098"
+                                android:textColor="@color/settings_on_surface_variant"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -468,7 +472,7 @@
                             android:layout_height="22dp"
                             android:contentDescription="@null"
                             android:src="@drawable/ic_check_vector"
-                            app:tint="#A2E070" />
+                            app:tint="@color/settings_primary" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
