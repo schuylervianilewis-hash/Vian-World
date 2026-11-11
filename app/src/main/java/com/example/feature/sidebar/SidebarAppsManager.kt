@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import com.example.core.SidebarHomeElementProvider
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -217,10 +218,8 @@ class SidebarAppsManager(
     
 
 
-    private fun isPersistedHomeElementActive(id: String, fallback: Boolean): Boolean {
-        val statePrefs = context.getSharedPreferences("SidebarHomeElementState", android.content.Context.MODE_PRIVATE)
-        val key = "active:" + id
-        return if (statePrefs.contains(key)) statePrefs.getBoolean(key, fallback) else fallback
+    private fun isHomeElementActive(id: String, fallback: Boolean): Boolean {
+        return SidebarHomeElementProvider.getStoredState(id)?.first ?: fallback
     }
 
     fun bindIcon(id: String, icon: android.widget.ImageView, prefs: android.content.SharedPreferences, coroutineScope: kotlinx.coroutines.CoroutineScope, onUpdate: () -> Unit) {
@@ -325,7 +324,7 @@ class SidebarAppsManager(
         } else if (parsed is SidebarItem.QuickTile) {
             icon.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             icon.setImageResource(parsed.iconResId)
-            val torchActive = parsed.action == "torch" && isPersistedHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.torchEnabled)
+            val torchActive = parsed.action == "torch" && isHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.torchEnabled)
             icon.setColorFilter(
                 if (torchActive) android.graphics.Color.parseColor("#FFFFC928")
                 else android.graphics.Color.WHITE
