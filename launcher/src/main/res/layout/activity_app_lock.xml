@@ -4,26 +4,28 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/app_lock_coordinator"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/settings_background">
 
     <org.fossify.commons.views.MyAppBarLayout
         android:id="@+id/app_lock_appbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent">
+        android:background="@color/settings_surface">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/app_lock_toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:title="@string/app_lock"
-            app:titleTextColor="#FFFFFF" />
+            app:titleTextColor="@color/settings_on_surface" />
     </org.fossify.commons.views.MyAppBarLayout>
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/app_lock_nested_scrollview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@color/settings_background"
         android:clipToPadding="false"
         android:overScrollMode="never"
         android:paddingStart="16dp"
@@ -43,10 +45,10 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="#1F2A1A"
+                app:cardBackgroundColor="@color/settings_card"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:strokeColor="#25FFFFFF"
+                app:strokeColor="@color/settings_outline_variant"
                 app:strokeWidth="0.6dp">
 
                 <RelativeLayout
@@ -63,7 +65,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/enable_app_lock"
-                        android:textColor="#FFFFFF"
+                        android:textColor="@color/settings_on_surface"
                         android:textSize="16sp" />
 
                     <TextView
@@ -72,7 +74,7 @@
                         android:layout_below="@id/app_lock_enable_switch"
                         android:layout_marginTop="4dp"
                         android:text="@string/app_lock_description"
-                        android:textColor="#A0B098"
+                        android:textColor="@color/settings_on_surface_variant"
                         android:textSize="13sp" />
                 </RelativeLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -92,7 +94,7 @@
                     android:layout_marginStart="4dp"
                     android:layout_marginBottom="8dp"
                     android:text="Security policies"
-                    android:textColor="#A2E070"
+                    android:textColor="@color/settings_primary"
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
@@ -100,10 +102,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardBackgroundColor="#1F2A1A"
+                    app:cardBackgroundColor="@color/settings_card"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="0dp"
-                    app:strokeColor="#25FFFFFF"
+                    app:strokeColor="@color/settings_outline_variant"
                     app:strokeWidth="0.6dp">
 
                     <LinearLayout
@@ -126,7 +128,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/app_lock_timeout"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp" />
 
                             <TextView
@@ -135,7 +137,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_below="@id/app_lock_timeout_title"
                                 android:layout_marginTop="2dp"
-                                android:textColor="#A2E070"
+                                android:textColor="@color/settings_primary"
                                 android:textSize="13sp"
                                 tools:text="@string/timeout_immediately" />
                         </RelativeLayout>
@@ -143,7 +145,7 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="0.6dp"
-                            android:background="#15FFFFFF" />
+                            android:background="@color/settings_divider" />
 
                         <!-- Protect Hidden Apps Row -->
                         <RelativeLayout
@@ -160,7 +162,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:text="@string/protect_hidden_apps"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp" />
 
                             <TextView
@@ -169,7 +171,7 @@
                                 android:layout_below="@id/app_lock_protect_hidden_apps_switch"
                                 android:layout_marginTop="2dp"
                                 android:text="@string/protect_hidden_apps_desc"
-                                android:textColor="#A0B098"
+                                android:textColor="@color/settings_on_surface_variant"
                                 android:textSize="13sp" />
                         </RelativeLayout>
 
@@ -184,7 +186,7 @@
                     android:layout_marginStart="4dp"
                     android:layout_marginBottom="8dp"
                     android:text="@string/manage_locked_apps"
-                    android:textColor="#A2E070"
+                    android:textColor="@color/settings_primary"
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
@@ -192,10 +194,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardBackgroundColor="#1F2A1A"
+                    app:cardBackgroundColor="@color/settings_card"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="0dp"
-                    app:strokeColor="#25FFFFFF"
+                    app:strokeColor="@color/settings_outline_variant"
                     app:strokeWidth="0.6dp">
 
                     <LinearLayout
@@ -222,14 +224,14 @@
                                 android:layout_marginEnd="14dp"
                                 android:contentDescription="@null"
                                 android:src="@drawable/ic_lock_vector"
-                                app:tint="#A2E070" />
+                                app:tint="@color/settings_primary" />
 
                             <TextView
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="@string/lock_new_app"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/settings_on_surface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
@@ -242,7 +244,7 @@
                                 android:paddingEnd="10dp"
                                 android:paddingBottom="4dp"
                                 android:text="+ Add"
-                                android:textColor="#A2E070"
+                                android:textColor="@color/settings_primary"
                                 android:textSize="12sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
@@ -250,7 +252,7 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="0.6dp"
-                            android:background="#15FFFFFF" />
+                            android:background="@color/settings_divider" />
 
                         <!-- Locked Apps List -->
                         <androidx.recyclerview.widget.RecyclerView
@@ -268,7 +270,7 @@
                             android:gravity="center"
                             android:padding="24dp"
                             android:text="@string/no_apps_locked"
-                            android:textColor="#A0B098"
+                            android:textColor="@color/settings_on_surface_variant"
                             android:textSize="14sp"
                             android:visibility="gone" />
 
