@@ -39,10 +39,7 @@ class SidebarHomeElementProvider : ContentProvider() {
             val elementId = stateExtras.getString(KEY_ELEMENT_ID)?.takeIf { it.isNotBlank() } ?: return Bundle()
             val active = stateExtras.getBoolean(KEY_ACTIVE, false)
             val glowColor = stateExtras.getInt(KEY_GLOW_COLOR, 0)
-            appContext.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean(STATE_PREFIX + elementId, active)
-                .putInt(COLOR_PREFIX + elementId, glowColor)
-                .apply()
+            activeStates[elementId] = active to glowColor
             return Bundle().apply { putBoolean(KEY_SUCCESS, true) }
         }
 
@@ -122,12 +119,7 @@ class SidebarHomeElementProvider : ContentProvider() {
     }
 
     private fun resolveState(context: Context, elementId: String, item: SidebarItem): Pair<Boolean, Int> {
-        val statePrefs = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
-        val stateKey = STATE_PREFIX + elementId
-        if (statePrefs.contains(stateKey)) {
-            return statePrefs.getBoolean(stateKey, false) to
-                statePrefs.getInt(COLOR_PREFIX + elementId, 0)
-        }
+        activeStates[elementId]?.let { return it }
 
         return when (item) {
             is SidebarItem.DisplayAction -> when (item.action) {
@@ -155,6 +147,10 @@ class SidebarHomeElementProvider : ContentProvider() {
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
 
     companion object {
+        private val activeStates = java.util.concurrent.ConcurrentHashMap<String, Pair<Boolean, Int>>()
+
+        fun getStoredState(elementId: String): Pair<Boolean, Int>? = activeStates[elementId]
+
         const val METHOD_GET_HOME_ELEMENTS = "get_home_elements"
         const val METHOD_SET_ELEMENT_STATE = "set_element_state"
         const val KEY_ELEMENT_ID = "element_id"
@@ -166,9 +162,6 @@ class SidebarHomeElementProvider : ContentProvider() {
         private const val KEY_ID = "id"
         private const val KEY_LABEL = "label"
         private const val KEY_ICON = "icon"
-        private const val STATE_PREFS = "SidebarHomeElementState"
-        private const val STATE_PREFIX = "active:"
-        private const val COLOR_PREFIX = "color:"
         private const val ICON_SIZE = 64
         private const val TORCH_GLOW = 0xFFFFC928.toInt()
         private const val BLUE_GLOW = 0xFFFF9900.toInt()
