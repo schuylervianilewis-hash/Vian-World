@@ -18,7 +18,8 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:title="@string/app_lock"
-            app:titleTextColor="@color/settings_on_surface" />
+            app:titleTextColor="@color/settings_on_surface"
+            app:navigationIconTint="@color/settings_on_surface" />
     </org.fossify.commons.views.MyAppBarLayout>
 
     <androidx.core.widget.NestedScrollView
