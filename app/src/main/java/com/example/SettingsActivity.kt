@@ -46,9 +46,6 @@ class SettingsActivity : ComponentActivity() {
         LogKeeper.log(this, "SettingsActivity", "onCreate entered")
 
         try {
-            // Ensure Main lightweight resident runtime is started if overlay permission is granted
-            HandleService.startIfConfigured(this)
-
             val startRoute = intent.getStringExtra("start_route") ?: "main"
 
             setContent {
@@ -69,6 +66,12 @@ class SettingsActivity : ComponentActivity() {
             LogKeeper.logError(this, "SettingsActivity", "Exception during onCreate", t)
             throw t
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Retry after returning from Android's overlay-permission settings screen.
+        HandleService.startIfConfigured(this)
     }
 }
 

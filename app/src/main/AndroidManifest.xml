@@ -231,6 +231,12 @@
         </receiver>
 
         <provider
+            android:name=".core.SidebarSetupStateProvider"
+            android:authorities="${applicationId}.sidebar.setup"
+            android:exported="false"
+            android:process=":heavy" />
+
+        <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
             android:exported="false"

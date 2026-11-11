@@ -10,6 +10,9 @@
         android:id="@+id/drawer_menu_hidden_apps"
         android:title="@string/hidden_apps" />
     <item
+        android:id="@+id/drawer_menu_sidebar_settings"
+        android:title="@string/sidebar_settings" />
+    <item
         android:id="@+id/drawer_menu_settings"
-        android:title="@string/settings" />
+        android:title="@string/launcher_settings" />
 </menu>

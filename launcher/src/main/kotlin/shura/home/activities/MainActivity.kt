@@ -137,7 +137,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : SimpleActivity(), FlingListener {
-    private var sidebarSetupPromptEvaluated = false
+    private var sidebarSetupCheckAttempted = false
     private var mTouchDownX = -1
     private var mTouchDownY = -1
     private var mAllAppsFragmentY = 0
@@ -229,7 +229,6 @@ class MainActivity : SimpleActivity(), FlingListener {
         private const val ANIMATION_DURATION = 150L
         private const val APP_DRAWER_CLOSE_DELAY = 300L
         private const val APP_DRAWER_STATE = "app_drawer_state"
-        private const val SIDEBAR_SETUP_PROMPT_SHOWN = "sidebar_setup_prompt_shown"
         private var isCrashHandlerInstalled = false
     }
 
@@ -308,36 +307,42 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     }
 
-    private fun maybePromptSidebarSetup() {
-        if (sidebarSetupPromptEvaluated || isFinishing || !isDefaultLauncher()) return
-        sidebarSetupPromptEvaluated = true
+    /**
+     * Reads setup state from the Heavy-process provider, the single owner of this preference.
+     * The Binder read runs in the background so starting :heavy cannot stall the launcher UI.
+     * Run once for each fresh launcher visit, not on every onResume callback.
+     */
+    private fun maybeOpenSidebarSetupForFreshLaunch() {
+        if (sidebarSetupCheckAttempted || isFinishing || !isDefaultLauncher()) return
+        sidebarSetupCheckAttempted = true
 
-        val prefs = config.sharedPrefs
-        if (prefs.getBoolean(SIDEBAR_SETUP_PROMPT_SHOWN, false)) return
-
-        @Suppress("DEPRECATION")
-        val sidebarSetupCompleted = getSharedPreferences(
-            "FloatingReaderPrefs",
-            Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS
-        ).getBoolean("setup_completed", false)
-
-        prefs.edit().putBoolean(SIDEBAR_SETUP_PROMPT_SHOWN, true).apply()
-        if (sidebarSetupCompleted) return
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.sidebar_setup_prompt_title)
-            .setMessage(R.string.sidebar_setup_prompt_message)
-            .setPositiveButton(R.string.sidebar_setup_now) { _, _ ->
-                openSidebarSetup()
+        ensureBackgroundThread {
+            val setupCompleted = try {
+                val result = contentResolver.call(
+                    android.net.Uri.parse("content://$packageName.sidebar.setup"),
+                    "is_setup_completed",
+                    null,
+                    null
+                )
+                result?.getBoolean("setup_completed", false) == true
+            } catch (e: Exception) {
+                logKeeper.log("MainActivity", "Could not read Sidebar setup state; opening Welcome safely", e)
+                false
             }
-            .setNegativeButton(R.string.sidebar_setup_later, null)
-            .show()
-    }
 
-    private fun openSidebarSetup() {
-        val setupIntent = Intent().setClassName(packageName, "com.example.MainActivity")
-            .putExtra("force_welcome", true)
-        startActivity(setupIntent)
+            runOnUiThread {
+                if (isFinishing || isDestroyed || setupCompleted) return@runOnUiThread
+                try {
+                    startActivity(Intent().setClassName(
+                        packageName,
+                        "com.example.feature.welcome.WelcomeActivity"
+                    ))
+                } catch (e: Exception) {
+                    logKeeper.log("MainActivity", "Failed to open Sidebar Welcome", e)
+                    toast("Unable to open Sidebar setup")
+                }
+            }
+        }
     }
 
     private fun setupWallpaperColorListener() {
@@ -374,6 +379,8 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        val isFreshLauncherVisit = wasJustPaused
+        if (isFreshLauncherVisit) sidebarSetupCheckAttempted = false
         val wasAnyFragmentOpen = isAllAppsFragmentExpanded() || isWidgetsFragmentExpanded()
         if (wasJustPaused) {
             if (isAllAppsFragmentExpanded()) {
@@ -396,6 +403,7 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
 
         handleIntentAction(intent)
+        if (isFreshLauncherVisit) maybeOpenSidebarSetupForFreshLaunch()
     }
 
     override fun onStart() {
@@ -425,7 +433,7 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     override fun onResume() {
         super.onResume()
-        maybePromptSidebarSetup()
+        maybeOpenSidebarSetupForFreshLaunch()
         wasJustPaused = false
         refreshWallpaperSupportsDarkText()
         Handler(Looper.getMainLooper()).postDelayed({
@@ -857,38 +865,51 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
     }
 
+    private val sidebarElementPlacementLock = Any()
+
     private fun addSidebarElementToHome(elementId: String, displayName: String?) {
-        val (page, rect) = findFirstEmptyCell()
         val packageName = applicationContext.packageName
         val activityName = "com.example.feature.sidebar.SidebarElementLaunchActivity"
-        val iconBitmap = ContextCompat.getDrawable(this, R.mipmap.ic_launcher)?.toBitmap()
         val title = displayName?.takeIf { it.isNotBlank() }
             ?: elementId.substringAfter(":").replace("_", " ").ifBlank { "Sidebar element" }
 
-        val item = HomeScreenGridItem(
-            id = null,
-            left = rect.left,
-            top = rect.top,
-            right = rect.right,
-            bottom = rect.bottom,
-            page = page,
-            packageName = packageName,
-            activityName = activityName,
-            title = title,
-            type = ITEM_TYPE_ICON,
-            className = SIDEBAR_ELEMENT_CLASS_NAME,
-            widgetId = -1,
-            shortcutId = elementId,
-            icon = iconBitmap,
-            docked = false,
-            parentId = null
-        )
-        binding.homeScreenGrid.root.storeAndShowGridItem(item)
-        LogCatcher.log("MainActivity", "Added Sidebar Home item: " + elementId)
+        // Serialize placement and keep the Room read and insert off the UI thread.
+        ensureBackgroundThread {
+            synchronized(sidebarElementPlacementLock) {
+                if (isFinishing || isDestroyed) return@synchronized
+
+                val (page, rect) = findFirstEmptyCell()
+                val iconBitmap = ContextCompat.getDrawable(this, R.mipmap.ic_launcher)?.toBitmap()
+                val item = HomeScreenGridItem(
+                    id = null,
+                    left = rect.left,
+                    top = rect.top,
+                    right = rect.right,
+                    bottom = rect.bottom,
+                    page = page,
+                    packageName = packageName,
+                    activityName = activityName,
+                    title = title,
+                    type = ITEM_TYPE_ICON,
+                    className = SIDEBAR_ELEMENT_CLASS_NAME,
+                    widgetId = -1,
+                    shortcutId = elementId,
+                    icon = iconBitmap,
+                    docked = false,
+                    parentId = null
+                )
+                binding.homeScreenGrid.root.storeAndShowGridItemFromBackground(item) {
+                    if (!isFinishing && !isDestroyed) {
+                        binding.homeScreenGrid.root.skipToPage(page)
+                        LogCatcher.log("MainActivity", "Added Sidebar Home item: $elementId")
+                    }
+                }
+            }
+        }
     }
 
     private fun findFirstEmptyCell(): Pair<Int, Rect> {
-        val gridItems = homeScreenGridItemsDB.getAllItems() as ArrayList<HomeScreenGridItem>
+        val gridItems = homeScreenGridItemsDB.getAllItems()
         val maxPage = gridItems.maxOfOrNull { it.page } ?: 0
         val occupiedCells = ArrayList<Triple<Int, Int, Int>>()
         gridItems.toImmutableList().filter { it.parentId == null }.forEach { item ->

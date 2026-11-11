@@ -431,6 +431,14 @@ class AllAppsFragment(
                         currentActivity.startActivity(Intent(currentActivity, HiddenIconsActivity::class.java))
                         true
                     }
+                    R.id.drawer_menu_sidebar_settings -> {
+                        val sidebarSettingsIntent = Intent().setClassName(
+                            currentActivity.packageName,
+                            "com.example.SettingsActivity"
+                        )
+                        currentActivity.startActivity(sidebarSettingsIntent)
+                        true
+                    }
                     R.id.drawer_menu_settings -> {
                         currentActivity.startActivity(Intent(currentActivity, SettingsActivity::class.java))
                         true

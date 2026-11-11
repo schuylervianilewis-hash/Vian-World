@@ -1238,11 +1238,41 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
         redrawGrid()
     }
 
-    fun storeAndShowGridItem(item: HomeScreenGridItem) {
-        val newId = context.homeScreenGridItemsDB.insert(item)
-        item.id = newId
-        gridItems.add(item)
-        redrawGrid()
+    /**
+     * Persist a new item off the UI thread, then update the in-memory grid on the main thread.
+     * Used by Sidebar Add Element as well as launcher pin/add flows.
+     */
+    fun storeAndShowGridItem(item: HomeScreenGridItem, onStored: (() -> Unit)? = null) {
+        ensureBackgroundThread { persistAndShowGridItem(item, onStored) }
+    }
+
+    /**
+     * Variant for callers already running a background transaction, allowing cell allocation
+     * and insertion to remain serialized as one operation.
+     */
+    fun storeAndShowGridItemFromBackground(item: HomeScreenGridItem, onStored: (() -> Unit)? = null) {
+        persistAndShowGridItem(item, onStored)
+    }
+
+    private fun persistAndShowGridItem(item: HomeScreenGridItem, onStored: (() -> Unit)?) {
+        try {
+            val newId = context.homeScreenGridItemsDB.insert(item)
+            item.id = newId
+            post {
+                if (gridItems.none { it.id == newId }) gridItems.add(item)
+                redrawGrid()
+                onStored?.invoke()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenGrid", "Failed to persist home screen item '${item.title}'", e)
+            post {
+                android.widget.Toast.makeText(
+                    context,
+                    "Could not add item to the home screen",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
     }
 
     private fun addWidget() {
