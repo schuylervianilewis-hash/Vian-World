@@ -351,15 +351,15 @@ class SidebarAppsManager(
         } else if (parsed is SidebarItem.DisplayAction) {
             icon.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             icon.setImageResource(parsed.iconResId)
-            if (parsed.action == "torch_toggle" && isPersistedHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.torchEnabled)) {
+            if (parsed.action == "torch_toggle" && isHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.torchEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#FFFFC928"))
-            } else if (parsed.action == "blue_light_filter" && isPersistedHomeElementActive(parsed.id, com.example.feature.system_hub.BlueLightFilterManager.isEnabled)) {
+            } else if (parsed.action == "blue_light_filter" && isHomeElementActive(parsed.id, com.example.feature.system_hub.BlueLightFilterManager.isEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#FF9900"))
-            } else if (parsed.action == "privacy_curtain" && isPersistedHomeElementActive(parsed.id, com.example.feature.system_hub.PrivacyCurtainManager.isEnabled)) {
+            } else if (parsed.action == "privacy_curtain" && isHomeElementActive(parsed.id, com.example.feature.system_hub.PrivacyCurtainManager.isEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#1DB954"))
-            } else if (parsed.action == "e_ink_mode" && isPersistedHomeElementActive(parsed.id, com.example.feature.system_hub.EInkPaperFilterManager.isEnabled)) {
+            } else if (parsed.action == "e_ink_mode" && isHomeElementActive(parsed.id, com.example.feature.system_hub.EInkPaperFilterManager.isEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#E6C280"))
-            } else if (parsed.action == "keep_screen_on" && isPersistedHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.keepScreenOnEnabled)) {
+            } else if (parsed.action == "keep_screen_on" && isHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.keepScreenOnEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#4CAF50"))
             } else {
                 icon.setColorFilter(android.graphics.Color.WHITE)
