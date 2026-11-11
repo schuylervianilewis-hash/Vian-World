@@ -231,6 +231,11 @@
         </receiver>
 
         <provider
+            android:name=".core.SidebarHomeElementProvider"
+            android:authorities="${applicationId}.sidebar.elements"
+            android:exported="false" />
+
+        <provider
             android:name=".core.SidebarSetupStateProvider"
             android:authorities="${applicationId}.sidebar.setup"
             android:exported="false"
