@@ -133,6 +133,64 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Sidebar elements are individual launcher items; folders remain launcher-native. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/add_card_sidebar_elements"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardBackgroundColor="#1F2A1A"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="0dp"
+        app:rippleColor="#33A2E070"
+        app:strokeColor="#25FFFFFF"
+        app:strokeWidth="0.6dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="12dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/item_log_card_background"
+                android:contentDescription="@null"
+                android:padding="9dp"
+                android:src="@drawable/ic_apps_vector"
+                app:tint="#A2E070" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/element_sidebar"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/element_sidebar_desc"
+                    android:textColor="#A0B098"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
     <!-- 2. Desktop Widgets Card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/add_card_desktop_widgets"
