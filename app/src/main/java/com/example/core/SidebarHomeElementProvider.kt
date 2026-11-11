@@ -32,8 +32,20 @@ class SidebarHomeElementProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
-        if (method != METHOD_GET_HOME_ELEMENTS) return null
         val appContext = context ?: return null
+
+        if (method == METHOD_SET_ELEMENT_STATE) {
+            val elementId = extras?.getString(KEY_ELEMENT_ID)?.takeIf { it.isNotBlank() } ?: return Bundle()
+            val active = extras.getBoolean(KEY_ACTIVE, false)
+            val glowColor = extras.getInt(KEY_GLOW_COLOR, 0)
+            appContext.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(STATE_PREFIX + elementId, active)
+                .putInt(COLOR_PREFIX + elementId, glowColor)
+                .apply()
+            return Bundle().apply { putBoolean(KEY_SUCCESS, true) }
+        }
+
+        if (method != METHOD_GET_HOME_ELEMENTS) return null
         val ids = extras?.getStringArrayList(KEY_ELEMENT_IDS).orEmpty()
         if (ids.isEmpty()) return Bundle()
 
@@ -46,7 +58,7 @@ class SidebarHomeElementProvider : ContentProvider() {
             ids.distinct().forEach { id ->
                 val item = ElementIdParser.parse(appContext, id) ?: return@forEach
                 val icon = resolveIcon(appContext, appsManager, id, item)
-                val state = resolveState(appContext, item)
+                val state = resolveState(appContext, id, item)
                 result.add(Bundle().apply {
                     putString(KEY_ID, id)
                     putString(KEY_LABEL, item.label)
@@ -95,7 +107,14 @@ class SidebarHomeElementProvider : ContentProvider() {
         }
     }
 
-    private fun resolveState(context: Context, item: SidebarItem): Pair<Boolean, Int> {
+    private fun resolveState(context: Context, elementId: String, item: SidebarItem): Pair<Boolean, Int> {
+        val statePrefs = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+        val stateKey = STATE_PREFIX + elementId
+        if (statePrefs.contains(stateKey)) {
+            return statePrefs.getBoolean(stateKey, false) to
+                statePrefs.getInt(COLOR_PREFIX + elementId, 0)
+        }
+
         return when (item) {
             is SidebarItem.DisplayAction -> when (item.action) {
                 "torch_toggle" -> DisplayHandler.torchEnabled to TORCH_GLOW
@@ -122,14 +141,20 @@ class SidebarHomeElementProvider : ContentProvider() {
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
 
     companion object {
-        private const val METHOD_GET_HOME_ELEMENTS = "get_home_elements"
+        const val METHOD_GET_HOME_ELEMENTS = "get_home_elements"
+        const val METHOD_SET_ELEMENT_STATE = "set_element_state"
+        const val KEY_ELEMENT_ID = "element_id"
+        const val KEY_ACTIVE = "active"
+        const val KEY_GLOW_COLOR = "glow_color"
+        const val KEY_SUCCESS = "success"
         private const val KEY_ELEMENT_IDS = "element_ids"
         private const val KEY_ELEMENTS = "elements"
         private const val KEY_ID = "id"
         private const val KEY_LABEL = "label"
         private const val KEY_ICON = "icon"
-        private const val KEY_ACTIVE = "active"
-        private const val KEY_GLOW_COLOR = "glow_color"
+        private const val STATE_PREFS = "SidebarHomeElementState"
+        private const val STATE_PREFIX = "active:"
+        private const val COLOR_PREFIX = "color:"
         private const val ICON_SIZE = 96
         private const val TORCH_GLOW = 0xFFFFC928.toInt()
         private const val BLUE_GLOW = 0xFFFF9900.toInt()
