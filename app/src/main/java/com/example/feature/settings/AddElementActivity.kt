@@ -276,7 +276,7 @@ class AddElementActivity : ComponentActivity() {
             addItem(android.R.drawable.ic_menu_crop, "Floating Trigger") {
                 val intent = Intent(this, AddElementActivity::class.java).apply {
                     putExtra("IS_FLOATING_TRIGGER_SELECTION", true)
-                    putExtra("SIDEBAR_HOME_PICKER", intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false))
+                    putExtra("SIDEBAR_HOME_PICKER", this@AddElementActivity.intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false))
                     putExtra("PAGE_ID", pageId)
                     putExtra("CONTAINER_ID", containerId)
                     putExtra("IS_HYBRID_GRID", isHybridGrid)
