@@ -146,7 +146,7 @@ class SettingsActivity : SimpleActivity() {
             binding.settingsPrivacySecurityLabel,
             binding.settingsBackupRestoreLabel
         ).forEach {
-            it.setTextColor(getProperPrimaryColor())
+            it.setTextColor(getColor(R.color.settings_primary))
         }
     }
 
