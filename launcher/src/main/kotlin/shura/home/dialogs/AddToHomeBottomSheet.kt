@@ -34,6 +34,12 @@ class AddToHomeBottomSheet(
             activity.showAddAppDialog(targetX, targetY)
         }
 
+        // Sidebar elements are added as individual launcher items, not Sidebar folders.
+        binding.addCardSidebarElements.setOnClickListener {
+            dismiss()
+            activity.showAddSidebarElementPicker(targetX, targetY)
+        }
+
         // 2. Desktop Widgets (Multi-cell)
         binding.addCardDesktopWidgets.setOnClickListener {
             dismiss()
