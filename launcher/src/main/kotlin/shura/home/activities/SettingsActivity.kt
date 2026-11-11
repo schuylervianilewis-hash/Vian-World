@@ -5,6 +5,9 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import android.provider.Settings
 import shura.home.services.NotificationBadgeService
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,7 +18,6 @@ import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
 import org.fossify.commons.extensions.toast
-import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -136,7 +138,7 @@ class SettingsActivity : SimpleActivity() {
         setupBackupAndRestore()
         setupAbout()
         setupSidebarSetup()
-        updateTextColors(binding.settingsHolder)
+        applySettingsTextColors()
 
         arrayOf(
             binding.settingsColorCustomizationSectionLabel,
@@ -147,6 +149,65 @@ class SettingsActivity : SimpleActivity() {
             binding.settingsBackupRestoreLabel
         ).forEach {
             it.setTextColor(getColor(R.color.settings_primary))
+        }
+    }
+
+    /**
+     * Keep every Launcher Settings label readable on the fixed light settings surface.
+     * Fossify's generic updateTextColors follows launcher personalization and can apply
+     * light text to this deliberately light page, so this screen owns its text contrast.
+     */
+    private fun applySettingsTextColors() {
+        val primary = getColor(R.color.settings_on_surface)
+        val secondary = getColor(R.color.settings_on_surface_variant)
+        val accent = getColor(R.color.settings_primary)
+
+        val sectionIds = setOf(
+            R.id.settings_color_customization_section_label,
+            R.id.settings_home_screen_label,
+            R.id.settings_drawer_settings_label,
+            R.id.settings_general_settings_label,
+            R.id.settings_privacy_security_label,
+            R.id.settings_backup_restore_label
+        )
+        val secondaryIds = setOf(
+            R.id.settings_language,
+            R.id.settings_home_screen_row_count,
+            R.id.settings_home_screen_column_count,
+            R.id.settings_dock_column_count,
+            R.id.settings_drawer_column_count,
+            R.id.settings_drawer_wallpaper,
+            R.id.settings_gestures_and_actions_desc,
+            R.id.settings_app_lock_desc,
+            R.id.settings_backup_desc,
+            R.id.settings_restore_desc,
+            R.id.settings_about_desc,
+            R.id.settings_sidebar_setup_desc
+        )
+
+        fun applyToView(view: View) {
+            if (view is TextView) {
+                view.setTextColor(
+                    when {
+                        sectionIds.contains(view.id) -> accent
+                        secondaryIds.contains(view.id) -> secondary
+                        else -> primary
+                    }
+                )
+            }
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) {
+                    applyToView(view.getChildAt(index))
+                }
+            }
+        }
+
+        applyToView(binding.settingsHolder)
+        binding.settingsToolbar.setTitleTextColor(primary)
+        binding.settingsToolbar.navigationIcon?.mutate()?.setTint(primary)
+        binding.settingsToolbar.overflowIcon?.mutate()?.setTint(primary)
+        for (index in 0 until binding.settingsToolbar.menu.size()) {
+            binding.settingsToolbar.menu.getItem(index).icon?.mutate()?.setTint(primary)
         }
     }
 
