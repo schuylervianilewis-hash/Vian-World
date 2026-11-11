@@ -35,9 +35,10 @@ class SidebarHomeElementProvider : ContentProvider() {
         val appContext = context ?: return null
 
         if (method == METHOD_SET_ELEMENT_STATE) {
-            val elementId = extras?.getString(KEY_ELEMENT_ID)?.takeIf { it.isNotBlank() } ?: return Bundle()
-            val active = extras.getBoolean(KEY_ACTIVE, false)
-            val glowColor = extras.getInt(KEY_GLOW_COLOR, 0)
+            val stateExtras = extras ?: return Bundle()
+            val elementId = stateExtras.getString(KEY_ELEMENT_ID)?.takeIf { it.isNotBlank() } ?: return Bundle()
+            val active = stateExtras.getBoolean(KEY_ACTIVE, false)
+            val glowColor = stateExtras.getInt(KEY_GLOW_COLOR, 0)
             appContext.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean(STATE_PREFIX + elementId, active)
                 .putInt(COLOR_PREFIX + elementId, glowColor)
@@ -91,6 +92,19 @@ class SidebarHomeElementProvider : ContentProvider() {
                     .getAppWidgetInfo(item.widgetId)?.loadIcon(context, context.resources.displayMetrics.densityDpi)
                 is SidebarItem.Widget -> AppWidgetManager.getInstance(context)
                     .getAppWidgetInfo(item.widgetId)?.loadIcon(context, context.resources.displayMetrics.densityDpi)
+                is SidebarItem.IntentAction -> {
+                    val packageName = try {
+                        val parsedIntent = android.content.Intent.parseUri(item.uri, android.content.Intent.URI_INTENT_SCHEME)
+                        parsedIntent.getPackage() ?: parsedIntent.component?.packageName
+                    } catch (_: Exception) {
+                        null
+                    }
+                    packageName?.let { context.packageManager.getApplicationIcon(it) }
+                        ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                }
+                is SidebarItem.FloatingTrigger -> appsManager.getIconBitmap(item.targetId)?.let {
+                    android.graphics.drawable.BitmapDrawable(context.resources, normalize(it))
+                } ?: context.getDrawable(android.R.drawable.ic_menu_view)
                 else -> context.getDrawable(android.R.drawable.ic_menu_view)
             }
         } catch (_: Exception) {
@@ -155,7 +169,7 @@ class SidebarHomeElementProvider : ContentProvider() {
         private const val STATE_PREFS = "SidebarHomeElementState"
         private const val STATE_PREFIX = "active:"
         private const val COLOR_PREFIX = "color:"
-        private const val ICON_SIZE = 96
+        private const val ICON_SIZE = 64
         private const val TORCH_GLOW = 0xFFFFC928.toInt()
         private const val BLUE_GLOW = 0xFFFF9900.toInt()
         private const val EINK_GLOW = 0xFFE6C280.toInt()
