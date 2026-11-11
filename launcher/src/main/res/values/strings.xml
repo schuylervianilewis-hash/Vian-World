@@ -235,4 +235,6 @@
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
     -->
     <!-- CI trigger: log keeper PR verification -->
+    <string name="element_sidebar">Sidebar elements</string>
+    <string name="element_sidebar_desc">Add Sidebar tools and actions to your home screen</string>
 </resources>
