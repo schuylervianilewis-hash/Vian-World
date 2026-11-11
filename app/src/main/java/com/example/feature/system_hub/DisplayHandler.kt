@@ -9,7 +9,8 @@ import android.hardware.camera2.CameraManager
 import com.example.core.LogKeeper
 
 object DisplayHandler {
-    private var torchEnabled = false
+    @Volatile var torchEnabled = false
+        private set
     private var torchCallbackRegistered = false
 
     fun handleDisplayAction(context: Context, action: String) {
@@ -76,13 +77,14 @@ object DisplayHandler {
         }
     }
 
-    private var isKeepScreenOn = false
+    @Volatile var keepScreenOnEnabled = false
+        private set
     private var keepScreenOnOverlay: android.view.View? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     private fun toggleKeepScreenOn(context: Context) {
-        isKeepScreenOn = !isKeepScreenOn
-        if (isKeepScreenOn) {
+        keepScreenOnEnabled = !keepScreenOnEnabled
+        if (keepScreenOnEnabled) {
             try {
                 if (Settings.canDrawOverlays(context)) {
                     val wm = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
@@ -203,6 +205,10 @@ object DisplayHandler {
             val newState = !torchEnabled
             cameraManager.setTorchMode(cameraId, newState)
             torchEnabled = newState
+            context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
+                putExtra("item_id", "display:torch_toggle")
+                setPackage(context.packageName)
+            })
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(context, "Torch not available", Toast.LENGTH_SHORT).show()
