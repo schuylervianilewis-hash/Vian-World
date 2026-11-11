@@ -16,8 +16,7 @@ import com.example.feature.system_hub.DisplayHandler
 import com.example.feature.system_hub.EInkPaperFilterManager
 import com.example.feature.system_hub.PrivacyCurtainManager
 import com.example.feature.system_hub.BlueLightFilterManager
-import com.example.feature.system_hub.ScreenRecordService
-import com.example.feature.system_hub.QuickTileHandler
+import com.example.service.ScreenRecordService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
