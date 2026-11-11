@@ -323,7 +323,6 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                     if (item.className == SIDEBAR_ELEMENT_CLASS_NAME) {
                         val info = sidebarElementInfos[item.shortcutId]
                         if (info != null) {
-                            if (info.label.isNotBlank()) item.title = info.label
                             item.icon = info.icon
                             item.drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
                                 context,
@@ -2430,7 +2429,6 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
             sidebarItems.forEach { item ->
                 val info = infos[item.shortcutId]
                 if (info != null) {
-                    if (info.label.isNotBlank()) item.title = info.label
                     item.icon = info.icon
                     item.drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
                         context,
