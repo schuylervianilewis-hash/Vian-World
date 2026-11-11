@@ -324,8 +324,16 @@ class HeavyProcessConnectionManager internal constructor(
         synchronized(lock) {
             if (state != ConnectionState.CONNECTED) {
                 if (autoConnect && state != ConnectionState.DEAD) {
-                    val didConnect = if (state == ConnectionState.CONNECTING) true else connect(autoCreate = true, reason = "sendCommand:${command.type}")
-                    if (didConnect || state == ConnectionState.CONNECTING) {
+                    if (state != ConnectionState.CONNECTING) {
+                        // Attempt the bind, but retain the command even when binding cannot
+                        // start yet. A later successful connection will flush this queue.
+                        connect(autoCreate = true, reason = "sendCommand:${command.type}")
+                    }
+
+                    // Binding may fail temporarily (or context may be unavailable in tests).
+                    // Keep commands queued while Heavy is not connected, unless its process
+                    // is known to be dead. If connection completed synchronously, send below.
+                    if (state != ConnectionState.CONNECTED) {
                         val alreadyQueued = pendingCommands.any {
                             it.commandId == command.commandId ||
                             (it.type == command.type && it.targetId == command.targetId && command.type == HeavyCommandType.START_OPERATION)
@@ -337,11 +345,14 @@ class HeavyProcessConnectionManager internal constructor(
                         return IpcResult.success("Queued for delivery upon connection")
                     }
                 }
-                safeLog("HeavyIPC", "IPC_FAILURE cmdId=${command.commandId} type=${command.type} target=${command.targetId} error=Heavy process is not connected (state=$state)")
-                return IpcResult.error(
-                    IpcErrorCode.HEAVY_UNAVAILABLE,
-                    "Heavy process is not connected (state=$state)"
-                )
+
+                if (state != ConnectionState.CONNECTED) {
+                    safeLog("HeavyIPC", "IPC_FAILURE cmdId=${command.commandId} type=${command.type} target=${command.targetId} error=Heavy process is not connected (state=$state)")
+                    return IpcResult.error(
+                        IpcErrorCode.HEAVY_UNAVAILABLE,
+                        "Heavy process is not connected (state=$state)"
+                    )
+                }
             }
             proxy = remoteProxy
         }
