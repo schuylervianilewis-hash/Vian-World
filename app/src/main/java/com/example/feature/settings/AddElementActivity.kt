@@ -197,6 +197,7 @@ class AddElementActivity : ComponentActivity() {
 
         addHeader("Special items")
         val isFloatingTrigger = intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
+        if (!intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
         addItem(android.R.drawable.ic_menu_more, "Folder") {
             val options = arrayOf("Grid", "Stack")
             android.app.AlertDialog.Builder(this)
@@ -226,6 +227,7 @@ class AddElementActivity : ComponentActivity() {
                         .show()
                 }
                 .show()
+        }
         }
         addItem(com.example.R.drawable.ic_language, "Link") {
             val linkIntent = Intent(this, LinkPickerActivity::class.java).apply {
