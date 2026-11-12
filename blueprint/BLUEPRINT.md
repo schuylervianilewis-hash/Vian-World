@@ -498,9 +498,10 @@
   - **Clear Interaction Optimization**:
     - Removed redundant synchronous flush from `prepareClear()`. Clear pushes pre-clear state to undo stack, empties latest text, and schedules debounced save through the normal async persistence path.
   - **Testing**: 59/59 tests in `FloatingMiniAppFrameworkTest` passing 100%. `compile_applet` succeeded cleanly.
-- [x] **Phase 14.6: Authoritative, Non-Blocking Note Lifecycle Flush (`NotePersistenceCoordinator.kt`, `FloatingMiniAppWindow.kt`, `FloatingMiniAppBridge.kt`)**:
+- [x] **Phase 14.6: Authoritative, Non-Blocking Note Lifecycle Flush & Teardown Idempotency (`NotePersistenceCoordinator.kt`, `FloatingMiniAppWindow.kt`, `FloatingMiniAppBridge.kt`, `DurableMiniAppStore.kt`)**:
   - **Authoritative Single-Coordinator Persistence**:
     - Removed duplicate persistence paths: deleted secondary `durableStore.saveSnapshot()` in `FloatingMiniAppBridge.sleepMiniApp` and skipped redundant `durableStore.updatePayload()` in `FloatingMiniAppWindow.onDestroy()` for Main-only apps.
+    - Eliminated duplicate synchronous `flushPendingSave()` from `FloatingMiniAppWindow.onHide()` and `onDestroy()`. Replaced with idempotent `if (notePersistence.hasPendingEdits()) scheduleDebouncedSave(0L)`. Guarantees zero main-thread disk I/O during window teardown.
     - `NotePersistenceCoordinator` is the sole authority for Note content, formatting, history, bounds, and lifecycle state (`MiniAppState.ACTIVE`, `SLEEPING`, `CLOSED`).
     - Merged target lifecycle state into the atomic commit transaction so snapshots are persisted consistently in one atomic disk operation.
   - **Non-Blocking Asynchronous UI Lifecycle Flush**:
@@ -508,12 +509,34 @@
     - Lifecycle transitions (`sleepMiniApp`, `closeMiniApp`) no longer block the Android UI/main thread. Dispatches disk I/O on background thread pool and invokes completion callback on `Looper.getMainLooper()`.
     - Window teardown and launcher bubble display happen strictly after confirmed successful write.
     - Failed or timed-out flushes abort the fold/close transaction, keeping the active Note window visible and recoverable with zero data loss.
-    - Guarded against stale late completions: background tasks that finish after timeout are safely ignored.
+  - **Operation Generation Authorization & Race-Safety**:
+    - Implemented operation generation (`currentOperationGeneration`, `activeOperationGeneration`) tracking.
+    - Timed-out or aborted flushes invalidate `activeOperationGeneration`, preventing late background workers from committing target states (`SLEEPING` or `CLOSED`).
+    - Snapshot content (text and formatting) is preserved safely without corrupting lifecycle state.
+    - Backed timeouts by daemon `ScheduledExecutorService` (`timeoutScheduler`) for deterministic timeout triggers across Android devices and test environments.
   - **Multi-Instance Thread Pool Isolation**:
     - Replaced single-thread executor with `Executors.newCachedThreadPool` using daemon worker threads.
     - Independent Note instances never head-of-line block each other's persistence or lifecycle flushes.
     - Strict per-instance serialization preserved via `getInstanceLock(instanceId)`.
-  - **Testing**: 71/71 tests in `FloatingMiniAppFrameworkTest` passing 100%. `compile_applet` succeeded cleanly.
+  - **Testing**: 71/71 tests in `FloatingMiniAppFrameworkTest` passing 100% with genuine asynchronous multi-threaded verification. `compile_applet` succeeded cleanly.
+
+### Phase 14.7: Sidebar Three Combined Updates (COMPLETED)
+- **1. Note Floating-Window Keyboard Dismissal Stabilization**:
+  - Prevented premature editor deactivation caused by transient layout passes or insets updates during initial keyboard display.
+  - Implemented `scheduleDebouncedImeDismissCheck(source: String)` with `IME_DISMISS_DEBOUNCE_MS = 250L`.
+  - Added session tracking with `imeSessionToken: Long` to invalidate stale dismiss callbacks across new editor activations.
+  - Double verification of insets (`ViewCompat.getRootWindowInsets`) and display frame visible geometry (`getWindowVisibleDisplayFrame`) before confirming keyboard dismissal.
+  - Protected window resizing (`isResizing`) and window dragging (`isDraggingWindow`) from falsely terminating IME sessions.
+- **2. Android Settings Shortcuts Catalogue Expansion**:
+  - Expanded `ALL_SETTINGS_SHORTCUTS` in `SidebarItem.kt` from 11 items to 39 items covering all primary Android Settings categories: Wi-Fi, Bluetooth, Mobile Network, Data Usage, Hotspot, Airplane Mode, VPN, NFC, Cast, Display, Night Light, Wallpaper, Sound, DND, Notifications, All Apps, Default Apps, Permission Manager, Battery, Battery Saver, Storage, Security, Privacy, Biometrics, Accounts, Languages, Keyboard/Input, Backup, Accessibility, Captions, Developer Options, Device Info, and System Update.
+  - Handled all actions in `ElementActionDispatcher.kt` with explicit fallback to `Settings.ACTION_SETTINGS` in a `catch` block for OEM resilience.
+  - Added a search bar with real-time text matching and synonym keywords in `ActionPickerActivity.kt`.
+- **3. Internet Speed Monitor Daily Total Manual Correction**:
+  - Enhanced `DailyDataUsageHelper.kt` with `DailyCorrectionInfo`, offset accumulation (`rawBytes + offset`), and `convertToBytes` supporting B, KB, MB, and GB.
+  - Added persistent daily adjustment state with automatic midnight expiration (`yyyy-MM-dd`).
+  - Added "Overall Daily Data Total" control in `NetSpeedSettingsScreen.kt` with Material 3 adjustment dialog, unit selector, validation, and reset button.
+  - `HandleService.kt` notification displays corrected daily totals automatically.
+- **Testing**: 78/78 tests in `FloatingMiniAppFrameworkTest` passing 100%.
 
 ---
 
