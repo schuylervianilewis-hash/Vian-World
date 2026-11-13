@@ -323,13 +323,30 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                     if (item.className == SIDEBAR_ELEMENT_CLASS_NAME) {
                         val info = sidebarElementInfos[item.shortcutId]
                         if (info != null) {
-                            item.icon = info.icon
-                            item.drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
+                            // Older Sidebar home entries stored the provider icon in the icon
+                            // column. Clear that default so a later user-selected icon can be
+                            // distinguished and preserved across grid reloads.
+                            if (item.icon != null && info.icon != null && item.icon?.sameAs(info.icon) == true) {
+                                item.icon = null
+                                item.id?.let { itemId ->
+                                    ensureBackgroundThread { context.homeScreenGridItemsDB.updateItemIcon(null, itemId) }
+                                }
+                            }
+                            val displayIcon = item.icon ?: info.icon
+                            val baseDrawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
                                 context,
-                                info.icon,
+                                displayIcon,
                                 info.isActive,
                                 info.glowColor
                             ) ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                            item.drawable = if (shura.home.helpers.AppLockManager.isAppLocked(
+                                    shura.home.helpers.AppLockManager.getLockKey(item)
+                                )
+                            ) {
+                                shura.home.helpers.IconDecorator.decorateLockedIcon(context, baseDrawable)
+                            } else {
+                                baseDrawable
+                            }
                         } else {
                             item.drawable = context.getDrawable(android.R.drawable.ic_menu_view)
                         }
@@ -2429,13 +2446,27 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
             sidebarItems.forEach { item ->
                 val info = infos[item.shortcutId]
                 if (info != null) {
-                    item.icon = info.icon
-                    item.drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
+                    if (item.icon != null && info.icon != null && item.icon?.sameAs(info.icon) == true) {
+                        item.icon = null
+                        item.id?.let { itemId ->
+                            ensureBackgroundThread { context.homeScreenGridItemsDB.updateItemIcon(null, itemId) }
+                        }
+                    }
+                    val displayIcon = item.icon ?: info.icon
+                    val baseDrawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
                         context,
-                        info.icon,
+                        displayIcon,
                         info.isActive,
                         info.glowColor
                     ) ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                    item.drawable = if (shura.home.helpers.AppLockManager.isAppLocked(
+                            shura.home.helpers.AppLockManager.getLockKey(item)
+                        )
+                    ) {
+                        shura.home.helpers.IconDecorator.decorateLockedIcon(context, baseDrawable)
+                    } else {
+                        baseDrawable
+                    }
                 } else {
                     item.drawable = context.getDrawable(android.R.drawable.ic_menu_view)
                 }
