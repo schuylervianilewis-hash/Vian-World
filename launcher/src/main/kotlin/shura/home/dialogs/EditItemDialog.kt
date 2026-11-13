@@ -24,6 +24,7 @@ import shura.home.helpers.ItemGestureConfig
 import shura.home.helpers.ItemGestureManager
 import shura.home.helpers.LauncherActionHandler
 import shura.home.helpers.LogCatcher
+import shura.home.helpers.SIDEBAR_ELEMENT_CLASS_NAME
 import shura.home.models.HomeScreenGridItem
 
 class EditItemDialog(
@@ -36,6 +37,7 @@ class EditItemDialog(
 
     init {
         val binding = DialogEditItemBinding.inflate(activity.layoutInflater)
+        val isSidebarElement = item.className == SIDEBAR_ELEMENT_CLASS_NAME
         binding.editItemEdittext.setText(item.title)
 
         // Set initial icon preview
@@ -80,7 +82,7 @@ class EditItemDialog(
                                 if (item.id != null) {
                                     activity.homeScreenGridItemsDB.updateItemTitle(newTitle, item.id!!)
                                 }
-                                if (item.type == ITEM_TYPE_ICON && item.packageName.isNotEmpty()) {
+                                if (item.type == ITEM_TYPE_ICON && item.packageName.isNotEmpty() && !isSidebarElement) {
                                     activity.homeScreenGridItemsDB.updateAppTitle(newTitle, item.packageName)
                                     activity.launchersDB.updateAppTitle(newTitle, item.packageName)
                                 }
@@ -91,7 +93,7 @@ class EditItemDialog(
                                 if (item.id != null) {
                                     activity.homeScreenGridItemsDB.updateItemIcon(null, item.id!!)
                                 }
-                                if (item.type == ITEM_TYPE_ICON && item.packageName.isNotEmpty()) {
+                                if (item.type == ITEM_TYPE_ICON && item.packageName.isNotEmpty() && !isSidebarElement) {
                                     CustomIconManager.removeCustomIcon(activity, item.packageName)
                                     activity.homeScreenGridItemsDB.updateAppIcon(null, item.packageName)
                                 }
@@ -101,7 +103,7 @@ class EditItemDialog(
                                 if (item.id != null) {
                                     activity.homeScreenGridItemsDB.updateItemIcon(downsampled, item.id!!)
                                 }
-                                if (item.type == ITEM_TYPE_ICON && item.packageName.isNotEmpty()) {
+                                if (item.type == ITEM_TYPE_ICON && item.packageName.isNotEmpty() && !isSidebarElement) {
                                     CustomIconManager.saveCustomIcon(activity, item.packageName, downsampled)
                                     activity.homeScreenGridItemsDB.updateAppIcon(downsampled, item.packageName)
                                 }
