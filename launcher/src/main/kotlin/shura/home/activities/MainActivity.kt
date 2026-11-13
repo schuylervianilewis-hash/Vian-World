@@ -941,7 +941,9 @@ class MainActivity : SimpleActivity(), FlingListener {
                     className = SIDEBAR_ELEMENT_CLASS_NAME,
                     widgetId = -1,
                     shortcutId = elementId,
-                    icon = iconBitmap,
+                    // Keep provider imagery in the Drawable only. A non-null persisted
+                    // bitmap is reserved for a user-customized launcher icon.
+                    icon = null,
                     docked = false,
                     parentId = null,
                     drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
@@ -2155,6 +2157,7 @@ class MainActivity : SimpleActivity(), FlingListener {
                 AppLockManager.authenticateAndLaunch(this@MainActivity, pkg, title) {
                     AppLockManager.unlockApp(this@MainActivity, pkg) {
                         toast(R.string.app_unlocked)
+                        binding.homeScreenGrid.root.fetchGridItems()
                         IconCache.clear()
                         ensureBackgroundThread {
                             refreshLaunchers()
@@ -2173,6 +2176,7 @@ class MainActivity : SimpleActivity(), FlingListener {
                     }
                     AppLockManager.lockApp(this@MainActivity, pkg, title) {
                         toast(R.string.app_locked)
+                        binding.homeScreenGrid.root.fetchGridItems()
                         IconCache.clear()
                         ensureBackgroundThread {
                             refreshLaunchers()
