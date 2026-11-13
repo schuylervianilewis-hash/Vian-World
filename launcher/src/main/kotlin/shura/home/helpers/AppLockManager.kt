@@ -17,6 +17,7 @@ import shura.home.R
 import shura.home.extensions.config
 import shura.home.extensions.lockedAppsDB
 import shura.home.models.LockedApp
+import shura.home.models.HomeScreenGridItem
 
 object AppLockManager {
 
@@ -49,6 +50,16 @@ object AppLockManager {
             } catch (e: Exception) {
                 LogCatcher.log("AppLock", "Failed to reload locked packages", e)
             }
+        }
+    }
+
+    /** Stable lock identity for a home-grid item. Sidebar elements share the app package,
+     * so use their element ID rather than accidentally locking every Sidebar entry together. */
+    fun getLockKey(item: HomeScreenGridItem): String {
+        return if (item.className == SIDEBAR_ELEMENT_CLASS_NAME && item.shortcutId.isNotBlank()) {
+            "sidebar-element:" + item.shortcutId
+        } else {
+            item.packageName
         }
     }
 
