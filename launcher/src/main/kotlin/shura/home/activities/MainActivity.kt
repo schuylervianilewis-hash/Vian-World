@@ -594,7 +594,11 @@ class MainActivity : SimpleActivity(), FlingListener {
         when (requestCode) {
             AddElementBridge.REQUEST_SIDEBAR_ELEMENT -> {
                 if (resultCode == RESULT_OK && resultData != null) {
-                    if (resultData.getBooleanExtra("OPEN_LAUNCHER_WIDGET_PICKER", false)) {
+                    if (resultData.getBooleanExtra("CREATE_LAUNCHER_FOLDER", false)) {
+                        val preferredPlacement = pendingSidebarElementPlacement
+                        pendingSidebarElementPlacement = null
+                        showAddFolderDialogAtPlacement(preferredPlacement)
+                    } else if (resultData.getBooleanExtra("OPEN_LAUNCHER_WIDGET_PICKER", false)) {
                         pendingSidebarElementPlacement = null
                         showWidgetsFragment()
                     } else {
@@ -1860,6 +1864,42 @@ class MainActivity : SimpleActivity(), FlingListener {
                         binding.homeScreenGrid.root.skipToPage(page)
                     }
                     toast(R.string.folder_created)
+                }
+            }
+        }
+    }
+
+    private fun showAddFolderDialogAtPlacement(preferredPlacement: Pair<Int, Rect>?) {
+        CreateFolderDialog(this) { folderName ->
+            ensureBackgroundThread {
+                val (page, rect) = preferredPlacement?.let {
+                    findNearestEmptyCellOnPage(it.first, it.second.left, it.second.top)
+                } ?: findFirstEmptyCell()
+                val isDock = rect.top == config.homeRowCount - 1
+                val gridItem = HomeScreenGridItem(
+                    id = null,
+                    left = rect.left,
+                    top = rect.top,
+                    right = rect.right,
+                    bottom = rect.bottom,
+                    page = if (isDock) 0 else page,
+                    packageName = "",
+                    activityName = "",
+                    title = folderName,
+                    type = ITEM_TYPE_FOLDER,
+                    className = "",
+                    widgetId = -1,
+                    shortcutId = "",
+                    icon = null,
+                    docked = isDock,
+                    parentId = null,
+                    drawable = null
+                )
+                binding.homeScreenGrid.root.storeAndShowGridItemFromBackground(gridItem) {
+                    if (!isFinishing && !isDestroyed) {
+                        binding.homeScreenGrid.root.skipToPage(page)
+                        toast(R.string.folder_created)
+                    }
                 }
             }
         }
