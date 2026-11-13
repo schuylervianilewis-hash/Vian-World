@@ -211,8 +211,11 @@ object AppLockManager {
                     }
                 }
             } else {
-                // If device has no credentials setup at all, allow launch
-                onSuccess()
+                // Never bypass a requested lock when the device cannot present an
+                // approved biometric or device-credential prompt.
+                LogCatcher.log("AppLock", "Authentication prompt unavailable; denying protected launch", e)
+                activity.toast("Set up biometrics or a device screen lock to use this protection")
+                onError?.invoke()
             }
         }
     }
