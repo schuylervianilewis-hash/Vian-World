@@ -338,7 +338,7 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                                 displayIcon,
                                 info.isActive,
                                 info.glowColor
-                            ) ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                            ) ?: requireNotNull(context.getDrawable(android.R.drawable.ic_menu_view))
                             item.drawable = if (shura.home.helpers.AppLockManager.isAppLocked(
                                     shura.home.helpers.AppLockManager.getLockKey(item)
                                 )
@@ -2458,7 +2458,7 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                         displayIcon,
                         info.isActive,
                         info.glowColor
-                    ) ?: context.getDrawable(android.R.drawable.ic_menu_view)
+                    ) ?: requireNotNull(context.getDrawable(android.R.drawable.ic_menu_view))
                     item.drawable = if (shura.home.helpers.AppLockManager.isAppLocked(
                             shura.home.helpers.AppLockManager.getLockKey(item)
                         )
