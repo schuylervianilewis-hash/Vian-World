@@ -259,7 +259,7 @@ class AppShortcutsPopupWindow(
         }
 
         if (canLock) {
-            val isLocked = AppLockManager.isAppLocked(gridItem.packageName)
+            val isLocked = AppLockManager.isAppLocked(AppLockManager.getLockKey(gridItem))
             if (isLocked) {
                 binding.popupActionLockBtn.setImageResource(R.drawable.ic_lock_open_vector)
                 binding.popupActionLockBtn.contentDescription = activity.getString(R.string.unlock_app)
