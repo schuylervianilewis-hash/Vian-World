@@ -1372,15 +1372,29 @@ class MainActivity : SimpleActivity(), FlingListener {
         when (clickedGridItem.type) {
             ITEM_TYPE_ICON -> {
                 if (clickedGridItem.className == SIDEBAR_ELEMENT_CLASS_NAME) {
-                    try {
-                        val intent = Intent().setClassName(
-                            clickedGridItem.packageName,
-                            clickedGridItem.activityName
-                        ).putExtra("ELEMENT_ID", clickedGridItem.shortcutId)
-                        startActivity(intent)
-                    } catch (e: Exception) {
-                        logKeeper.log("MainActivity", "Failed to open Sidebar element", e)
-                        toast("Unable to open this Sidebar element")
+                    val lockKey = AppLockManager.getLockKey(clickedGridItem)
+                    val launchElement = {
+                        try {
+                            val intent = Intent().setClassName(
+                                clickedGridItem.packageName,
+                                clickedGridItem.activityName
+                            ).putExtra("ELEMENT_ID", clickedGridItem.shortcutId)
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            logKeeper.log("MainActivity", "Failed to open Sidebar element", e)
+                            toast("Unable to open this Sidebar element")
+                        }
+                    }
+                    if (AppLockManager.canLaunchWithoutAuth(this, lockKey)) {
+                        launchElement()
+                    } else {
+                        AppLockManager.authenticateAndLaunch(
+                            this,
+                            lockKey,
+                            clickedGridItem.title,
+                            onError = { toast("Authentication required to open this element") },
+                            onSuccess = launchElement
+                        )
                     }
                     return
                 }
@@ -2133,7 +2147,7 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
 
         override fun toggleLock(gridItem: HomeScreenGridItem) {
-            val pkg = gridItem.packageName
+            val pkg = AppLockManager.getLockKey(gridItem)
             val title = gridItem.title
             val isLocked = AppLockManager.isAppLocked(pkg)
             if (isLocked) {
