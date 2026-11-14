@@ -39,9 +39,6 @@ android {
     buildFeatures {
         compose = true
     }
-    androidResources {
-        generateLocaleConfig = true
-    }
     packaging {
         jniLibs {
             useLegacyPackaging = true
