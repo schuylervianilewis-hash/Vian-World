@@ -1,0 +1,113 @@
+# Vianshield Blueprint
+
+## 1. Project Overview & Mission
+Vianshield is a lean, native Android security utility designed to run efficiently on resource-constrained devices (~3 GB RAM). The application architecture emphasizes zero background bloat, minimal memory overhead, zero third-party telemetry or ad SDKs, and clean separation between UI and the forthcoming firewall engine.
+
+## 2. Technical Stack & Environment
+- **Platform**: Android Native (Kotlin 2.2.10)
+- **UI Framework**: Jetpack Compose (BOM 2024.09.00, Material 3)
+- **Build System**: Android Gradle Plugin 9.1.1, Gradle 9.3.1 Wrapper
+- **Application ID**: `app.vian.vianshield`
+- **Namespace**: `app.vian.vianshield`
+- **Target SDK**: 36 | **Min SDK**: 24 | **Java Version**: 21 (Temurin)
+- **CI/CD Automation**: GitHub Actions (`.github/workflows/android-build.yml`)
+- **Dependencies**: Minimal footprint (Jetpack Compose core/material3/lifecycle/activity only; Room, Moshi, Retrofit, Firebase, Google Secrets, and telemetry completely excluded).
+
+## 3. Development Phases
+- **Phase 1: Native Shell & CI Pipeline (CURRENT)**
+  - Establish stable Gradle 9.3.1 / AGP 9.1.1 build configuration.
+  - Setup GitHub Actions automated debug APK workflow on `push` and `workflow_dispatch`.
+  - Create minimal Jetpack Compose Home Screen with honest status disclosure ("Firewall engine not integrated yet").
+  - Custom vector adaptive shield launcher icon.
+  - Clean namespace and packages to `app.vian.vianshield`.
+  - Remove unused Google Secrets plugin and configuration.
+  - Verification with local compilation and unit tests.
+- **Phase 2: Engine Evaluation & Architecture Alignment (PENDING REVIEW)**
+  - Architectural review of networking/packet-inspection options (e.g., VpnService vs Local Loopback proxy vs Tun2Socks).
+  - Memory footprint estimation for ~3 GB RAM device profile.
+  - Discussion and explicit green-light before any engine code is added.
+- **Phase 3: Engine Verification (COMPLETED)**
+  - Bytecode, symbol, and ABI inspection of pinned dependency `com.celzero:firestack:8134609734`.
+  - Identified `Intra.connect3`, `Bridge` callback contracts, `Tunnel.stat().ip()`, and WireGuard UAPI format.
+- **Phase 4: Minimal WireGuard VPN (COMPLETED & HARDENED)**
+  - Implement single-peer WireGuard `.conf` parser with strict validation and Base64-to-hex conversion.
+  - Implement `VianshieldVpnService` with TUN lifecycle, socket protection, Firestack `connect3` and `addProxy`.
+  - Truthful connection telemetry (`DISCONNECTED`, `CONNECTING`, `TUNNEL_ACTIVE_UNVERIFIED`, `CONNECTION_UNCONFIRMED`, `ERROR`) based on local TUN packet activity with zero false claims of remote traffic or handshake verification.
+  - One-time Gomobile runtime initialization via `GomobileRuntime.init()` using `go.Seq.setContext()`.
+  - Synchronous `startForeground()` dispatch in `onStartCommand()` before async work for Android 14+ foreground service timeout compliance.
+  - Idempotent thread-safe connection state machine (`IDLE`, `CONNECTING`, `ACTIVE`, `STOPPING`) preventing duplicate tunnels and resource leaks.
+  - Graceful socket protection failure handling preventing packet routing loops without throwing across JNI or crashing the process.
+  - Android 14+ (SDK 34-36) foreground service compliance (`specialUse` type and notification channel).
+  - Preserved Log Keeper backend, archival flow, and zero-PII guarantees.
+
+## 4. Running Ledger of Changes
+- **2026-10-14 (Phase 1 Initial Creation)**:
+  - Configured `applicationId = "app.vian.vianshield"` and app name "Vianshield".
+  - Stripped out unused dependencies (Firebase, Room, Moshi, Retrofit, OkHttp) from `app/build.gradle.kts` to optimize APK size and build speed.
+  - Generated Gradle wrapper (v9.3.1) with `gradlew` script for GitHub Actions execution.
+  - Created `.github/workflows/android-build.yml` for automated CI debug APK builds and artifact generation.
+  - Implemented `VianshieldHomeScreen` in `MainActivity.kt` with honest, clean status display.
+  - Added custom adaptive shield vector icon in `ic_launcher_foreground.xml` and `ic_launcher_background.xml`.
+  - Added `README.md` and `BLUEPRINT.md`.
+- **2026-10-14 (Phase 1 Cleanup)**:
+  - Changed Android namespace and package structure from `com.example` to `app.vian.vianshield`.
+  - Migrated Kotlin source files, themes (`VianshieldTheme`), unit tests, and instrumented tests to `app.vian.vianshield`.
+  - Removed Google Secrets Gradle Plugin from `build.gradle.kts`, `app/build.gradle.kts`, and `gradle/libs.versions.toml`. Removed `.env.example`.
+  - Verified local build and unit tests pass.
+- **2026-10-15 (Phase 2 Firestack Dependency Evaluation)**:
+  - Added pinned dependency `com.celzero:firestack:8134609734` from Maven Central.
+  - Verified all 4 Android ABIs (arm64-v8a, armeabi-v7a, x86, x86_64) packaged inside the AAR.
+  - Authored `ENGINE_DECISION.md` documenting MPL-2.0 licence, versioning, and ABI coverage.
+  - Kept shell UI, application ID, namespace, and workflow intact without initiating VPN services or network modifications.
+- **2026-10-17 (Phase 2 ARM Architecture Filtering)**:
+  - Applied `ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")` in `defaultConfig` in `app/build.gradle.kts`.
+  - Excluded unused x86 and x86_64 binaries, shrinking APK size from 90.7 MB to 52.7 MB while preserving full compatibility with all physical ARM Android devices in a single APK.
+- **2026-10-17 (Phase 2 Step 3 Log Catcher Backend & Log Keeper UI)**:
+  - Built dedicated `LogCatcher` backend in `app.vian.vianshield.logging`: zero-telemetry, zero-PII, no permanent background service.
+  - Implemented 2 MiB hard storage limit with pending archival state trigger.
+  - Implemented unexpected previous process termination detection via clean shutdown flag heuristic.
+  - Added on-demand `MemoryDiagnostics` test session sampling heap/PSS process memory every 15 seconds without persistent polling.
+  - Implemented `LogKeeperScreen` in Jetpack Compose with formatted records, timestamps, severity badges, master switch, and SAF document exporter (`Vianshield-Logs-YYYYMMDD-HHMMSS.txt`).
+  - Added unit test suite `LogCatcherTest` covering storage cap, export failure/success, abnormal termination detection, and master toggle.
+  - **Audit Remediation**: Offloaded UI log reading to `Dispatchers.IO`; strictly accounted for all files in `vianshield_logs/` against 2 MiB cap; pre-calculated incoming record byte size; implemented INFO-first pruning with 50-entry in-memory emergency queue and visible dropped record counter; paused memory sampling when app leaves foreground; installed safe `Thread.setDefaultUncaughtExceptionHandler`; and added partial destination document cleanup on export failure.
+  - **Export Checkpoint & Bounded Crash Handler (Fix 1 & Fix 2)**:
+    - *Fix 1 (Zero Log Loss During Export)*: Implemented in-place POSIX atomic checkpoint (`current.log` -> `checkpoint.log`), routing subsequent logs to active working log during export and deleting only the checkpoint upon successful export.
+    - *Fix 2 (Bounded Crash Recording)*: Replaced lock with `ReentrantLock(true)`, adding a 1-second timed lock acquisition with emergency fallback path to prevent crash handler deadlocks.
+    - Added regression tests for concurrent log survival during export, retry after failure, and bounded crash lock contention.
+- **2026-10-20 (Phase 4 Minimal WireGuard VPN Implementation & Critical Audit Fixes)**:
+  - Implemented `WireGuardConfig` and `WireGuardConfigParser` in `app.vian.vianshield.vpn`: parses standard single-peer `.conf`, converts Base64 keys to 64-char lowercase hex strings, formats WireGuard UAPI string for Firestack, and strictly forbids multiple peers or malformed inputs.
+  - Created `WireGuardConfigStore` for private internal storage of configuration.
+  - Implemented `FirestackBridge` providing safe pass-through defaults (`Mark()`, `PreMark()`, `DNSOpts(noblock=true)`, `Tab(block=false)`), `VpnService.protect()` forwarding, and sanitized logging to `LogCatcher`.
+  - Implemented `VianshieldVpnService` managing TUN interface creation, Go netstack startup via `Intra.connect3()`, `addProxy()`, real-time local TUN packet telemetry polling via `Tunnel.stat().ip()`, foreground service notification (`specialUse` FGS type), and full cleanup on disconnect/failure.
+  - **Phase 4 Critical Audit Remediation**:
+    - *Fix 1 (Truthful Status)*: Removed all claims of "Traffic Verified" and "Handshake Verified". Adopted truthful states (`DISCONNECTED`, `CONNECTING`, `TUNNEL_ACTIVE_UNVERIFIED`, `CONNECTION_UNCONFIRMED`, `ERROR`) and explicitly labeled packet counts as local TUN telemetry.
+    - *Fix 2 (Gomobile Runtime Initialization)*: Created `GomobileRuntime` thread-safe singleton, invoking `go.Seq.setContext(applicationContext)` safely once before any Go/Firestack API call.
+    - *Fix 3 (Prompt Synchronous Foreground Service Start)*: Moved `startForeground()` call directly and synchronously into `onStartCommand()` before any background coroutine work, satisfying strict system FGS startup timeouts.
+    - *Fix 4 (Duplicate Connection Prevention)*: Added thread-safe `ServiceLifecycleState` state machine (`IDLE`, `CONNECTING`, `ACTIVE`, `STOPPING`) to `VianshieldVpnService`. Made repeated `ACTION_CONNECT` calls safe and idempotent without duplicate tunnel creation or resource leaks.
+    - *Fix 5 (Socket Protection Failure Handling)*: Added `onProtectionFailed` callback to `FirestackBridge`. When `VpnService.protect(fd)` fails, logs an ERROR and triggers safe asynchronous service teardown, preventing UDP routing loops without throwing across Gomobile JNI or crashing the process.
+  - Updated `MainActivity` and `VianshieldHomeScreen` with WireGuard VPN card, document picker launcher (`OpenDocument`), VPN consent launcher (`StartActivityForResult`), and honest status badges.
+  - Authored and updated test suite `WireGuardConfigTest` verifying parser, key formatting, IPv4/IPv6 classification, truthful state transitions, GomobileRuntime idempotency, and bridge protection failure handling.
+- **2026-10-21 (Critical Stability and VPN Permission Flow Fix)**:
+  - *Root Cause Analysis*: An unbounded `BufferedReader.readText()` on an accidentally imported `.slm` (Small Language Model) file triggered an `OutOfMemoryError` allocation failure (~134 MB allocation vs. 128 MB heap growth limit). Concurrently, rapid repeated taps on the "Connect" button re-invoked `ActivityResultLauncher.launch()` while consent was in flight, causing Android to cancel previous requests with `RESULT_CANCELED` and falsely logging "VPN consent denied by user".
+  - *Task 1 & Task 2 (Safe Bounded Configuration Import)*:
+    - Added preliminary `.conf` file extension check before opening stream bytes.
+    - Added `OpenableColumns.SIZE` check and bounded stream reader strictly capped at `MAX_CONFIG_SIZE_BYTES` (64 KiB) to make oversized or binary file imports impossible to allocate large buffers.
+    - Added binary byte rejection (NUL characters) and strict WireGuard section validation (`[Interface]` and `[Peer]`), producing clean error messages ("Unsupported file — choose a WireGuard .conf file.").
+    - Added `OutOfMemoryError` interceptor boundary.
+    - Guaranteed profile preservation: failed imports never overwrite or clear the active profile in memory or disk.
+  - *Task 3 (VPN Permission Flow & In-Flight Debounce)*:
+    - Introduced `isConsentPending` state in `MainActivity`.
+    - Guarded `onConnectRequested` against duplicate clicks while consent or connection is in flight.
+    - Disabled Connect button with "Awaiting Permission…" status text while the system consent dialog is pending.
+    - Handled `Activity.RESULT_OK` (starts VPN) and `Activity.RESULT_CANCELED` (accurate non-granted warning toast) cleanly without false "denied" reports or repeated launcher calls.
+  - Added 6 new regression unit tests in `WireGuardConfigTest` (invalid extensions, empty text, >64 KB oversized configs, arbitrary documents, binary NUL bytes, and profile preservation). Total 34 tests passing (100%).
+- **2026-10-22 (Phase 5: Activity-based VPN Consent Migration & System Diagnostics)**:
+  - *Root Cause Analysis*: In AOSP (`ConfirmDialog.java`), `getCallingPackage()` is inspected on dialog creation to attribute the caller. When using AndroidX's `ActivityResultRegistry`, caller resolution can be obscured or detached depending on OEM framework dispatch. Furthermore, `ConfirmDialog` automatically and silently invokes `finish()` (returning `RESULT_CANCELED`, code 0, in the exact same second) under two critical system conditions: (1) `UserManager.hasUserRestriction(DISALLOW_CONFIG_VPN)` is true, or (2) another app has "Always-On VPN" configured in Android Settings (`mVm.getAlwaysOnVpnPackageForUser() != null`).
+  - *Remediation*:
+    - Replaced AndroidX `vpnConsentLauncher` with Intra and NetGuard's proven direct Activity pattern: `startActivityForResult(prepareIntent, REQUEST_CODE_VPN_CONSENT)` with `REQUEST_CODE_VPN_CONSENT = 100` and `onActivityResult()`.
+    - Added comprehensive on-device diagnostic probes before launching: checks if `UserManager.DISALLOW_CONFIG_VPN` is set, verifies `packageManager.resolveActivity()` returns an exported system activity, checks `com.android.vpndialogs` enabled state, and logs the outcome to Log Keeper without recording private keys or secrets.
+    - Added explicit `ActivityNotFoundException` and generic `Exception` catch handlers with user-facing toasts and Log Keeper error entries.
+    - Updated `handleConsentResult()` and cancellation toasts to instruct the user if `DISALLOW_CONFIG_VPN` is active or if another VPN has "Always-On VPN" locked in Android Settings.
+    - Added test coverage in `WireGuardConfigTest` verifying `onActivityResult` request code filtering and state transitions. Total 35 tests passing (100%).
+
+
