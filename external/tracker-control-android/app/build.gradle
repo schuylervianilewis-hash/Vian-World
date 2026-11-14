@@ -20,6 +20,7 @@ android {
 
     defaultConfig {
         minSdk 23
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         consumerProguardFiles 'proguard-rules.pro'
         buildConfigField "String", "DEFAULT_DOH_ENDPOINT", "\"https://dns.quad9.net/dns-query\""
         buildConfigField "String", "DEFAULT_DNS_IPV4", "\"9.9.9.9\""
