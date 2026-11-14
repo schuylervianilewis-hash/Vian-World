@@ -34,10 +34,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            ndk;29.0.14206865
-            cmake;3.22.1
+          packages: platform-tools ndk;29.0.14206865 cmake;3.22.1
       - name: Set up Gradle wrapper caching
         uses: gradle/actions/setup-gradle@v4
       - name: Install Firewall Rust toolchain
