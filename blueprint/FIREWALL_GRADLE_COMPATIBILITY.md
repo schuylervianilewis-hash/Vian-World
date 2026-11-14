@@ -22,17 +22,17 @@
 
 ## Compatibility findings
 
-- The first CI compile proved that the original host compiler (Kotlin 2.2.10) cannot read Kotlin 2.4 metadata from Firewall's resolved stdlib (2.4.20). The failures appeared as incompatible metadata and cascading unresolved standard-library references in WireGuard Kotlin files.
+- The first CI compile proved that AGP 9's default bundled KGP 2.2.10 cannot read Kotlin 2.4 metadata from Firewall's resolved stdlib (2.4.20). The failures appeared as incompatible metadata and cascading unresolved standard-library references in WireGuard Kotlin files. AGP 9's official migration guidance allows a higher KGP/KSP to be selected by adding both plugins to the top-level buildscript classpath; the root build now explicitly pins KGP 2.4.21 and KSP 2.3.12 this way, while keeping built-in Kotlin enabled.
 - Kotlin 2.4.21's fully supported matrix is Gradle 7.6.3–9.7.0 and AGP 8.5.2–9.3.1. AGP 9.3 requires Gradle 9.5.0 or newer. The selected host combination is therefore AGP 9.3.1 + Gradle 9.7.0 + Kotlin 2.4.21.
 - The imported standalone combination (AGP 9.3.3, Gradle 9.8.1, Kotlin 2.4.21) exceeds both the fully supported AGP and Gradle bounds. It is not copied unchanged.
 - KSP 2.3.12 supports Kotlin 2.3.20–2.4.x, AGP 8.13.0 or later and Gradle 8.13 or later, so it is aligned with the selected stack.
-- The root project centralizes Android application/library, Kotlin Compose compiler and KSP plugin versions. The Firewall subproject uses those root-resolved plugins rather than declaring its own AGP/Kotlin versions.
+- The root project centralizes Android application/library, Kotlin Compose compiler and KSP plugin versions. The top-level buildscript overrides AGP's default bundled KGP/KSP versions with the selected compatible versions; the Firewall subproject uses those root-resolved plugins rather than declaring its own AGP/Kotlin versions.
 - Firewall Compose sources use `PullToRefreshBox` and `LocalLocale`; the old host Compose BOM 2024.06.00 does not provide the APIs used by this source. The host and Firewall BOM are aligned to 2026.09.00.
 - Keeping only the `github` flavor preserves the source-level `BuildConfig.FLAVOR` and `GITHUB_LATEST_API` contracts without adding separate Play/F-Droid application identities.
 
 ## Integration decisions applied
 
-1. Align the whole build to AGP 9.3.1, Gradle 9.7.0, Kotlin/Compose compiler plugin 2.4.21 and KSP 2.3.12; keep JDK 17.
+1. Align the whole build to AGP 9.3.1, Gradle 9.7.0, KGP/Compose compiler plugin 2.4.21 and KSP 2.3.12; keep AGP built-in Kotlin enabled and override its default bundled KGP/KSP versions through the root buildscript classpath. Keep JDK 17.
 2. Register `:firewall` from `external/tracker-control-android/app` and apply `com.android.library`.
 3. Remove app-only Firewall configuration: applicationId, targetSdk, version code/name, signing, build-type suffixes, APK output naming and Play/F-Droid variants.
 4. Retain the `github` flavor, BuildConfig constants, four ABI filters, CMake, Rust WireGuard bridge, dependencies, unit/instrumentation test configuration and consumer ProGuard rules.
