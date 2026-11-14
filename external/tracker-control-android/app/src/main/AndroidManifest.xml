@@ -348,7 +348,7 @@
         </receiver>
 
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="eu.faircode.netguard.TrackerControlFileProvider"
             android:authorities="${applicationId}.trackercontrol.provider"
             android:exported="false"
             android:grantUriPermissions="true">
