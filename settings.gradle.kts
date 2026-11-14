@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Vian World"
-include(":app", ":launcher")
+include(":app", ":launcher", ":firewall")
+project(":firewall").projectDir = file("external/tracker-control-android/app")

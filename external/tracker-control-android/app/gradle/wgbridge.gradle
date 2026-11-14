@@ -9,7 +9,7 @@ import org.gradle.process.ExecOperations
 // Applied from app/build.gradle via `apply from`. The NDK version is exposed
 // as an ext property because build.gradle's android{} block reuses it for
 // defaultConfig.ndkVersion; everything else stays local to this script.
-def wgbridgeSrcDir = file("$rootDir/wgbridge-rs")
+def wgbridgeSrcDir = file("$projectDir/../wgbridge-rs")
 def wgbridgeOutDir = layout.buildDirectory.dir("rustJniLibs").get().asFile
 // Shared with app/build.gradle so Rust outputs and Android packaging use
 // exactly the same ABI selection. Defaults remain all four supported ABIs.
@@ -149,7 +149,7 @@ tasks.register('wgbridgeBuild') {
         include 'Cargo.toml'
         include 'Cargo.lock'
     }).withPropertyName('wgbridgeSource').withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.file(file("$rootDir/rust-toolchain.toml")).withPropertyName('rustToolchain')
+    inputs.file(file("$projectDir/../rust-toolchain.toml")).withPropertyName('rustToolchain')
     outputs.dir(wgbridgeOutDir).withPropertyName('wgbridgeJniLibs')
     outputs.cacheIf { true }
 
