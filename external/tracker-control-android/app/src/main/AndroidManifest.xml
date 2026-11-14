@@ -176,6 +176,7 @@
             android:name="net.kollnig.missioncontrol.ActivityBlocklists"
             android:configChanges="orientation|screenSize"
             android:label="@string/title_blocklists"
+            android:theme="@style/AppTheme"
             android:parentActivityName="eu.faircode.netguard.ActivitySettings">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
