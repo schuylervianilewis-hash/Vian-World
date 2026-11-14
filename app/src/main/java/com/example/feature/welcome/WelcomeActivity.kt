@@ -3,12 +3,13 @@ package com.example.feature.welcome
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import com.example.MainActivity
 import com.example.SettingsActivity
 import com.example.core.HandleManager
@@ -33,13 +34,22 @@ class WelcomeActivity : ComponentActivity() {
             MaterialTheme(colorScheme = lightColorScheme()) {
                 WelcomeScreen(
                     onContinue = {
-                        com.example.core.LogKeeper.log(this@WelcomeActivity, "WelcomeActivity", "onContinue triggered: saving setup_completed=true")
+                        // The floating handle cannot work without overlay permission.
+                        // Keep Welcome as the next-launch entry point until this required step is granted.
+                        if (!Settings.canDrawOverlays(this@WelcomeActivity)) {
+                            Toast.makeText(
+                                this@WelcomeActivity,
+                                "Allow Display Over Other Apps to finish Sidebar setup.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@WelcomeScreen
+                        }
+
+                        com.example.core.LogKeeper.log(this@WelcomeActivity, "WelcomeActivity", "Overlay permission granted; completing setup")
                         val prefs = getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
                         prefs.edit().putBoolean("setup_completed", true).commit()
-                        com.example.core.LogKeeper.log(this@WelcomeActivity, "WelcomeActivity", "Starting HandleService and routing to SettingsActivity")
-                        HandleService.start(this@WelcomeActivity)
-                        val intent = Intent(this@WelcomeActivity, SettingsActivity::class.java)
-                        startActivity(intent)
+                        HandleService.startIfConfigured(this@WelcomeActivity)
+                        startActivity(Intent(this@WelcomeActivity, SettingsActivity::class.java))
                         finish()
                     }
                 )
@@ -76,12 +86,8 @@ class WelcomeActivity : ComponentActivity() {
 
 @Composable
 fun WelcomeScreen(onContinue: (() -> Unit)? = null) {
-    val context = LocalContext.current
     PermissionManagerScreen(
-        onContinue = {
-            HandleService.startIfConfigured(context)
-            onContinue?.invoke()
-        },
+        onContinue = { onContinue?.invoke() },
         isFirstLaunch = true
     )
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import com.example.core.SidebarHomeElementProvider
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -217,6 +218,10 @@ class SidebarAppsManager(
     
 
 
+    private fun isHomeElementActive(id: String, fallback: Boolean): Boolean {
+        return SidebarHomeElementProvider.getStoredState(id)?.first ?: fallback
+    }
+
     fun bindIcon(id: String, icon: android.widget.ImageView, prefs: android.content.SharedPreferences, coroutineScope: kotlinx.coroutines.CoroutineScope, onUpdate: () -> Unit) {
         val parsed = parseId(id) ?: return
         val customIcon = com.example.core.IconCacheManager.getCustomIcon(context, id)
@@ -319,7 +324,11 @@ class SidebarAppsManager(
         } else if (parsed is SidebarItem.QuickTile) {
             icon.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             icon.setImageResource(parsed.iconResId)
-            icon.setColorFilter(android.graphics.Color.WHITE)
+            val torchActive = parsed.action == "torch" && isHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.torchEnabled)
+            icon.setColorFilter(
+                if (torchActive) android.graphics.Color.parseColor("#FFFFC928")
+                else android.graphics.Color.WHITE
+            )
         } else if (parsed is SidebarItem.SystemAction) {
             icon.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             if (parsed.action == "screen_record" && com.example.service.ScreenRecordService.isRecording) {
@@ -342,12 +351,16 @@ class SidebarAppsManager(
         } else if (parsed is SidebarItem.DisplayAction) {
             icon.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             icon.setImageResource(parsed.iconResId)
-            if (parsed.action == "blue_light_filter" && com.example.service.BlueLightFilterManager.isEnabled) {
+            if (parsed.action == "torch_toggle" && isHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.torchEnabled)) {
+                icon.setColorFilter(android.graphics.Color.parseColor("#FFFFC928"))
+            } else if (parsed.action == "blue_light_filter" && isHomeElementActive(parsed.id, com.example.feature.system_hub.BlueLightFilterManager.isEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#FF9900"))
-            } else if (parsed.action == "privacy_curtain" && com.example.service.PrivacyCurtainManager.isEnabled) {
+            } else if (parsed.action == "privacy_curtain" && isHomeElementActive(parsed.id, com.example.feature.system_hub.PrivacyCurtainManager.isEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#1DB954"))
-            } else if (parsed.action == "e_ink_mode" && com.example.feature.system_hub.EInkPaperFilterManager.isEnabled) {
+            } else if (parsed.action == "e_ink_mode" && isHomeElementActive(parsed.id, com.example.feature.system_hub.EInkPaperFilterManager.isEnabled)) {
                 icon.setColorFilter(android.graphics.Color.parseColor("#E6C280"))
+            } else if (parsed.action == "keep_screen_on" && isHomeElementActive(parsed.id, com.example.feature.system_hub.DisplayHandler.keepScreenOnEnabled)) {
+                icon.setColorFilter(android.graphics.Color.parseColor("#4CAF50"))
             } else {
                 icon.setColorFilter(android.graphics.Color.WHITE)
             }

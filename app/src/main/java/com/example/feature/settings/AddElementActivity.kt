@@ -165,14 +165,23 @@ class AddElementActivity : ComponentActivity() {
             startActivityForResult(iIntent, 301)
         }
         addItem(android.R.drawable.ic_menu_gallery, "Widget") {
-            val intent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
-                putExtra("ACTION_TYPE", "RETURN_ID")
-                putExtra("PAGE_ID", pageId)
-                putExtra("CONTAINER_ID", containerId)
-                putExtra("IS_HYBRID_GRID", isHybridGrid)
-                putExtra("PAGE_TYPE", pageType)
+            if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
+                // Home widgets belong to the launcher's AppWidgetHost, not Sidebar's host.
+                setResult(
+                    Activity.RESULT_OK,
+                    Intent().putExtra("OPEN_LAUNCHER_WIDGET_PICKER", true)
+                )
+                finish()
+            } else {
+                val pickerIntent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
+                    putExtra("ACTION_TYPE", "RETURN_ID")
+                    putExtra("PAGE_ID", pageId)
+                    putExtra("CONTAINER_ID", containerId)
+                    putExtra("IS_HYBRID_GRID", isHybridGrid)
+                    putExtra("PAGE_TYPE", pageType)
+                }
+                startActivityForResult(pickerIntent, 400)
             }
-            startActivityForResult(intent, 400)
         }
         
         addItem(android.R.drawable.ic_menu_gallery, "Popup Widget") {
@@ -189,34 +198,45 @@ class AddElementActivity : ComponentActivity() {
         addHeader("Special items")
         val isFloatingTrigger = intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
         addItem(android.R.drawable.ic_menu_more, "Folder") {
-            val options = arrayOf("Grid", "Stack")
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Folder style")
-                .setItems(options) { _, which ->
-                    val input = android.widget.EditText(this)
-                    input.hint = "Folder Name"
-                    input.setText("New Folder")
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle("Folder Name")
-                        .setView(input)
-                        .setPositiveButton("OK") { _, _ ->
-                            val folderName = input.text.toString().takeIf { it.isNotEmpty() } ?: "New Folder"
-                            val uuid = java.util.UUID.randomUUID().toString()
-                            val folderJson = JSONObject().apply {
-                                put("name", folderName)
-                                put("colorHex", "#444444")
-                                put("items", org.json.JSONArray())
-                                put("folderStyle", which)
-                                put("popupColumns", 3)
-                                put("popupRows", 3)
+            if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
+                // This picker is hosted by the launcher. Ask it to create its native
+                // launcher folder so folder contents, gestures and appearance remain
+                // managed by the launcher's own folder implementation.
+                setResult(
+                    Activity.RESULT_OK,
+                    Intent().putExtra("CREATE_LAUNCHER_FOLDER", true)
+                )
+                finish()
+            } else {
+                val options = arrayOf("Grid", "Stack")
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Folder style")
+                    .setItems(options) { _, which ->
+                        val input = android.widget.EditText(this)
+                        input.hint = "Folder Name"
+                        input.setText("New Folder")
+                        android.app.AlertDialog.Builder(this)
+                            .setTitle("Folder Name")
+                            .setView(input)
+                            .setPositiveButton("OK") { _, _ ->
+                                val folderName = input.text.toString().takeIf { it.isNotEmpty() } ?: "New Folder"
+                                val uuid = java.util.UUID.randomUUID().toString()
+                                val folderJson = JSONObject().apply {
+                                    put("name", folderName)
+                                    put("colorHex", "#444444")
+                                    put("items", org.json.JSONArray())
+                                    put("folderStyle", which)
+                                    put("popupColumns", 3)
+                                    put("popupRows", 3)
+                                }
+                                val folderId = "folder:$uuid:${folderJson.toString()}"
+                                handleElementSelected(folderId, folderName)
                             }
-                            val folderId = "folder:$uuid:${folderJson.toString()}"
-                            handleElementSelected(folderId, folderName)
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
-                }
-                .show()
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                    .show()
+            }
         }
         addItem(com.example.R.drawable.ic_language, "Link") {
             val linkIntent = Intent(this, LinkPickerActivity::class.java).apply {
@@ -265,6 +285,7 @@ class AddElementActivity : ComponentActivity() {
             addItem(android.R.drawable.ic_menu_crop, "Floating Trigger") {
                 val intent = Intent(this, AddElementActivity::class.java).apply {
                     putExtra("IS_FLOATING_TRIGGER_SELECTION", true)
+                    putExtra("SIDEBAR_HOME_PICKER", this@AddElementActivity.intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false))
                     putExtra("PAGE_ID", pageId)
                     putExtra("CONTAINER_ID", containerId)
                     putExtra("IS_HYBRID_GRID", isHybridGrid)
@@ -324,11 +345,11 @@ class AddElementActivity : ComponentActivity() {
             }
             android.widget.Toast.makeText(this, "Added: $name", android.widget.Toast.LENGTH_SHORT).show()
         } else {
-            finishWithId(id)
+            finishWithId(id, displayName)
         }
     }
     
-    private fun finishWithId(id: String) {
+    private fun finishWithId(id: String, displayName: String? = null) {
         val targetId = com.example.feature.element.ElementPlacementHelper.assignInstanceIfNote(id)
         val containerId = intent.getStringExtra("CONTAINER_ID")
         com.example.core.LogKeeper.log(
@@ -338,6 +359,9 @@ class AddElementActivity : ComponentActivity() {
         )
         val resultIntent = Intent().apply {
             putExtra("ELEMENT_ID", targetId)
+            if (!displayName.isNullOrBlank()) {
+                putExtra("DISPLAY_NAME", displayName)
+            }
             if (containerId != null) {
                 putExtra("CONTAINER_ID", containerId)
             }

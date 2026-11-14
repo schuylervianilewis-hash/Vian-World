@@ -111,12 +111,14 @@ class WelcomeIpcTest {
 
         val controller = MainWelcomeController(context = null, connectionManager = connManager)
 
-        // Request when disconnected: returns error code HEAVY_UNAVAILABLE without crashing
+        // A disconnected Heavy process is queued for delivery after a later connection.
+        // This is the intended auto-connect behavior added to HeavyProcessConnectionManager.
         val resultDisconnected = controller.requestWelcome("overlay_needed")
-        assertFalse(resultDisconnected.success)
-        assertEquals(IpcErrorCode.HEAVY_UNAVAILABLE, resultDisconnected.errorCode)
+        assertTrue(resultDisconnected.success)
+        assertEquals("Queued for delivery upon connection", resultDisconnected.message)
+        assertEquals(1, connManager.getPendingCommandCountForTesting())
 
-        // Simulate Heavy process death
+        // A known-dead Heavy process must still fail immediately rather than queueing.
         connManager.setMockProxyForTesting(null, ConnectionState.DEAD)
         val resultDead = controller.requestWelcome("overlay_needed")
         assertFalse(resultDead.success)

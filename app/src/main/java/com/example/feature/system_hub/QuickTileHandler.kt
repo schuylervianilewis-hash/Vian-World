@@ -2,14 +2,11 @@ package com.example.feature.system_hub
 
 import android.content.Context
 import android.content.Intent
-import android.hardware.camera2.CameraManager
 import android.provider.Settings
 import android.widget.Toast
 import android.os.Build
 
 object QuickTileHandler {
-    private var isTorchOn = false
-
     fun handleQuickTileAction(context: Context, action: String) {
         when (action) {
             "torch" -> toggleTorch(context)
@@ -30,14 +27,8 @@ object QuickTileHandler {
     }
 
     private fun toggleTorch(context: Context) {
-        try {
-            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val cameraId = cameraManager.cameraIdList[0]
-            isTorchOn = !isTorchOn
-            cameraManager.setTorchMode(cameraId, isTorchOn)
-        } catch (e: Exception) {
-            Toast.makeText(context, "Cannot access torch", Toast.LENGTH_SHORT).show()
-        }
+        // Keep every Sidebar torch entry on the same resident state owner.
+        DisplayHandler.handleDisplayAction(context, "torch_toggle")
     }
 
     private fun openSettings(context: Context, action: String) {

@@ -1,6 +1,7 @@
 package com.example.feature.element
 
 import android.content.Context
+import android.appwidget.AppWidgetManager
 import android.graphics.Color
 import com.example.core.FaviconFetcher
 import com.example.core.LogKeeper
@@ -43,6 +44,7 @@ object ElementIdParser {
                 id.startsWith("media:") -> parseMediaAction(id)
                 id.startsWith("display:") -> parseDisplayAction(id)
                 id.startsWith("settings_shortcut:") -> parseSettingsShortcut(id)
+                id.startsWith("popup_widget:") -> parsePopupWidget(context, id)
                 id.startsWith("widget:") -> parseWidget(id)
                 id.startsWith("folder:") -> parseFolder(id)
                 id.startsWith("link:") -> parseLink(context, id)
@@ -165,6 +167,20 @@ object ElementIdParser {
         val actionId = id.substringAfter("settings_shortcut:")
         val settingsAction = ALL_SETTINGS_SHORTCUTS.find { it.action == actionId } ?: return null
         return SidebarItem.SettingsShortcut(actionId, settingsAction.label, settingsAction.iconResId)
+    }
+
+    private fun parsePopupWidget(context: Context, id: String): SidebarItem.PopupWidget? {
+        val parts = id.split(":", limit = 3)
+        if (parts.size < 2) return null
+        val widgetId = parts[1].toIntOrNull() ?: return null
+        val label = try {
+            AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId)
+                ?.loadLabel(context.packageManager)?.toString()
+                ?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        } ?: "Popup widget"
+        return SidebarItem.PopupWidget(widgetId, label, id)
     }
 
     private fun parseWidget(id: String): SidebarItem.Widget? {

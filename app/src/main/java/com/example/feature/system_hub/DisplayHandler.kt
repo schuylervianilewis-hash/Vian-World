@@ -3,13 +3,15 @@ package com.example.feature.system_hub
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import android.hardware.camera2.CameraManager
 import com.example.core.LogKeeper
 
 object DisplayHandler {
-    private var torchEnabled = false
+    @Volatile var torchEnabled = false
+        private set
     private var torchCallbackRegistered = false
 
     fun handleDisplayAction(context: Context, action: String) {
@@ -28,6 +30,12 @@ object DisplayHandler {
             when (action) {
                 "blue_light_filter" -> {
                     BlueLightFilterManager.toggle(context)
+                    publishHomeElementState(
+                        context,
+                        "display:blue_light_filter",
+                        BlueLightFilterManager.isEnabled,
+                        0xFFFF9900.toInt()
+                    )
                     context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
                         putExtra("item_id", "display:blue_light_filter")
                         setPackage(context.packageName)
@@ -43,6 +51,12 @@ object DisplayHandler {
                         Toast.makeText(context, "Please grant Overlay permission for E-Ink Paper Mode", Toast.LENGTH_LONG).show()
                     } else {
                         EInkPaperFilterManager.toggle(context)
+                        publishHomeElementState(
+                            context,
+                            "display:e_ink_mode",
+                            EInkPaperFilterManager.isEnabled,
+                            0xFFE6C280.toInt()
+                        )
                         context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
                             putExtra("item_id", "display:e_ink_mode")
                             setPackage(context.packageName)
@@ -59,6 +73,12 @@ object DisplayHandler {
                         Toast.makeText(context, "Please grant Overlay permission for Privacy Curtain", Toast.LENGTH_LONG).show()
                     } else {
                         PrivacyCurtainManager.toggle(context)
+                        publishHomeElementState(
+                            context,
+                            "display:privacy_curtain",
+                            PrivacyCurtainManager.isEnabled,
+                            0xFF1DB954.toInt()
+                        )
                         context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
                             putExtra("item_id", "display:privacy_curtain")
                             setPackage(context.packageName)
@@ -76,13 +96,14 @@ object DisplayHandler {
         }
     }
 
-    private var isKeepScreenOn = false
+    @Volatile var keepScreenOnEnabled = false
+        private set
     private var keepScreenOnOverlay: android.view.View? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     private fun toggleKeepScreenOn(context: Context) {
-        isKeepScreenOn = !isKeepScreenOn
-        if (isKeepScreenOn) {
+        keepScreenOnEnabled = !keepScreenOnEnabled
+        if (keepScreenOnEnabled) {
             try {
                 if (Settings.canDrawOverlays(context)) {
                     val wm = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
@@ -145,6 +166,12 @@ object DisplayHandler {
             Toast.makeText(context, "Keep Screen On: Disabled", Toast.LENGTH_SHORT).show()
         }
 
+        publishHomeElementState(
+            context,
+            "display:keep_screen_on",
+            keepScreenOnEnabled,
+            0xFF4CAF50.toInt()
+        )
         context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
             putExtra("item_id", "display:keep_screen_on")
             setPackage(context.packageName)
@@ -203,9 +230,37 @@ object DisplayHandler {
             val newState = !torchEnabled
             cameraManager.setTorchMode(cameraId, newState)
             torchEnabled = newState
+            publishHomeElementState(context, "display:torch_toggle", newState, 0xFFFFC928.toInt())
+            publishHomeElementState(context, "quicktile:torch", newState, 0xFFFFC928.toInt())
+            context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
+                putExtra("item_id", "display:torch_toggle")
+                setPackage(context.packageName)
+            })
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(context, "Torch not available", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun publishHomeElementState(
+        context: Context,
+        elementId: String,
+        active: Boolean,
+        glowColor: Int
+    ) {
+        try {
+            context.contentResolver.call(
+                Uri.parse("content://" + context.packageName + ".sidebar.elements"),
+                com.example.core.SidebarHomeElementProvider.METHOD_SET_ELEMENT_STATE,
+                null,
+                Bundle().apply {
+                    putString(com.example.core.SidebarHomeElementProvider.KEY_ELEMENT_ID, elementId)
+                    putBoolean(com.example.core.SidebarHomeElementProvider.KEY_ACTIVE, active)
+                    putInt(com.example.core.SidebarHomeElementProvider.KEY_GLOW_COLOR, glowColor)
+                }
+            )
+        } catch (e: Exception) {
+            LogKeeper.writeLog("DisplayHandler", "Unable to publish home icon state for " + elementId + ": " + e.message)
         }
     }
 

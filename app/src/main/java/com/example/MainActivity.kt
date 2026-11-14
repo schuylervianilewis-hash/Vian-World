@@ -1,56 +1,38 @@
 package com.example
 
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.lightColorScheme
 import com.example.core.HandleManager
 import com.example.core.HandleService
-import com.example.feature.welcome.WelcomeScreen
 
 /**
- * MainActivity: Main launcher entry point running in the Heavy process (:heavy).
- * Does not inherit from WelcomeActivity, ensuring clean process separation and
- * preventing Main from depending on or subclassing Heavy UI activities.
- * Preserves the exact launcher behavior and Welcome UI.
+ * Compatibility entry point retained for older launcher integrations.
+ * The actual first-run UI is hosted by WelcomeActivity in :heavy.
  */
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_FORCE_WELCOME = "force_welcome"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Ensure Main lightweight resident runtime is started if overlay permission is granted
-        HandleService.startIfConfigured(this)
+        val setupCompleted = getSharedPreferences(
+            HandleManager.PREFS_NAME,
+            MODE_PRIVATE
+        ).getBoolean("setup_completed", false)
+        val forceWelcome = intent.getBooleanExtra(EXTRA_FORCE_WELCOME, false)
 
-        val prefs = getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
-        val setupCompleted = prefs.getBoolean("setup_completed", false)
-
-        if (setupCompleted) {
-            val intent = Intent(this, SettingsActivity::class.java)
-            startActivity(intent)
-            finish()
-            return
+        val destination = if (setupCompleted && !forceWelcome) {
+            HandleService.startIfConfigured(this)
+            SettingsActivity::class.java
+        } else {
+            com.example.feature.welcome.WelcomeActivity::class.java
         }
 
-        setContent {
-            MaterialTheme(colorScheme = lightColorScheme()) {
-                WelcomeScreen(
-                    onContinue = {
-                        val p = getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
-                        p.edit().putBoolean("setup_completed", true).commit()
-                        HandleService.start(this@MainActivity)
-                        val intent = Intent(this@MainActivity, SettingsActivity::class.java)
-                        startActivity(intent)
-                        finish()
-                    }
-                )
-            }
-        }
+        startActivity(Intent(this, destination))
+        finish()
     }
 }
-
-

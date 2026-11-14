@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="AppTheme.Base">
+        <!-- Keep launcher settings pages aligned with Sidebar's light Material 3 UI. -->
+        <item name="android:windowBackground">@color/settings_background</item>
+        <item name="android:colorBackground">@color/settings_background</item>
+        <item name="colorPrimary">@color/settings_primary</item>
+        <item name="colorOnPrimary">@color/settings_on_primary</item>
+        <item name="colorSecondary">@color/settings_primary</item>
+        <item name="colorSurface">@color/settings_surface</item>
+        <item name="colorOnSurface">@color/settings_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/settings_on_surface_variant</item>
+        <item name="colorOutline">@color/settings_outline</item>
+        <item name="colorControlActivated">@color/settings_primary</item>
+        <item name="colorControlHighlight">@color/settings_ripple</item>
+        <item name="android:colorAccent">@color/settings_primary</item>
+        <item name="android:textColorPrimary">@color/settings_on_surface</item>
+        <item name="android:textColorSecondary">@color/settings_on_surface_variant</item>
+        <item name="android:statusBarColor">@color/settings_background</item>
+        <item name="android:navigationBarColor">@color/settings_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="LauncherTheme" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.App.PopupMenu.WhiteSky" parent="ThemeOverlay.Material3.Light">
+        <item name="android:colorBackground">@color/settings_surface</item>
+        <item name="colorSurface">@color/settings_surface</item>
+        <item name="android:textColorPrimary">@color/settings_on_surface</item>
+        <item name="android:textColorSecondary">@color/settings_on_surface_variant</item>
+        <item name="android:textColor">@color/settings_on_surface</item>
+        <item name="colorControlNormal">@color/settings_primary</item>
+        <item name="colorControlHighlight">@color/settings_ripple</item>
+        <item name="android:popupBackground">@drawable/menu_popup_background_white_sky</item>
+        <item name="popupMenuBackground">@drawable/menu_popup_background_white_sky</item>
+        <item name="android:itemBackground">@drawable/menu_item_selector_sky</item>
+        <item name="android:popupMenuStyle">@style/Widget.App.PopupMenu.WhiteSky</item>
+        <item name="popupMenuStyle">@style/Widget.App.PopupMenu.WhiteSky</item>
+        <item name="android:itemTextAppearance">@style/TextAppearance.App.PopupMenu.Large</item>
+        <item name="itemTextAppearance">@style/TextAppearance.App.PopupMenu.Large</item>
+    </style>
+
+    <style name="Widget.App.PopupMenu.WhiteSky" parent="Widget.Material3.PopupMenu">
+        <item name="android:popupBackground">@drawable/menu_popup_background_white_sky</item>
+        <item name="popupMenuBackground">@drawable/menu_popup_background_white_sky</item>
+    </style>
+
+    <style name="TextAppearance.App.PopupMenu.Large" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/settings_on_surface</item>
+    </style>
+</resources>

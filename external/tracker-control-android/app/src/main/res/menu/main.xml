@@ -1,0 +1,147 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+      xmlns:netguard="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/menu_search"
+        android:icon="@drawable/ic_search_white_24dp"
+        android:title="@string/menu_search"
+        netguard:actionViewClass="androidx.appcompat.widget.SearchView"
+        netguard:showAsAction="always|collapseActionView"/>
+    <item
+        android:id="@+id/menu_filter"
+        android:icon="@drawable/ic_filter_list_white_24dp"
+        android:title="@string/menu_filter">
+        <menu>
+            <item
+                android:id="@+id/menu_app_user"
+                android:checkable="true"
+                android:title="@string/menu_app_user"/>
+            <item
+                android:id="@+id/menu_app_system"
+                android:checkable="true"
+                android:title="@string/menu_app_system"/>
+            <item
+                android:id="@+id/menu_app_nointernet"
+                android:checkable="true"
+                android:title="@string/menu_app_nointernet"/>
+            <item
+                android:id="@+id/menu_app_unprotected"
+                android:checkable="true"
+                android:title="@string/menu_app_unprotected"/>
+            <item
+                android:id="@+id/menu_app_frozen"
+                android:checkable="true"
+                android:title="@string/menu_app_frozen"/>
+        </menu>
+    </item>
+    <item
+        android:id="@+id/menu_sort"
+        android:icon="@drawable/ic_sort_white_24dp"
+        android:title="@string/menu_sort">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item
+                    android:id="@+id/menu_sort_trackers_week"
+                    android:title="@string/menu_sort_companies_week"/>
+                <item
+                    android:id="@+id/menu_sort_trackers_all"
+                    android:title="@string/menu_sort_companies"/>
+                <item
+                    android:id="@+id/menu_sort_name"
+                    android:title="@string/menu_sort_name"/>
+                <item
+                    android:id="@+id/menu_sort_install_date"
+                    android:title="@string/firewall_sort_install_date"/>
+                <item
+                    android:id="@+id/menu_sort_by_latest_detected_tracker"
+                    android:title="@string/menu_sort_by_latest_detected_tracker"/>
+                <item
+                    android:visible="false"
+                    android:id="@+id/menu_sort_uid"
+                    android:title="@string/menu_sort_uid"/>
+            </group>
+        </menu>
+    </item>
+    <item
+        android:id="@+id/menu_vpn_saved_profiles"
+        android:title="@string/menu_vpn_saved_profiles" />
+    <item
+        android:id="@+id/menu_vpn_manage_profiles"
+        android:title="@string/setting_wg_profile_manage" />
+    <item
+        android:id="@+id/menu_vpn_import_files"
+        android:title="@string/setting_wg_profile_import_file" />
+    <item
+        android:id="@+id/menu_vpn_providers"
+        android:title="@string/menu_vpn_providers">
+        <menu>
+            <item
+                android:id="@+id/menu_vpn_mullvad"
+                android:title="@string/setting_wg_mullvad_setup" />
+            <item
+                android:id="@+id/menu_vpn_ivpn"
+                android:title="@string/vpn_provider_ivpn" />
+            <item
+                android:id="@+id/menu_vpn_mullvad_account"
+                android:title="@string/vpn_get_mullvad_account" />
+            <item
+                android:id="@+id/menu_vpn_ivpn_account"
+                android:title="@string/vpn_get_ivpn_account" />
+            <item
+                android:id="@+id/menu_vpn_proton"
+                android:title="@string/setting_wg_proton_setup" />
+            <item
+                android:id="@+id/menu_vpn_custom_config"
+                android:title="@string/setting_wg_profile_import" />
+            <item
+                android:id="@+id/menu_vpn_scan_qr"
+                android:title="@string/setting_wg_profile_scan" />
+        </menu>
+    </item>
+    <item
+        android:id="@+id/menu_vpn_route_mode"
+        android:title="@string/setting_wg_route_mode">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item
+                    android:id="@+id/menu_vpn_route_all"
+                    android:checkable="true"
+                    android:title="@string/wg_route_mode_all" />
+                <item
+                    android:id="@+id/menu_vpn_route_selected"
+                    android:checkable="true"
+                    android:title="@string/wg_route_mode_selected" />
+            </group>
+        </menu>
+    </item>
+    <item
+        android:id="@+id/menu_log"
+        android:title="@string/menu_log"/>
+    <item
+        android:id="@+id/menu_invite"
+        android:visible="false"
+        android:title="@string/menu_invite"/>
+    <item
+        android:id="@+id/menu_legend"
+        android:title="@string/menu_legend"
+        android:visible="false"/>
+    <item
+        android:id="@+id/menu_csv"
+        android:title="@string/menu_csv"
+        android:visible="false"/>
+    <item
+        android:id="@+id/menu_troubleshooting"
+        android:title="@string/menu_troubleshooting"/>
+    <item
+        android:id="@+id/menu_about"
+        android:title="@string/menu_about"
+        android:visible="false"/>
+    <item
+        android:id="@+id/menu_support"
+        android:title="@string/menu_support"
+        android:visible="false" />
+    <item
+        android:id="@+id/menu_apps"
+        android:title="@string/menu_apps"
+        android:visible="false" />
+
+</menu>

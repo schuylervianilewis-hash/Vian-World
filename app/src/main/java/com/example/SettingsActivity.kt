@@ -46,9 +46,6 @@ class SettingsActivity : ComponentActivity() {
         LogKeeper.log(this, "SettingsActivity", "onCreate entered")
 
         try {
-            // Ensure Main lightweight resident runtime is started if overlay permission is granted
-            HandleService.startIfConfigured(this)
-
             val startRoute = intent.getStringExtra("start_route") ?: "main"
 
             setContent {
@@ -69,6 +66,12 @@ class SettingsActivity : ComponentActivity() {
             LogKeeper.logError(this, "SettingsActivity", "Exception during onCreate", t)
             throw t
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Retry after returning from Android's overlay-permission settings screen.
+        HandleService.startIfConfigured(this)
     }
 }
 
@@ -234,6 +237,35 @@ fun MainSettingsScreen(
                             context.startActivity(intent)
                         }
                         .testTag("settings_item_log_keeper")
+                )
+                HorizontalDivider()
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Launcher Settings") },
+                    supportingContent = { Text("Customize the Home screen, app drawer, gestures, widgets, and launcher behaviour") },
+                    modifier = Modifier
+                        .clickable {
+                            context.startActivity(
+                                Intent(context, shura.home.activities.SettingsActivity::class.java)
+                            )
+                        }
+                        .testTag("settings_item_launcher")
+                )
+                HorizontalDivider()
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Sidebar Setup") },
+                    supportingContent = { Text("Reopen the initial Sidebar setup and permission flow") },
+                    modifier = Modifier
+                        .clickable {
+                            context.startActivity(
+                                Intent(context, MainActivity::class.java)
+                                    .putExtra(MainActivity.EXTRA_FORCE_WELCOME, true)
+                            )
+                        }
+                        .testTag("settings_item_sidebar_setup")
                 )
                 HorizontalDivider()
             }

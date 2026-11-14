@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/select_app_item_holder"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/activity_margin"
+    android:paddingTop="@dimen/medium_margin"
+    android:paddingEnd="@dimen/activity_margin"
+    android:paddingBottom="@dimen/medium_margin">
+
+    <ImageView
+        android:id="@+id/select_app_icon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/activity_margin"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/select_app_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="@dimen/normal_text_size" />
+
+        <TextView
+            android:id="@+id/select_app_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="@dimen/smaller_text_size"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sky Blue Theme Accents (replacing legacy yellow/green) -->
+    <color name="color_primary">#0288D1</color>
+    <color name="default_primary_color">#0288D1</color>
+    <color name="default_accent_color">#0288D1</color>
+    <color name="default_app_icon_color">#0288D1</color>
+    <color name="default_widget_text_color">#0288D1</color>
+
+    <!-- Default Light Theme for Settings & Sub-Activities -->
+    <color name="theme_light_background_color">#FAFAFA</color>
+    <color name="theme_light_text_color">#212121</color>
+    <color name="default_background_color">#FAFAFA</color>
+    <color name="default_text_color">#212121</color>
+
+    <color name="semitransparent_navigation">#33000000</color>
+
+    <!-- Shared light Material 3 palette for Launcher Settings and its subpages. -->
+    <color name="settings_background">#FFFBFE</color>
+    <color name="settings_surface">#FFFBFE</color>
+    <color name="settings_card">#F7F2FA</color>
+    <color name="settings_primary">#6750A4</color>
+    <color name="settings_on_primary">#FFFFFF</color>
+    <color name="settings_on_surface">#1C1B1F</color>
+    <color name="settings_on_surface_variant">#49454F</color>
+    <color name="settings_outline">#79747E</color>
+    <color name="settings_outline_variant">#CAC4D0</color>
+    <color name="settings_divider">#E7E0EC</color>
+    <color name="settings_ripple">#1F6750A4</color>
+</resources>
