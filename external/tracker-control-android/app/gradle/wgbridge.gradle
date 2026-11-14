@@ -108,7 +108,9 @@ def buildCargoEnv = { ->
     pathEntries << "${System.getProperty('user.home')}/.cargo/bin"
     if (env['PATH']) pathEntries << env['PATH']
     env['PATH'] = pathEntries.join(File.pathSeparator)
-    env['ANDROID_NDK_HOME'] = findNdkDirectory().absolutePath
+    def selectedNdkDirectory = findNdkDirectory().absolutePath
+    env['ANDROID_NDK_HOME'] = selectedNdkDirectory
+    env['ANDROID_NDK_ROOT'] = selectedNdkDirectory
 
     // Shared, checkout-independent target dir so worktrees reuse artifacts.
     def cargoTargetDir = resolveCargoTargetDir()
