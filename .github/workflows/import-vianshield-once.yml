@@ -1,0 +1,38 @@
+name: One-time Vianshield source import
+on:
+  push:
+    branches:
+      - automation/import-vianshield-20261114
+    paths:
+      - .github/workflows/import-vianshield-once.yml
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Vian World integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integration/vian-world-launcher
+          fetch-depth: 0
+      - name: Copy pinned Vianshield repository snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e external/vianshield
+          git clone --no-checkout https://github.com/elschuyler/Vianshield.git /tmp/vianshield
+          git -C /tmp/vianshield checkout 76658839ebb43e368d96422b5eae0143df5d6fa2
+          test "$(git -C /tmp/vianshield rev-parse HEAD)" = "76658839ebb43e368d96422b5eae0143df5d6fa2"
+          mkdir -p external/vianshield
+          cp -a /tmp/vianshield/. external/vianshield/
+          rm -rf external/vianshield/.git
+      - name: Commit source snapshot to integration branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add external/vianshield
+          git commit -m "Add standalone Vianshield source snapshot"
+          git push origin HEAD:refs/heads/integration/vian-world-launcher
