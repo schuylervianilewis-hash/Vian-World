@@ -1,0 +1,672 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_description">TrackerControl permette agli utenti di monitorare e controllare la continua, diffusa e nascosta raccolta di dati riguardo i loro comportamenti effettuata dalle applicazioni (\'tracciamento\').</string>
+    <string name="app_copyright">Diritto d autore \u00A9 2019–2022 Elemento Elemento\n\nDiritto d autore.</string>
+    <string name="app_android">TrackerControl richiede Android 5.1 o successiva</string>
+    <string name="app_xposed">Xposed causa troppi crash, che potrebbero portare alla rimozione di TrackerControl dal Google Play Store, perciò TrackerControl non è supportato quando Xposed è installato</string>
+    <string name="app_eula">L\'utilizzo di questa app è a tuo rischio. Nessuna app può garantire una protezione assoluta contro il tracciamento.</string>
+    <string name="app_privacy"><a href="https://github.com/TrackerControl/tracker-control-android#privacy-notice">Informativa sulla privacy</a> <a href="https://github.com/TrackerControl/tracker-control-android#cookie-policy">Informativa sui cookie</a></string>
+    <string name="app_ios"><a href="https://ios.trackercontrol.org">TrackerControl è disponibile anche per iOS</a></string>
+    <string name="channel_foreground">Servizi in esecuzione</string>
+    <string name="channel_notify">Notifiche generali</string>
+    <string name="channel_access">Accesso alle notifiche</string>
+    <string name="menu_search">Cerca applicazione</string>
+    <string name="menu_filter">Filtra applicazioni</string>
+    <string name="menu_app_user">Mostra applicazioni utente</string>
+    <string name="menu_app_system">Mostra applicazioni di sistema</string>
+    <string name="menu_app_nointernet">Mostra le applicazioni senza accesso a Internet</string>
+    <string name="menu_app_unprotected">Mostra non protette app solo</string>
+    <string name="menu_app_frozen">Mostra bloccate app</string>
+    <string name="menu_sort">Ordina applicazioni</string>
+    <string name="menu_sort_name">Ordina per nome</string>
+    <string name="menu_sort_uid">Ordina per uid</string>
+    <string name="menu_sort_companies_week">Ordina per società (settimana)</string>
+    <string name="menu_sort_companies">Ordina per azienda</string>
+    <string name="menu_sort_by_latest_detected_tracker">Ordina da più recente rilevato tracker</string>
+    <string name="menu_log">Registro del traffico</string>
+    <string name="menu_settings">Impostazioni</string>
+    <string name="menu_invite">Invita</string>
+    <string name="menu_legend">Legenda</string>
+    <string name="menu_support">Supporta questa app</string>
+    <string name="menu_log_support">Spiegazioni</string>
+    <string name="menu_troubleshooting">Risoluzione problemi</string>
+    <string name="menu_about">Informazioni</string>
+    <string name="timeline_empty_disabled_title">TrackerControl è elemento</string>
+    <string name="timeline_empty_disabled_subtitle">Cronologia vuoto disabilitato sottotitolo.</string>
+    <string name="timeline_empty_enabled_title">Elemento per tracker…</string>
+    <string name="timeline_empty_enabled_subtitle">Cronologia vuoto abilitato sottotitolo.</string>
+    <string name="timeline_empty_recording_off_title">Tracker registrazione è elemento</string>
+    <string name="timeline_empty_recording_off_subtitle">Cronologia vuoto registrazione elemento sottotitolo.</string>
+    <string name="timeline_empty_recording_unavailable_title">Tracker registrazione non disponibile</string>
+    <string name="timeline_empty_recording_unavailable_subtitle">Cronologia vuoto registrazione non disponibile sottotitolo.</string>
+    <string name="timeline_open_app">Apri un app</string>
+    <string name="timeline_open_settings">Apri impostazioni</string>
+    <string name="timeline_hint_tap_entry">Un\'app non funziona? Tocca la sua voce per modificarne la protezione.</string>
+    <string name="timeline_hint_dismiss">Elemento elemento</string>
+    <string name="unidentified_app_uid">Non identificata app (UID %1$d)</string>
+    <string name="tab_timeline">Cronologia</string>
+    <string name="tab_apps">App</string>
+    <string name="timeline_section_last_hour">Ultimo ora</string>
+    <string name="timeline_section_today">Oggi</string>
+    <string name="timeline_section_yesterday">Ieri</string>
+    <string name="timeline_section_this_week">Questa settimana</string>
+    <!-- Keep as a string: call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="timeline_more_trackers" tools:ignore="PluralsCandidate">+%d altro</string>
+    <string name="timeline_tracker_blocked">Bloccato</string>
+    <string name="timeline_tracker_allowed">Consentito</string>
+    <!-- A blocked/allowed label followed by its share of all tracking attempts. -->
+    <string name="feed_section_last_contact">ultimo contatto %s</string>
+    <plurals name="feed_show_more_companies">
+        <item quantity="one">Mostra %d azienda in più</item>
+        <item quantity="other">Mostra %d aziende in più</item>
+    </plurals>
+    <string name="feed_allow_company_in_app">Consenti %1$s in %2$s</string>
+    <string name="feed_block_company_in_app">Blocca %1$s in %2$s</string>
+    <string name="feed_allowed_by_you">Consentito da te</string>
+    <string name="feed_allowed_shared_ip">Consentito · condiviso IP</string>
+    <string name="feed_monitored">Monitorato</string>
+    <string name="feed_company_expanded">Espanso</string>
+    <string name="feed_company_collapsed">Compresso</string>
+    <string name="feed_essential_explainer">Elemento da app — consentito elemento %s elemento funziona</string>
+    <string name="feed_essential_explainer_blocked">Elemento da app — blocco elemento può elemento %s</string>
+    <!-- Keep as a string: call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="timeline_summary_mixed" tools:ignore="PluralsCandidate">%1$d bloccato · %2$d consentito</string>
+    <plurals name="timeline_trackers_blocked">
+        <item quantity="one">%d tracker bloccati</item>
+        <item quantity="other">%d tracker bloccati</item>
+    </plurals>
+    <plurals name="timeline_trackers_allowed">
+        <item quantity="one">%d tracker consentiti</item>
+        <item quantity="other">%d tracker consentiti</item>
+    </plurals>
+    <string name="troubleshooting_title">Risoluzione problemi</string>
+    <string name="troubleshooting_battery_title">Elemento elemento</string>
+    <string name="troubleshooting_battery_desc">Se TrackerControl smette di funzionare in background, disattiva l\'ottimizzazione della batteria di Android per TrackerControl. Seleziona \"Tutte le app\", tocca TrackerControl e seleziona \"Non ottimizzare\".</string>
+    <string name="troubleshooting_battery_action">Disattiva l\'ottimizzazione della batteria</string>
+    <string name="troubleshooting_battery_ok">Elemento elemento è già disabilitato.</string>
+    <string name="troubleshooting_datasaver_title">Risparmio dati</string>
+    <string name="troubleshooting_datasaver_desc">Se TrackerControl non riesce a connettersi quando Risparmio dati è attivo, consenti l\'utilizzo illimitato dei dati per TrackerControl. Attiva \"Dati in background\" e \"Utilizzo dati senza restrizioni\".</string>
+    <string name="troubleshooting_datasaver_action">Consenti illimitato data</string>
+    <string name="troubleshooting_datasaver_ok">Data saver è non elemento TrackerControl.</string>
+    <string name="troubleshooting_local_network_title">Locale rete accesso</string>
+    <string name="troubleshooting_local_network_desc">Ulteriori informazioni su Risoluzione problemi locale rete elemento.</string>
+    <string name="troubleshooting_local_network_action">Consenti locale rete accesso</string>
+    <string name="troubleshooting_local_network_ok">Locale rete accesso è consentito.</string>
+    <string name="troubleshooting_app_breakage_title">Un app elemento funziona</string>
+    <string name="troubleshooting_app_breakage_desc">Ulteriori informazioni su Risoluzione problemi malfunzionamento elemento.</string>
+    <string name="troubleshooting_categories_title">Blocco elemento tracker categorie</string>
+    <string name="troubleshooting_categories_desc">Ulteriori informazioni su Risoluzione problemi categorie elemento.</string>
+    <string name="troubleshooting_alwayson_title">VPN sempre attiva</string>
+    <string name="troubleshooting_alwayson_desc">Se \"Blocca elemento senza VPN\"Ulteriori informazioni su Risoluzione problemi sempre attiva elemento.</string>
+    <string name="troubleshooting_alwayson_action">Apri VPN impostazioni</string>
+    <string name="menu_apps">Altre applicazioni</string>
+    <string name="menu_protocol_other">Altro</string>
+    <string name="menu_traffic_allowed">Consentito</string>
+    <string name="menu_traffic_blocked">Bloccato</string>
+    <string name="menu_live">Aggiornamenti in tempo reale</string>
+    <string name="menu_refresh">Aggiorna</string>
+    <string name="menu_resolve">Mostra nomi</string>
+    <string name="menu_organization">Mostra azienda</string>
+    <string name="menu_pcap_enabled">PCAP abilitato</string>
+    <string name="menu_pcap_export">Esporta PCAP</string>
+    <string name="menu_clear">Elimina tutto</string>
+    <string name="menu_clear_activity">Cancella elemento attività</string>
+    <string name="menu_export">Esporta</string>
+    <string name="menu_reset">Resetta</string>
+    <string name="menu_cleanup">Ripulisci</string>
+    <string name="setting_options">Elemento</string>
+    <string name="setting_further_options">Ulteriori opzioni</string>
+    <string name="setting_pause">Attiva automaticamente dopo %1$s minuti</string>
+    <string name="setting_update">Cerca aggiornamenti</string>
+    <plurals name="pause">
+        <item quantity="one">Sospendi per %d minuto</item>
+        <item quantity="other">Sospendi per %d minuti</item>
+    </plurals>
+    <string name="setting_ip6">Abilita il traffico IPv6</string>
+    <string name="setting_call">Disabilita durante le chiamate</string>
+    <string name="setting_reload_onconnectivity">Ricarica ad ogni cambio di connessione</string>
+    <string name="setting_tcp_mss_clamp">Tethering elemento modalità</string>
+    <string name="summary_tcp_mss_clamp">Ulteriori informazioni su TCP MSS elemento.</string>
+    <string name="setting_advanced_options">Avanzate opzioni (per elemento)</string>
+    <string name="setting_log_app">Ricerca nuovi tracker</string>
+    <string name="setting_log_logcat">Ricerca</string>
+    <string name="setting_handover">Passaggio alla VPN senza interruzioni al momento del ricaricamento</string>
+    <string name="setting_reset_usage">Resetta l\'utilizzo della rete</string>
+    <string name="setting_show_resolved">Mostra nomi di dominio risolti</string>
+    <string name="setting_exclude_all_tracking">Escludi tutte app da elemento</string>
+    <string name="summary_exclude_all_tracking">Ulteriori informazioni su Escludi tutte elemento.</string>
+    <string name="setting_include_all_tracking">Includi tutte app in elemento</string>
+    <string name="summary_include_all_tracking">Elemento tracker elemento per tutte app.</string>
+    <string name="setting_block_domains">Abilita il file hosts</string>
+    <string name="setting_rcode">Questi hosts bloccano la risposta: %s</string>
+    <string name="setting_vpn4">VPN IPv4: %s</string>
+    <string name="setting_vpn6">VPN IPv6: %s</string>
+    <string name="setting_dns">VPN DNS: %s</string>
+    <string name="setting_validate">Convalida: %s</string>
+    <string name="setting_ttl">DNS TTL minimo: %s s</string>
+    <string name="setting_socks5_enabled">Usa proxy SOCKS5</string>
+    <string name="setting_socks5_addr">Indirizzo SOCKS5: %s</string>
+    <string name="setting_socks5_port">Porta SOCKS5: %s</string>
+    <string name="setting_socks5_username">Nome utente SOCKS5: %s</string>
+    <string name="setting_socks5_password">Password SOCKS5: %s</string>
+    <string name="setting_wg_enabled">Elemento traffico attraverso WireGuard</string>
+    <string name="setting_wg_profile">WireGuard profilo</string>
+    <string name="setting_wg_profile_manage">Elemento WireGuard profili</string>
+    <string name="setting_wg_profile_import">Importa WireGuard configurazione</string>
+    <string name="setting_wg_profile_scan">Scansiona QR elemento</string>
+    <string name="setting_wg_profile_import_file">Importa da file o elemento</string>
+    <string name="setting_wg_mullvad_setup">Imposta elemento Mullvad</string>
+    <string name="setting_wg_proton_setup">Elemento un Proton VPN configurazione</string>
+    <string name="setting_wg_keepalive_when_screen_off">Elemento WireGuard elemento quando schermo è elemento</string>
+    <string name="setting_wg_profile_save">Salva profilo</string>
+    <string name="setting_wg_profile_delete">Elimina profilo</string>
+    <string name="accessibility_wg_profile_edit">Modifica WireGuard profilo %1$s</string>
+    <string name="accessibility_wg_profile_delete">Elimina WireGuard profilo %1$s</string>
+    <string name="setting_wireguard">WireGuard (elemento)</string>
+    <string name="setting_wg_status">Stato</string>
+    <string name="setting_vpn_key_rotate_now">Ruota VPN provider elemento ora</string>
+    <string name="setting_pcap_record_size">Dimensioni record PCAP: %s B</string>
+    <string name="setting_pcap_file_size">Dimensione max. file PCAP: %s MB</string>
+    <!-- Secure DNS (DoH) -->
+    <string name="summary_doh_enabled">Ulteriori informazioni su DNS sicuro abilitato.</string>
+    <string name="warning_beta">Elemento elemento. Può non elemento come elemento.</string>
+    <string name="summary_doh_endpoint">HTTPS URL per Elemento elemento</string>
+    <string name="setting_doh_dns_fallback">DNS alternativa</string>
+    <string name="summary_doh_dns_fallback">Ulteriori informazioni su DNS sicuro DNS alternativa.</string>
+    <!-- Block DNS-over-TLS (DoT) -->
+    <string name="setting_block_dot">Blocca Android\'elemento Privato DNS</string>
+    <string name="summary_block_dot">Con Android\'Ulteriori informazioni su Blocca DNS privato.</string>
+    <string name="setting_stats_frequency">Intervallo di campionamento: %s ms</string>
+    <string name="setting_stats_samples">Numero di campioni: %s s</string>
+    <string name="setting_backup">Backup</string>
+    <string name="setting_export">Esporta impostazioni</string>
+    <string name="setting_import">Importa impostazioni</string>
+    <string name="setting_hosts_update">Aggiorna file host</string>
+    <string name="setting_hosts_auto_update">Elemento hosts</string>
+    <string name="summary_hosts_auto_update">Elemento aggiornamento  hosts file in  elemento</string>
+    <string name="summary_pause">Dopo aver messo in pausa TrackerControl tramite la barra delle notifiche, riabilitalo automaticamente dopo il numero di minuti specificato (inserire 0 per disabilitare questa opzione).</string>
+    <string name="summary_update">Cerca nuove versioni su GitHub due volte al giorno</string>
+    <string name="summary_ip6">Indirizza il traffico IP versione 6 verso TrackerControl così da consentirlo o bloccarlo selettivamente</string>
+    <string name="summary_call">Disattiva TrackerControl durante le chiamate telefoniche. Può essere utile per risolvere problemi legati alle chiamate IP/Wi-Fi.</string>
+    <string name="summary_log_app">Disabilita per diminuire il consumo della batteria. I nuovi tracker verranno comunque bloccati, ma non saranno mostrati.</string>
+    <string name="summary_block_domains">ATTENZIONE: Gli hosts bloccati non sono mostrati nell\'interfaccia utente.</string>
+    <string name="summary_rcode">Il valore predefinito è 3 (NXDOMAIN), che significa \'dominio inesistente\'.</string>
+    <string name="summary_validate">Nome di dominio utilizzato per convalidare la connessione internet alla porta 443 (https).</string>
+    <string name="summary_socks5_enabled">Solo il traffico TCP verrà inviato al server proxy</string>
+    <string name="summary_wg_enabled">Ulteriori informazioni su WireGuard abilitato.</string>
+    <string name="summary_wg_profile">Scegli un elemento WireGuard configurazione</string>
+    <string name="summary_wg_profile_none">Elemento elemento profili</string>
+    <string name="summary_wg_profile_manage">Elemento, modifica, o elimina elemento WireGuard elemento</string>
+    <string name="summary_wg_keepalive_when_screen_off">Ulteriori informazioni su WireGuard keepalive quando schermo elemento.</string>
+    <string name="summary_wg_status_off">Elemento</string>
+    <string name="summary_wg_status_missing_config">Elemento — elemento configurazione imposta</string>
+    <string name="summary_wg_status_connected">Connesso</string>
+    <string name="summary_wg_status_handshaking">Negoziazione…</string>
+    <string name="summary_wg_status_blocked">Bloccato — %s</string>
+    <string name="summary_wg_status_starting">Avvio</string>
+    <string name="summary_vpn_key_rotate_now">Ulteriori informazioni su VPN elemento ruota ora.</string>
+    <string name="msg_vpn_key_rotation_started">Rotazione della chiave VPN avviata</string>
+    <string name="msg_wg_config_invalid">Non valida WireGuard configurazione: %s</string>
+    <string name="msg_wg_profile_name">Profilo nome</string>
+    <string name="msg_wg_profile_default_name">Predefinito</string>
+    <string name="msg_wg_profile_saved">WireGuard profilo elemento</string>
+    <string name="msg_wg_profile_deleted">WireGuard profilo elemento</string>
+    <string name="msg_wg_profile_empty">Elemento profili elemento</string>
+    <string name="msg_wg_profile_active">Attivo</string>
+    <string name="msg_wg_profile_set_active">Imposta attivo</string>
+    <string name="msg_wg_profile_config_hint" tools:ignore="TypographyEllipsis">[Interface]\nPrivateKey = …\nAddress = …\n\n[Peer]\nPublicKey = …\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = …</string>
+    <string name="msg_wg_profile_delete_confirm">Elimina questa WireGuard profilo?</string>
+    <string name="msg_wg_profile_scan_hint">WireGuard profilo scansiona suggerimento.</string>
+    <string name="msg_wg_profile_scan_no_camera">Questo dispositivo non ha una fotocamera con cui eseguire la scansione</string>
+    <string name="msg_wg_profile_scan_no_camera_permission">WireGuard profilo scansiona elemento fotocamera autorizzazione.</string>
+    <string name="msg_wg_profile_scan_failed">Elemento non avvia  fotocamera: %1$s</string>
+    <string name="msg_wg_profile_scan_not_config">Questa QR elemento è non un WireGuard configurazione: %1$s</string>
+    <string name="msg_wg_profile_import_none">WireGuard profilo importa nessuno.</string>
+    <string name="msg_wg_profile_import_failed">Elemento non elemento  selezionato file: %1$s</string>
+    <plurals name="msg_wg_profile_imported">
+        <item quantity="one">%1$d profilo</item>
+        <item quantity="other">%1$d profili</item>
+    </plurals>
+    <plurals name="msg_wg_profile_import_skipped">
+        <item quantity="one">%1$d app</item>
+        <item quantity="other">%1$d app</item>
+    </plurals>
+    <string name="msg_wg_mullvad_account">Mullvad account numero</string>
+    <string name="msg_wg_mullvad_recommended">Elemento elemento</string>
+    <string name="msg_wg_mullvad_note">WireGuard Mullvad elemento.</string>
+    <string name="msg_wg_mullvad_generating">Elemento WireGuard profilo…</string>
+    <string name="msg_wg_mullvad_failed">Mullvad elemento fallito: %s</string>
+    <string name="msg_wg_mullvad_countries_failed">Elemento non elemento Mullvad paesi: %s</string>
+    <string name="msg_wg_proton_note">WireGuard Proton elemento.\n\nWireGuard Proton elemento.</string>
+    <string name="msg_wg_proton_open_dashboard">Apri Proton VPN elemento</string>
+    <string name="vpn_status_wireguard_connected">WireGuard connesso</string>
+    <string name="vpn_status_disconnected">Non connesso</string>
+    <string name="vpn_intro_title">VPN elemento</string>
+    <string name="vpn_intro_body">VPN introduzione corpo.</string>
+    <string name="vpn_intro_mullvad_body">VPN introduzione Mullvad corpo.</string>
+    <string name="vpn_intro_ivpn_body">VPN introduzione elemento corpo.</string>
+    <string name="vpn_intro_proton_body">VPN introduzione Proton corpo.</string>
+    <string name="vpn_intro_wireguard_body">VPN introduzione WireGuard corpo.</string>
+    <string name="vpn_enter_mullvad_account">Inserisci account numero</string>
+    <string name="vpn_enter_ivpn_account">Inserisci account Elemento</string>
+    <string name="vpn_settings">Mullvad impostazioni</string>
+    <string name="vpn_settings_title">Mullvad impostazioni</string>
+    <string name="vpn_ivpn_settings">IVPN impostazioni</string>
+    <string name="vpn_ivpn_settings_title">IVPN impostazioni</string>
+    <string name="vpn_account_not_set">Account: non imposta</string>
+    <string name="vpn_account_show">Mostra</string>
+    <string name="vpn_account_hide">Elemento</string>
+    <string name="vpn_account_change">Cambia</string>
+    <string name="vpn_account_cancel">Annulla</string>
+    <string name="vpn_mullvad_intro">VPN Mullvad introduzione.</string>
+    <string name="vpn_mullvad_account_note">Questa account è elemento per Mullvad paese elemento.</string>
+    <string name="vpn_get_mullvad_account">Ottieni Mullvad account</string>
+    <string name="vpn_get_ivpn_account">Ottieni IVPN account</string>
+    <string name="vpn_account_hint">Mullvad account numero</string>
+    <string name="vpn_ivpn_intro">VPN elemento introduzione.</string>
+    <string name="vpn_ivpn_captcha_intro">VPN elemento CAPTCHA introduzione.</string>
+    <string name="vpn_ivpn_account_hint">IVPN account Elemento</string>
+    <string name="vpn_ivpn_captcha_hint">CAPTCHA elemento</string>
+    <string name="vpn_account_save">Salva</string>
+    <string name="vpn_account_saved">Account elemento</string>
+    <string name="vpn_no_wireguard_profiles">Elemento elemento WireGuard profili elemento</string>
+    <string name="vpn_import_wireguard_profile">Importa WireGuard profilo</string>
+    <string name="vpn_manage_wireguard_profiles">Gestisci WireGuard profili</string>
+    <string name="vpn_country_load_failed">Elemento non elemento %1$s paesi: %2$s</string>
+    <string name="vpn_country_load_failed_short">Elemento non elemento paesi</string>
+    <string name="vpn_choose_country_first">Scegli un paese prima</string>
+    <string name="vpn_choose_profile_first">Scegli un WireGuard profilo prima</string>
+    <string name="vpn_setup_required">VPN elemento necessario.</string>
+    <string name="vpn_loading_countries">Caricamento paesi…</string>
+    <string name="vpn_generating">Elemento WireGuard profilo…</string>
+    <string name="vpn_generation_failed">VPN elemento fallito: %s</string>
+    <string name="vpn_retry">Riprova</string>
+    <string name="msg_wg_blocked_title">WireGuard elemento non disponibile</string>
+    <!-- The cause comes first so it does not read as a tunnel that never
+         started when the detail says it stopped responding. The tail stays
+         neutral about recovery: some causes, such as a lapsed subscription,
+         never resolve on their own. Each %s already names its own remedy
+         where it has one, so this must not repeat it. -->
+    <string name="msg_wg_identity_renewed_title">VPN dispositivo elemento</string>
+    <string name="msg_wg_identity_renewed">%1$s non riconosceva più questo dispositivo, quindi TrackerControl ne ha registrato uno nuovo e ha aggiornato i profili %1$s su questo dispositivo.</string>
+    <!-- Ends in a full stop: msg_wg_blocked_detail appends a sentence after it. -->
+    <string name="msg_sure">Sei sicuro⋅a?</string>
+    <string name="msg_started">Elemento per tracker…</string>
+    <string name="msg_waiting">In attesa di eventi</string>
+    <string name="msg_disabled">Utilizzare l\'interruttore qui sopra per attivare TrackerControl.</string>
+    <string name="msg_installed">Problemi con %1$s?</string>
+    <string name="msg_installed_description">Consenti all\'app di contattare le aziende</string>
+    <!-- Keep as a string: call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="msg_installed_tracker_libraries_found" tools:ignore="PluralsCandidate">Contiene %d librerie tracker</string>
+    <string name="msg_completed">Azione completata</string>
+    <string name="msg_no_file_manager">Nessun gestore di file trovato per selezionare un file.</string>
+    <string name="msg_no_browser">Elemento browser app elemento a apri  elemento.</string>
+    <string name="msg_vpn">TrackerControl utilizza una VPN locale per filtrare il traffico di rete. 
+Per questa ragione, è necessario consentire la connessione VPN nella prossima schermata.
+Il tuo traffico di rete non è inoltrato verso un server remoto, ma viene monitorato localmente sul tuo smartphone.</string>
+    <string name="msg_autostart">TrackerControl non può essere avviato automaticamente. Ciò è probabilmente dovuto a un bug nella tua versione di Android.</string>
+    <string name="msg_error">Si è verificato un errore imprevisto: \'%s\'</string>
+    <string name="msg_native_fd_recovery_exhausted">Elemento elemento recupero elemento.</string>
+    <string name="msg_native_fd_error">Elemento elemento errore.</string>
+    <string name="msg_vpn_replacement_recovery_exhausted">VPN elemento recupero elemento.</string>
+    <string name="msg_doh_unreachable">DNS sicuro elemento.</string>
+    <string name="msg_start_failed">Android ha impedito l\'avvio del servizio VPN. Questo è probabilmente dovuto a un bug nella tua versione di Android.</string>
+    <string name="msg_try">Prova TrackerControl</string>
+    <string name="msg_log_disabled">La registrazione del traffico è disattivata, utilizzare l\'interruttore sopra per attivarla. La registrazione del traffico potrebbe aumentare il consumo della batteria.</string>
+    <string name="msg_clear_activity">Cancella attività.</string>
+    <string name="msg_update_last">Ultimo aggiornamento: %s</string>
+    <string name="msg_metered">La rete è a consumo</string>
+    <string name="msg_inactive">Nessuna connessione internet attiva</string>
+    <string name="msg_queue">TrackerControl è occupato</string>
+    <string name="msg_update">Aggiornamento disponibile, clicca per scaricare</string>
+    <string name="title_version">Versione %1$d</string>
+    <string name="msg_push">I messaggi in entrata (push) sono per la maggior parte gestiti dal componente di sistema Play Services, al quale è consentito l\'accesso a internet in modo predefinito</string>
+    <string name="msg_system">La gestione di tutte le applicazioni (sistema) può essere attivata nelle impostazioni</string>
+    <string name="msg_vpn_cancelled">Connessione VPN annullata\nHai configurato un\'altra VPN in modalità sempre attiva?</string>
+    <string name="msg_unavailable">Questa funzione non è disponibile in questa versione di Android</string>
+    <string name="msg_always_on">Un\'altra VPN è impostata come sempre attiva</string>
+    <string name="msg_always_on_lockdown">Elemento su blocco.</string>
+    <string name="msg_start_forward">Inizia l\'inoltro da %1$s porta %2$d a %3$s:%4$d di \'%5$s\'?</string>
+    <string name="msg_stop_forward">Interrompere l\'inoltro di %1$s porta %2$d?</string>
+    <string name="msg_log_logcat">Attenzione: Blocco disabilitato a causa del logging ADB.</string>
+    <string-array name="protocolNames">
+        <item>UDP</item>
+        <item>TCP</item>
+    </string-array>
+    <string name="menu_add">Aggiungi</string>
+    <string name="menu_delete">Elimina</string>
+    <string name="setting_forwarding">Port forwarding</string>
+    <string name="title_protocol">Protocollo</string>
+    <string name="title_dport">Porta di origine</string>
+    <string name="title_raddr">Indirizzo Destinazione</string>
+    <string name="title_rport">Porta destinazione</string>
+    <string name="title_ruid">App destinazione</string>
+    <string name="title_external">Per un server esterno selezionare \'nobody\'</string>
+    <string name="title_unmetered_allowed">Il traffico non a consumo è consentito</string>
+    <string name="title_unmetered_blocked">Il traffico non a consumo è bloccato</string>
+    <string name="title_unmetered_disabled">Le regole per il traffico non a consumo non sono applicate</string>
+    <string name="title_metered_allowed">Il traffico a consumo è consentito</string>
+    <string name="title_metered_blocked">Il traffico a consumo è bloccato</string>
+    <string name="title_metered_disabled">Le regole per il traffico a consumo non sono applicate</string>
+    <string name="title_host_allowed">L\'indirizzo è consentito</string>
+    <string name="title_host_blocked">L\'indirizzo è bloccato</string>
+    <string name="title_interactive_allowed">Consenti quando lo schermo è acceso</string>
+    <string name="title_roaming_blocked">Blocca quando in roaming</string>
+    <string name="title_metered">Per impostazione predefinita, le connessioni Wi-Fi sono considerate non a consumo e le connessioni mobili a consumo</string>
+    <string name="title_rate">Valuta</string>
+    <string name="title_allow">Consenti</string>
+    <string name="title_block">Blocca</string>
+    <string name="title_nobody">nessuno</string>
+    <string name="title_log_whois">Whois %1$s</string>
+    <string name="title_log_port">Porta %1$d</string>
+    <string name="title_log_copy">Copia</string>
+    <!-- App Overview -->
+    <string name="tracked_app_icon">Disabilita l\'accesso a Internet per questa applicazione</string>
+    <string name="tracked_app_name">Nome applicazione</string>
+    <!-- Dynamic content descriptions for the app-icon Internet toggle in the app list (issue #231) -->
+    <string name="toggle_block_internet_description">Blocca Internet accesso per %1$s</string>
+    <string name="toggle_allow_internet_description">Consenti Internet accesso per %1$s</string>
+    <string name="toggle_no_internet_description">%1$s non ha accesso a Internet</string>
+    <string name="toggle_internet_unavailable_description">Internet accesso elemento non disponibile per %1$s</string>
+    <!-- Dynamic content description for the per-category tracker-blocking switch -->
+    <string name="toggle_block_category_description">Tracker blocco per categoria %1$s</string>
+    <!-- Dynamic content description for the home-screen widget toggle (accessibility follow-up, issue #636) -->
+    <string name="widget_toggle_enable_description">Abilita tracker blocco</string>
+    <string name="widget_toggle_disable_description">Elemento tracker blocco</string>
+    <string name="accessibility_tracker_blocking_enabled">Tracker blocco abilitato</string>
+    <string name="accessibility_tracker_blocking_disabled">Tracker blocco disabilitato</string>
+    <plurals name="n_companies_found_week">
+        <item quantity="one">ha contattato %d azienda la settimana scorsa</item>
+        <item quantity="other">ha contattato %d aziende la settimana scorsa</item>
+    </plurals>
+    <plurals name="n_companies_found">
+        <item quantity="one">ha contattato %d azienda in continuazione</item>
+        <item quantity="other">ha contattato %d aziende in continuazione</item>
+    </plurals>
+    <string name="confirm_ipinfo_title">Recupera informazioni sull\'organizzazione?</string>
+    <string name="confirm_ipinfo">Questo contatterà il servizio esterno ipinfo.io, e condividerà con esso dati sugli indirizzi IP contattati.</string>
+    <string name="external_servers">Ottenere automaticamente l\'email dello sviluppatore?</string>
+    <string name="confirm_google_info">Questa applicazione può ottenere automaticamente l\'email dello sviluppatore dell\'applicazione dal Google Play Store per te.</string>
+    <string name="ok">OK</string>
+    <string name="yes">Si</string>
+    <string name="no">No</string>
+    <string name="menu_csv">Esporta come CSV</string>
+    <string name="exporting">Esportazione in corso..</string>
+    <string name="export_failed">Esportazione fallita</string>
+    <string name="exported">Esportato nella memoria!</string>
+    <!-- App Details -->
+    <string name="title_activity_detail">Dettagli</string>
+    <string name="tab_trackers">Tracker</string>
+    <string name="tab_countries">Paesi</string>
+    <string name="tab_actions">Data Elemento</string>
+    <string name="app_info">Gestisci l\'applicazione</string>
+    <!-- Actions -->
+    <string name="block_tracking">Blocca i tracker</string>
+    <string name="block_tracking_description">Molte applicazioni inviano dati a terzi, i cosiddetti tracker. TrackerControl permette di bloccare l\'invio di questi dati in modo selettivo. Tuttavia utilizzare questa applicazione giudiziosamente, poiché gli sviluppatori di applicazioni si affidano a questi servizi, in particolare per la pubblicità.</string>
+    <string name="personalised_ads">Limitare la personalizzazione</string>
+    <string name="personalised_ads_description">Android permette di limitare l\'accesso delle applicazioni all\'ID Google Advertising del tuo dispositivo. Tuttavia, le applicazioni potrebbero ignorare questa impostazione e utilizzarlo ugualmente. Possono anche continuare a rilevare questo ID per scopi di analisi, secondo le politiche di Google. Devi fidarti di Google e dell\'azienda che raccoglie i dati.</string>
+    <string name="data_managment">Gestisci dati</string>
+    <string name="data_management_description">Il Regolamento Generale sulla Protezione dei Dati (GDPR) dell\'UE consente agli utenti dell\'UE di gestire tutti i dati ad essi correlati. Questa applicazione fornisce modelli di email per contattare lo sviluppatore. Lo sviluppatore è obbligato a rispondere entro un mese.</string>
+    <string name="contacts">Contatta </string>
+    <string name="contacts_description">Se pensi che un\'applicazione violi i principi di protezione dei dati, puoi contattare direttamente gli enti responsabili.</string>
+    <string name="play_services_required">Questa è una impostazione di Google Play Services, che non è stata trovata sul tuo dispositivo.</string>
+    <string name="no_mail_service">Si prega di installare un client di posta elettronica.</string>
+    <string name="ad_settings">Modifica ora</string>
+    <string name="request_data">Richiedi dati</string>
+    <string name="request_deletion">Richiesta la cancellazione dei dati</string>
+    <string name="contact_developer">Sviluppatore</string>
+    <string name="contact_playstore">Google</string>
+    <string name="contact_officials">Funzionari UE</string>
+    <string name="google_dpo_mail">data-protection-office@google.com</string>
+    <string name="dpas_overview_url">https://edpb.europa.eu/about-edpb/board/members</string>
+    <string name="subject_request_data">Richiesta Accesso Dati GDPR</string>
+    <string name="body_request_data"><![CDATA[Alla persona responsabile:\n
+\n
+\n
+In qualità di titolare del trattamento dei dati dell\'applicazione Android %1$s (ID: %2$s), le chiedo di confermare se sta trattando dati personali che mi riguardano.\n
+In caso affermativo, vi prego di fornirmi tutte le informazioni richieste dall\'articolo 15 del regolamento generale dell\'UE sulla protezione dei dati (GDPR), tra cui:\n
+\n
+- una copia dei miei dati personali;\n
+- le finalità del trattamento;\n
+- le categorie di dati personali interessate;\n
+- i destinatari a cui divulgate i miei dati personali e le garanzie da voi fornite;\n
+- il periodo di conservazione dei miei dati personali o i criteri utilizzati per determinare tale periodo;\n
+- informazioni sulla fonte dei miei dati personali;\n
+- l\'esistenza di un processo decisionale automatizzato (inclusa la profilazione) e, in caso affermativo:\n
+    - la logica coinvolta nel processo decisionale;\n
+    - il significato e le conseguenze previste per me;\n
+    - le misure adottate per prevenire errori, pregiudizi e discriminazioni;\n
+    - spiegare come posso esprimere il mio punto di vista e contestare una decisione.\n
+\n
+ Questa richiesta si riferisce a qualsiasi trattamento dei miei dati personali da parte vostra, compresi eventuali incaricati del trattamento dei dati personali per vostro conto.\n
+\n
+Si prega di fornire la vostra risposta attraverso mezzi sicuri via e-mail. Attendo una risposta entro un mese dal ricevimento della mia richiesta.\n
+\n
+Cordiali saluti,\n\n]]></string>
+    <string name="body_delete_data"><![CDATA[Alla persona responsabile:\n
+\n
+\n
+Invoco il mio diritto alla cancellazione come specificato nell\'articolo 17 del regolamento generale dell\'UE sulla protezione dei dati (GDPR). In qualità di titolare del trattamento dei dati dell\'applicazione Android %1$s (ID: %2$s), le chiedo di cancellare senza indugio i seguenti dati personali da lei trattati che mi riguardano:\n
+- Tutti i dati:\n
+\n
+Il motivo della mia richiesta di rimozione è che ritiro o ho ritirato il mio consenso al trattamento dei dati personali. Questa richiesta si riferisce a qualsiasi trattamento dei miei dati personali da parte vostra, compresi eventuali incaricati del trattamento dei dati personali per vostro conto.\n
+\n
+Si prega di fornire la vostra risposta attraverso mezzi sicuri via e-mail. Attendo una risposta entro un mese dal ricevimento della mia richiesta.\n
+\n
+Cordiali saluti,\n\n]]></string>
+    <string name="crash_dialog_text">Mi dispiace. TrackerControl è andato in blocco. Ti dispiacerebbe inviarci un\'email con i dettagli?</string>
+    <string name="crash_dialog_comment">Hai commenti?</string>
+    <string name="instructions_monitoring_private_dns">Attiva/disattiva l\'interruttore e interagisci le applicazioni. Il DNS privato deve essere disabilitato.</string>
+    <string name="instructions_monitoring">Attiva/disattiva l\'interruttore e interagisci con le applicazioni.</string>
+    <string name="device_not_supported_title">Dispositivo non supportato</string>
+    <string name="device_not_supported_msg">Il sistema operativo del dispositivo non consente il monitoraggio ed il filtraggio delle comunicazioni di rete. Questo è necessario per il funzionamento di TrackerControl.</string>
+    <string name="launch_app">Avvia &amp; Trova tracker</string>
+    <string name="launch_app_failed">Questa app può\'elemento essere elemento</string>
+    <string name="countries">Paesi di destinazione</string>
+    <string name="countries_explanation">Scopri dove il tuo telefono invia i dati di tracciamento.\n\nLe informazioni si basano sui dati DNS e IP, potrebbero dunque essere inesatte.</string>
+    <string name="countries_loading_failed">Oops.. La mappa del paese non è stata caricata. Per favore scrivi a tc@kollnig.net come è successo.</string>
+    <string name="countries_map_highlighted">Destinazioni di tracciamento evidenziate: %1$s</string>
+    <string name="countries_map_none">Nessuna destinazione di tracciamento evidenziata.</string>
+    <string name="tracker_advertising">Pubblicità</string>
+    <string name="tracker_analytics">Statistiche sui visitatori</string>
+    <string name="tracker_content">Essenziali</string>
+    <string name="tracker_cryptomining">Cryptomining</string>
+    <string name="tracker_fingerprinting">Impronte digitali (fingerprinting)</string>
+    <string name="tracker_social">Rete sociale (social)</string>
+    <string name="tracker_email">Email</string>
+    <string name="tracker_consent">Consenso elemento</string>
+    <string name="tracker_uncategorised">Senza categoria</string>
+    <string name="setting_blocking_mode">Blocco Modalità</string>
+    <string name="summary_blocking_mode_minimal">Ulteriori informazioni su Blocco modalità minimo.</string>
+    <string name="summary_blocking_mode_standard">Ulteriori informazioni su Blocco modalità standard.</string>
+    <string name="summary_blocking_mode_strict">Ulteriori informazioni su Blocco modalità rigoroso.</string>
+    <string name="summary_sni_wg_note">Ulteriori informazioni su SNI WireGuard elemento.</string>
+    <string name="blocking_mode_minimal">Minimo</string>
+    <string name="blocking_mode_strict">Rigoroso</string>
+    <string name="onboarding_blockingmode_title">Scegli Blocco Modalità</string>
+    <string name="onboarding_blockingmode_desc">Segui le istruzioni per configurare Elemento elemento.</string>
+    <string name="onboarding_blockingmode_minimal_label">Minimo (Elemento per nuovo elemento)</string>
+    <string name="onboarding_blockingmode_minimal_desc">Segui le istruzioni per configurare Elemento minimo elemento.</string>
+    <string name="onboarding_blockingmode_standard_desc">Segui le istruzioni per configurare Elemento standard elemento.</string>
+    <string name="onboarding_blockingmode_strict_label">Rigoroso</string>
+    <string name="onboarding_blockingmode_strict_desc">Segui le istruzioni per configurare Elemento rigoroso elemento.</string>
+    <string name="onboarding_blockingmode_research_label">Ricerca</string>
+    <string name="onboarding_blockingmode_research_desc">Segui le istruzioni per configurare Elemento ricerca elemento.</string>
+    <!-- Per-app remote VPN routing -->
+    <string name="setting_wg_route_mode">Instrada tramite VPN remota</string>
+    <string name="summary_wg_route_mode">Quali app vengono inoltrate attraverso la VPN remota. Quelle che non lo sono restano completamente monitorate e filtrate — si connettono semplicemente dalla rete di questo dispositivo.</string>
+    <string name="wg_route_mode_all">Tutte le app</string>
+    <string name="wg_route_mode_selected">Solo le app selezionate</string>
+    <string name="app_route_through">Tramite la VPN remota</string>
+    <string name="app_route_through_explanation">Questa app si connette tramite la tua VPN remota, che vede il suo traffico al posto della tua rete.</string>
+    <string name="app_route_direct">Direttamente da questo dispositivo</string>
+    <string name="app_route_direct_explanation">Questa app si connette dalla tua rete. Il monitoraggio e il blocco dei tracker continuano ad applicarsi. Le sue richieste DNS vanno al resolver della tua rete anziché a quello della VPN, e l\'app vede l\'indirizzo reale di questo dispositivo — alcune app ne hanno bisogno, per esempio per raggiungere dispositivi locali o verificare un captive portal.</string>
+    <string name="app_route_unavailable_no_vpn">Non è configurata alcuna VPN remota, quindi tutto il traffico esce già direttamente da questo dispositivo.</string>
+    <string name="app_route_unavailable_bypassed">Questa app ignora completamente TrackerControl, quindi non c\'è traffico da instradare.</string>
+    <string name="app_route_unavailable_partial_routes">La tua VPN remota non trasporta tutto il traffico (i suoi AllowedIPs non formano un tunnel completo). L\'instradamento per app richiede un tunnel completo, perché le rotte sono condivise da tutte le app.</string>
+    <!-- Per-app protection state -->
+    <string name="app_state_heading">Blocco modalità</string>
+    <string name="app_state_title_minimal">Minimo blocco</string>
+    <string name="app_state_title_standard">Standard blocco</string>
+    <string name="app_state_title_strict">Rigoroso blocco</string>
+    <string name="app_state_subtitle_misbehaving">App elemento? Interruttore a Minimo blocco elemento.</string>
+    <string name="app_state_protected">Protetta</string>
+    <string name="app_state_protected_explanation">I tracker vengono bloccati e registrati per questa app.</string>
+    <string name="app_state_essential_only">Minimo blocco solo</string>
+    <string name="app_state_essential_only_explanation">Elemento essenziale solo elemento.</string>
+    <string name="app_state_trackers_allowed">Tracker consentiti</string>
+    <string name="app_state_trackers_allowed_explanation">L\'app continua a passare per TrackerControl, ma i suoi tracker non vengono né bloccati né registrati. Usa questa opzione se il blocco impedisce all\'app di funzionare.</string>
+    <string name="app_state_no_internet">Nessuna connessione</string>
+    <string name="app_state_no_internet_explanation">Tutte le connessioni di questa app sono bloccate. Puoi anche toccare l\'icona dell\'app nella schermata principale.</string>
+    <string name="app_state_no_internet_shared_uid">Vale anche per %1$s, che condivide un ID utente Android con questa app.</string>
+    <string name="app_state_bypassed">Ignora TrackerControl</string>
+    <string name="app_state_bypassed_explanation">L\'app si connette direttamente, al di fuori di TrackerControl. Per essa non viene monitorato né bloccato nulla. Usa questa opzione come ultima risorsa se l\'app continua a non funzionare.\n\nNota: \"Blocca connessioni senza VPN\" nelle impostazioni VPN di Android deve essere DISATTIVATO perché funzioni.</string>
+    <!-- Per-app protection screen -->
+    <string name="protection_title">Protezione</string>
+    <string name="protection_route_heading">Remoto VPN</string>
+    <!-- Protection state and remote-VPN routing shown together on one row -->
+    <string name="protection_app_not_working">App non funziona? Elemento elemento</string>
+    <plurals name="protection_paused_resumes">
+        <item quantity="one">%d minuto</item>
+        <item quantity="other">%d minuti</item>
+    </plurals>
+    <string name="protection_resume">Riprendi ora</string>
+    <string name="protection_pause_shared_uid">Mettere in pausa questa app mette in pausa anche %1$s perché condividono un ID utente Android.</string>
+    <string name="protection_pause_lockdown_warning">Protezione pausa blocco avviso.</string>
+    <string name="protection_lockdown_note">Protezione blocco elemento.</string>
+    <string name="protection_blocked_last_24h">Bloccato in  ultimo 24 elemento</string>
+    <string name="protection_no_blocked_trackers">Elemento era bloccato elemento — elemento non TrackerControl.</string>
+    <string name="protection_recording_unavailable">Protezione registrazione non disponibile.</string>
+    <string name="protection_temporary">Temporaneo, elemento in pausa</string>
+    <string name="uninstall">Disinstalla</string>
+    <string name="settings_uninstall">Impostazioni dell\'applicazione &amp; Disinstalla</string>
+    <string name="no_trackers_found_message_disabled">Attiva l\'interruttore nella schermata principale, poi avvia l\'applicazione per trovare i tracker</string>
+    <string name="no_trackers_found_message">Avvia l\'applicazione per rilevare i tracker</string>
+    <string name="no_trackers_found_action">Avvia</string>
+    <string name="no_internet_message">"Questa applicazione non ha accesso a internet. Potrebbe comunque tracciarti scambiando dati con altre applicazioni."</string>
+    <string name="no_internet">Nessun accesso a internet</string>
+    <string name="bypass_vpn_error">"Elemento blocca Internet elemento  app elemento TrackerControl."</string>
+    <string name="back">Indietro</string>
+    <string name="forever_free">Gratuito per sempre</string>
+    <string name="your_privacy">La tua Privacy</string>
+    <string name="tracker_hostlist">Hosts definiti dall\'utente</string>
+    <string name="internet_blocked">Accesso a internet bloccato</string>
+    <string name="internet_unblocked">Accesso a internet non bloccato</string>
+    <string name="category_unblocked">Tracker nella categoria consentiti</string>
+    <string name="category_unblocked_warning">Categoria sbloccato avviso.</string>
+    <string name="tracking_detection_failed">Rilevamento libreria tracciante non riuscito.</string>
+    <string name="tracking_detection_failed_ram">Rilevamento libreria tracciante non riuscito. RAM insufficiente.</string>
+    <string name="tracking_detection_failed_report">Rilevamento libreria tracciante non riuscito. Per favore segnala questo problema allo sviluppatore.</string>
+    <string name="detected_trackers">Librerie di tracker rilevati: %s</string>
+    <string name="analyzing_classes_progress">Elemento elemento… %d%%</string>
+    <string name="none">Nessuno</string>
+    <string name="trackers_static_explanation">TrackerControl rileva codice di tracking (\'librerie\') e il traffico di rete delle applicazioni.\n\nIl tracciamento che viene rilevato nel traffico di rete può essere bloccato con TrackerControl.</string>
+    <string name="trackers_static_explanation_playstore">TrackerControl rileva codice di tracking (\'librerie\') e il traffico di rete delle applicazioni.</string>
+    <string name="trackers_static_disclaimer">Tracker statico elemento.</string>
+    <string name="analyze_tracker_libraries">Elemento tracker librerie</string>
+    <string name="update_analysis">Aggiornamento analisi</string>
+    <string name="analysis_outdated_version">\n\nAnalisi obsoleto versione.</string>
+    <!-- Tracker library screen, reached from the summary row on the Trackers tab -->
+    <string name="libraries_title">Tracker librerie</string>
+    <string name="libraries_row_heading">Tracker librerie</string>
+    <string name="libraries_none_found">Elemento tracker librerie elemento in  app elemento</string>
+    <string name="libraries_not_analysed">Non ancora analizzate</string>
+    <string name="libraries_analysing">Elemento app elemento\u2026</string>
+    <string name="libraries_analysis_failed">Analisi fallito \u2014 elemento a riprova</string>
+    <string name="libraries_outdated_suffix">%1$s (indietro app versione)</string>
+    <string name="detected_tracker_libraries_heading">Rilevato in app elemento</string>
+    <string name="tracker_libraries_source">Elemento da Elemento Privacy tracker data</string>
+    <string name="open_tracker_website">Apri %1$s sito web</string>
+    <plurals name="libraries_found">
+        <item quantity="one">%d libreria</item>
+        <item quantity="other">%d librerie</item>
+    </plurals>
+    <string name="analysis_queued">Analisi in coda…</string>
+    <string name="blocked">BLOCCATO</string>
+    <string name="allowed">CONSENTITO</string>
+    <string name="allowed_shared_ip">Consentito condiviso elemento.</string>
+    <string name="tracker_monitored_minimal">Monitorato — non bloccato in Minimo modalità</string>
+    <string name="setting_domain_based_blocked">Blocco basato sul dominio</string>
+    <string name="summary_domain_based_blocking">Consente un blocco più decentralizzato. Ancora in sviluppo.</string>
+    <string name="uncertain_entry">Le voci contrassegnate con \'*\' potrebbero essere imprecise, a causa delle limitazioni di Android. Di solito ciò significa che la stessa società utilizza lo stesso indirizzo IP in diversi domini, ma può anche significare che diverse società sono dietro lo stesso indirizzo IP (es. se utilizzano una \"rete di consegna dei contenuti\").</string>
+    <string name="browsers_not_supported">Browser rilevato ⚠️</string>
+    <string name="browsers_not_supported_explanation">Questa elemento a essere un browser app.\n\nElemento non supportato elemento.</string>
+    <string name="msg_notifications">Elemento.</string>
+    <string name="msg_local_network">Locale rete.\"elemento elemento\"Locale rete.</string>
+    <string name="msg_local_network_title">Locale rete accesso elemento</string>
+    <string name="msg_local_network_notify">Locale rete notifiche.\"elemento elemento\". Elemento a apri TrackerControl e consenti elemento.</string>
+    <string name="msg_private_dns_title">Privato DNS elemento nome elemento</string>
+    <string name="msg_private_dns_notify">Android\'elemento \"Privato DNS\" è imposta a %1$sPrivato DNS notifiche.\"Elemento\" o \"Elemento\"Privato DNS notifiche.</string>
+    <string name="msg_private_dns_unknown_resolver">un resolver personalizzato</string>
+    <string name="msg_private_dns_row">Elemento sarà elemento: Android\'elemento \"Privato DNS\"Privato DNS elemento.\"Elemento\" o \"Elemento\"Privato DNS elemento.</string>
+    <string name="msg_private_dns_bypass_title">Privato DNS elemento tracker rilevamento</string>
+    <string name="msg_private_dns_bypass_notify">Tracker rilevamento è elemento: DNS è elemento a %1$s, elemento app elemento può\'elemento essere elemento</string>
+    <string name="msg_private_dns_bypass_allowed_notify">Privato DNS elemento consentito notifiche.</string>
+    <string name="setting_monitor_system">Elemento sistema app</string>
+    <string name="summary_monitor_system">Ulteriori informazioni su Elemento sistema.\n\nUlteriori informazioni su Elemento sistema.\"Blocca elemento senza VPN\"Ulteriori informazioni su Elemento sistema.</string>
+    <!-- Onboarding -->
+    <string name="title_next">Avanti</string>
+    <string name="title_previous">Indietro</string>
+    <string name="title_finish">Ottieni Avviato</string>
+    <string name="onboarding_welcome_title">Elemento Elemento di Tuo Privacy</string>
+    <string name="onboarding_welcome_desc">Segui le istruzioni per configurare Benvenuto elemento.\n\n• <b>Elemento</b> elemento data elemento da elemento app in elemento.\nSegui le istruzioni per configurare Benvenuto elemento.\n• <b>Blocca</b>Segui le istruzioni per configurare Benvenuto elemento.<b>2,000,000 elemento app</b>.\n• .\n• <b>Elemento</b> elemento aziende e paesi elemento tuo data.\n\nSegui le istruzioni per configurare Benvenuto elemento.\n\nTutte analisi elemento <b>elemento su tuo dispositivo</b>Segui le istruzioni per configurare Benvenuto elemento.</string>
+    <string name="onboarding_vpn_title">Abilita Protezione</string>
+    <string name="onboarding_vpn_desc">TrackerControl elemento Android\'Segui le istruzioni per configurare VPN elemento.\n\n<b>Elemento:</b> Elemento esterno VPN elemento è elemento. Elemento elemento\'Segui le istruzioni per configurare VPN elemento.\'elemento vedi tuo data.</string>
+    <string name="onboarding_vpn_action">Abilita Elemento VPN</string>
+    <string name="onboarding_vpn_sure">Segui le istruzioni per configurare VPN elemento.</string>
+    <string name="onboarding_vpn_blocked_title">Elemento VPN è attivo</string>
+    <string name="onboarding_vpn_blocked_desc">Segui le istruzioni per configurare VPN bloccato elemento.<b>Always-on VPN</b>Segui le istruzioni per configurare VPN bloccato elemento.</string>
+    <string name="onboarding_vpn_blocked_action">Apri VPN impostazioni</string>
+    <string name="onboarding_notify_title">Elemento Elemento</string>
+    <string name="onboarding_notify_desc">Segui le istruzioni per configurare Notifiche elemento.</string>
+    <string name="onboarding_notify_action">Consenti Elemento</string>
+    <string name="onboarding_notify_sure">Segui le istruzioni per configurare Notifiche elemento.</string>
+    <string name="onboarding_timeline_title">Elemento  Cronologia Elemento Elemento</string>
+    <string name="onboarding_timeline_desc">Segui le istruzioni per configurare Cronologia elemento.\n\nSegui le istruzioni per configurare Cronologia elemento.</string>
+    <string name="onboarding_lockdown_title">VPN Blocco Elemento</string>
+    <string name="onboarding_lockdown_desc">Android dispone di un\'impostazione chiamata \"Blocca connessioni senza VPN\" che impedisce alle app di connettersi prima che TrackerControl sia pronto.\n\nSe abilitata, può impedire il caricamento delle app. Per un\'esperienza ottimale, consigliamo di mantenere questa impostazione <b>disabilitata</b>.</string>
+    <string name="onboarding_lockdown_action">Apri VPN Impostazioni</string>
+    <string name="onboarding_lockdown_sure">Segui le istruzioni per configurare Blocco elemento.</string>
+    <string name="onboarding_action_disabled">Disabilitato</string>
+    <string name="onboarding_action_granted">Concesso</string>
+    <!-- Insights Screen -->
+    <string name="insights_title">Tuo Privacy Analisi</string>
+    <string name="insights_subtitle_7days">Ultimo 7 elemento</string>
+    <string name="insights_tracking_attempts">Tracker hosts elemento</string>
+    <string name="insights_blocked">Bloccato</string>
+    <string name="insights_allowed">Consentito Attraverso</string>
+    <string name="insights_tracker_companies">Elemento aziende</string>
+    <string name="insights_apps_with_trackers">App con tracker</string>
+    <string name="insights_pervasive_trackers">Più pervasivi tracker</string>
+    <string name="insights_top_domains">Principali tracker domini</string>
+    <!-- Joins the alternative domain names of one tracker, e.g. "example.com or example.net". Keep the surrounding spaces. -->
+    <string name="insights_domain_alias_separator">" o "</string>
+    <!-- Keep as a string: call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="insights_in_apps" tools:ignore="PluralsCandidate">in %d app</string>
+    <plurals name="insights_apps_count">
+        <item quantity="one">%d app</item>
+        <item quantity="other">%d app</item>
+    </plurals>
+    <string name="insights_no_data">Analisi elemento dati.</string>
+    <!-- Keep as a string: call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="insights_shocking_fact" tools:ignore="PluralsCandidate">Tuo app elemento %1$d elemento aziende elemento %2$d tracker hosts questa settimana!</string>
+    <!-- Retained for Play Store copy; call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="insights_share">Condividi con Amici</string>
+    <string name="insights_share_trackers_blocked">Tracker Hosts Bloccato</string>
+    <string name="insights_share_url">TrackerControl.elemento</string>
+    <!-- Keep as a string: call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="insights_share_message" tools:ignore="PluralsCandidate">Questa settimana ho bloccato %1$d host di tracker da %2$d aziende usando TrackerControl! Riprenditi la tua privacy: https://trackercontrol.org</string>
+    <!-- Retained for Play Store copy; call-site/API migration and multi-count grammar are intentionally separate. -->
+    <string name="insights_see_more">Vedi Altro →</string>
+    <!-- What's New onboarding slide (not translated) -->
+    <string name="msg_invalid_url">Non valida URL</string>
+    <string name="msg_last_update">Ultimo aggiornamento: %s</string>
+    <!-- Accessibility labels -->
+    <string name="switch_tracker_control_description">Tracker blocco</string>
+    <string name="blocklist_delete_description">Elimina elemento</string>
+    <string name="blocklist_enable_description">Abilita elemento %s</string>
+    <string name="log_connection_allowed">Consentito</string>
+    <string name="log_connection_blocked">Bloccato</string>
+    <string name="log_connection_other">Altre rete</string>
+    <string name="log_screen_on">Schermo su</string>
+</resources>
