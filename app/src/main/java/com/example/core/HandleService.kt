@@ -17,7 +17,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
-import androidx.preference.PreferenceManager
 import com.example.MainActivity
 import com.example.R
 import com.example.feature.sidebar.SidebarManager
@@ -577,7 +576,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     override fun onDestroy() {
         super.onDestroy()
         LogKeeper.logLifecycle(this, "HandleService", "DESTROYED")
-        val shieldPrefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val shieldPrefs = getSharedPreferences(packageName + "_preferences", Context.MODE_PRIVATE)
         val shieldEnabled = shieldPrefs.getBoolean("enabled", false)
         val showStats = shieldPrefs.getBoolean("show_stats", false)
         ShieldNotificationFactory.setHandleServiceActive(this, false)
