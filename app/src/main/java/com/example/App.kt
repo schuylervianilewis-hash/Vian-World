@@ -64,7 +64,13 @@ class App : FossifyApp() {
                 initializeLauncherTheme()
             }
             else -> {
-                // Keep Sidebar's resident default process lightweight.
+                // Firewall's ApplicationEx is not the host Application class.
+                // Restore its non-ACRA runtime setup only in the default/Main
+                // process; Settings (:heavy) and Home (:home) must not enqueue
+                // duplicate workers or own VPN startup state.
+                if (getProcessNameCompat() == packageName) {
+                    eu.faircode.netguard.ApplicationEx.initializeHostRuntime(this)
+                }
             }
         }
     }
