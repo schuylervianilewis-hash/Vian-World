@@ -33,6 +33,15 @@ final class VpnRestartPolicy {
      *                       phone call, or a revoke
      * @param vpnEstablished whether a tunnel is up right now
      */
+    /**
+     * A clean-stop marker describes the previous teardown only. Once a genuine
+     * new start is requested with protection enabled and no interface present,
+     * a failed establish must be eligible for the restart monitor.
+     */
+    static boolean shouldClearCleanStopForStartAttempt(boolean enabled, boolean vpnMissing) {
+        return enabled && vpnMissing;
+    }
+
     static boolean shouldRestart(boolean enabled, boolean stoppedCleanly, boolean vpnEstablished) {
         return enabled && !stoppedCleanly && !vpnEstablished;
     }
