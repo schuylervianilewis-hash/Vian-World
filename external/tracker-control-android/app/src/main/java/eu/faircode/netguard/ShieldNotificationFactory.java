@@ -77,6 +77,26 @@ public final class ShieldNotificationFactory {
                 enabled ? "Tap to open Shield and check protection status" : "Protection is off • Tap to open Shield", false);
     }
 
+    /**
+     * Keep the VPN foreground notification truthful when WireGuard is required
+     * but its egress could not be started. If Sidebar owns the shared
+     * presentation, retain its title/icon and append the protection gap.
+     */
+    public static Notification buildWireGuardUnavailableNotification(Context context, String detail) {
+        SharedPreferences prefs = state(context);
+        String suffix = "WireGuard unavailable — internet traffic is blocked while recovery is pending";
+        if (!android.text.TextUtils.isEmpty(detail))
+            suffix += ": " + detail;
+        if (prefs.getBoolean(KEY_HANDLE_ACTIVE, false)) {
+            String content = prefs.getString(KEY_CONTENT, "");
+            return build(context, prefs.getInt(KEY_ICON, R.drawable.ic_shield_off),
+                    prefs.getString(KEY_TITLE, "Sidebar active"),
+                    (content == null || content.isEmpty() ? "" : content + " • ") + suffix,
+                    prefs.getBoolean(KEY_SPEED_ENABLED, false));
+        }
+        return build(context, R.drawable.ic_shield_off, "Shield protection limited", suffix, false);
+    }
+
     private static synchronized SharedPreferences state(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE);
         // The active-service flag is process-local state. Clear a stale value left
