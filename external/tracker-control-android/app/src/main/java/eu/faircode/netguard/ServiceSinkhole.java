@@ -245,15 +245,10 @@ public class ServiceSinkhole extends VpnService {
     private volatile LogHandler logHandler;
     private volatile StatsHandler statsHandler;
 
-    // Set at the very end of a fully successful onCreate. onCreate can
-    // stopSelf()+return early (e.g. startForeground denied on Android 12+,
-    // see ForegroundServiceStartNotAllowedException below) before the handler
-    // threads, the network monitor callback registration, or jni_init() run.
-    // onDestroy must not tear down anything past the point onCreate actually
-    // reached, or it crashes: unregistering a callback that was never
-    // registered throws IllegalArgumentException, and jni_done() on the
-    // still-zero native context segfaults (netguard.c dereferences it
-    // unconditionally).
+    // Runtime readiness gate for command/recovery callbacks. Resource teardown
+    // does not rely on this aggregate flag: each acquired listener, callback,
+    // looper and native context is tracked independently below so partial
+    // onCreate failures still release everything that was actually acquired.
     private volatile boolean initialized = false;
     private volatile boolean destroying = false;
 
