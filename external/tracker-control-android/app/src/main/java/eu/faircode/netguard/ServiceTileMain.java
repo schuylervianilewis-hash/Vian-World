@@ -60,7 +60,7 @@ public class ServiceTileMain extends TileService implements SharedPreferences.On
         Tile tile = getQsTile();
         if (tile != null) {
             tile.setState(enabled ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
-            tile.setIcon(Icon.createWithResource(this, enabled ? R.drawable.ic_rocket_white : R.drawable.ic_rocket_white_60));
+            tile.setIcon(Icon.createWithResource(this, enabled ? R.drawable.ic_shield_check : R.drawable.ic_shield_plain_white));
             tile.updateTile();
         }
     }

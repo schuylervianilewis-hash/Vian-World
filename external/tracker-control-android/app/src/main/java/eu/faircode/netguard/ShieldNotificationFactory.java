@@ -73,7 +73,7 @@ public final class ShieldNotificationFactory {
     }
 
     public static Notification buildShieldOnlyNotification(Context context, boolean enabled) {
-        return build(context, R.drawable.ic_rocket_white, enabled ? "Shield enabled" : "Shield off",
+        return build(context, enabled ? R.drawable.ic_shield_check : R.drawable.ic_shield_plain_white, enabled ? "Shield enabled" : "Shield off",
                 enabled ? "Tap to open Shield and check protection status" : "Protection is off • Tap to open Shield", false);
     }
 

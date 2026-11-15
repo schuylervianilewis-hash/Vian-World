@@ -4461,7 +4461,7 @@ public class ServiceSinkhole extends VpnService {
         if (blocked >= 0) last_blocked = blocked;
         if (hosts >= 0) last_hosts = hosts;
         return ShieldNotificationFactory.buildCurrentNotification(
-                this, R.drawable.ic_rocket_white,
+                this, R.drawable.ic_shield_check,
                 "Shield protection active", "Internet protection is running");
     }
 
@@ -4475,7 +4475,7 @@ public class ServiceSinkhole extends VpnService {
 
     private Notification getWaitingNotification() {
         return ShieldNotificationFactory.buildCurrentNotification(
-                this, R.drawable.ic_rocket_white,
+                this, R.drawable.ic_shield_plain_white,
                 "Shield waiting", "Waiting for the VPN connection");
     }
 

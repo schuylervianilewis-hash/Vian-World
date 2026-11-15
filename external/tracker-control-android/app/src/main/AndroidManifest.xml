@@ -292,7 +292,7 @@
         <service
             android:name="eu.faircode.netguard.ServiceTileMain"
             android:exported="true"
-            android:icon="@drawable/ic_rocket_white"
+            android:icon="@drawable/ic_shield_check"
             android:label="Shield"
             tools:targetApi="n"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
