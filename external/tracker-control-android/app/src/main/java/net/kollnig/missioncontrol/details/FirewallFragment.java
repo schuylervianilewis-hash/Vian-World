@@ -1,0 +1,1258 @@
+/*
+ * TrackerControl is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+package net.kollnig.missioncontrol.details;
+
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.content.res.ColorStateList;
+import android.net.Uri;
+import android.os.AsyncTask;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.TextUtils;
+import android.view.Gravity;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.util.Log;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.Nullable;
+import androidx.appcompat.widget.TooltipCompat;
+import androidx.appcompat.app.AlertDialog;
+import androidx.compose.ui.platform.ComposeView;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
+import androidx.preference.PreferenceManager;
+import androidx.recyclerview.widget.DiffUtil;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.color.MaterialColors;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+import eu.faircode.netguard.GlideApp;
+import eu.faircode.netguard.Rule;
+import eu.faircode.netguard.ServiceSinkhole;
+import eu.faircode.netguard.Util;
+import net.kollnig.missioncontrol.Common;
+import net.kollnig.missioncontrol.DetailsActivity;
+import net.kollnig.missioncontrol.R;
+import net.kollnig.missioncontrol.data.AppProtectionState;
+import net.kollnig.missioncontrol.data.AppProtectionWriter;
+import net.kollnig.missioncontrol.data.BlockingMode;
+import net.kollnig.missioncontrol.data.FirewallPolicyLogic;
+import net.kollnig.missioncontrol.data.InternetBlocklist;
+import net.kollnig.missioncontrol.data.InternetPermissionPolicy;
+import net.kollnig.missioncontrol.data.PausedApps;
+import net.kollnig.missioncontrol.data.RemoteRoutingLogic;
+import net.kollnig.missioncontrol.data.Tracker;
+import net.kollnig.missioncontrol.data.TrackerBlocklist;
+import net.kollnig.missioncontrol.data.TrackerCategory;
+import net.kollnig.missioncontrol.data.TrackerList;
+import net.kollnig.missioncontrol.data.TrackerStatusLogic;
+import net.kollnig.missioncontrol.ui.compose.BlockedState;
+import net.kollnig.missioncontrol.ui.compose.CategoryModel;
+import net.kollnig.missioncontrol.ui.compose.CompanyModel;
+import net.kollnig.missioncontrol.ui.compose.PauseSection;
+import net.kollnig.missioncontrol.ui.compose.ProtectionScreen;
+import net.kollnig.missioncontrol.ui.compose.ProtectionScreenCallbacks;
+import net.kollnig.missioncontrol.ui.compose.ProtectionScreenController;
+import net.kollnig.missioncontrol.ui.compose.ProtectionScreenModel;
+import net.kollnig.missioncontrol.ui.compose.RouteModel;
+import net.kollnig.missioncontrol.ui.compose.RouteOption;
+import net.kollnig.missioncontrol.ui.compose.StateOption;
+
+/**
+ * Separate Firewall app list. It shares TrackerControl's installed-app inventory
+ * and policy stores, but deliberately does not use AdapterRule or its click paths.
+ */
+public class FirewallFragment extends Fragment {
+    private static final String PREF_SORT = "firewall_sort";
+    private static final String FILTER_PREFIX = "firewall_";
+    private static final String ACTION_BLOCK = "block";
+    private static final String ACTION_VPN = "vpn";
+    private static final String ACTION_DIRECT = "direct";
+
+    private final Handler expiryHandler = new Handler(Looper.getMainLooper());
+    private final Runnable expiryRunnable = this::onPauseExpired;
+    private final List<Rule> allRules = new ArrayList<>();
+    private final List<TrackerCategory> blockedTrackerCategories = new ArrayList<>();
+
+    private SwipeRefreshLayout swipeRefresh;
+    private RecyclerView recyclerView;
+    private TextView listStatusView;
+    private int refreshGeneration;
+    private FirewallAdapter adapter;
+    private String searchQuery = "";
+    private String sortMode = FirewallPolicyLogic.SORT_NAME;
+    private String expandedPackage;
+    private int blockedTrackerLoadGeneration;
+    private boolean blockedTrackersLoaded;
+    private boolean blockedRecordingUnavailable;
+    private boolean showingResume;
+    private boolean remoteVpnAvailable;
+    private boolean destroyed;
+    private ProtectionScreenController protectionController;
+
+    @Nullable
+    @Override
+    public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container,
+            @Nullable Bundle savedInstanceState) {
+        Context context = requireContext();
+        sortMode = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(PREF_SORT, FirewallPolicyLogic.SORT_NAME);
+
+        LinearLayout root = new LinearLayout(context);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.TOP);
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.setPadding(dp(12), dp(8), dp(12), dp(4));
+        root.setBackgroundColor(MaterialColors.getColor(root,
+                com.google.android.material.R.attr.colorSurface));
+
+        // Align each compact bulk action with the corresponding per-app policy
+        // column. The weighted leading spacer mirrors the app icon/name area.
+        LinearLayout actions = new LinearLayout(context);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(dp(6), 0, dp(4), 0);
+        actions.addView(new View(context), new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        View identityGap = new View(context);
+        actions.addView(identityGap, new LinearLayout.LayoutParams(dp(4), 1));
+        actions.addView(globalActionColumn(context, R.string.firewall_block, ACTION_BLOCK),
+                new LinearLayout.LayoutParams(dp(60), ViewGroup.LayoutParams.WRAP_CONTENT));
+        actions.addView(globalActionColumn(context, R.string.firewall_vpn, ACTION_VPN),
+                new LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.WRAP_CONTENT));
+        actions.addView(globalActionColumn(context, R.string.firewall_direct, ACTION_DIRECT),
+                new LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(actions, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        FrameLayout listContainer = new FrameLayout(context);
+        swipeRefresh = new SwipeRefreshLayout(context);
+        recyclerView = new RecyclerView(context);
+        recyclerView.setLayoutManager(new LinearLayoutManager(context));
+        recyclerView.setHasFixedSize(false);
+        recyclerView.setItemViewCacheSize(20);
+        adapter = new FirewallAdapter();
+        recyclerView.setAdapter(adapter);
+        swipeRefresh.addView(recyclerView, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        swipeRefresh.setOnRefreshListener(this::refresh);
+        listContainer.addView(swipeRefresh, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        listStatusView = new TextView(context);
+        listStatusView.setGravity(Gravity.CENTER);
+        listStatusView.setTextSize(14);
+        listStatusView.setTextColor(MaterialColors.getColor(listStatusView,
+                com.google.android.material.R.attr.colorOnSurfaceVariant));
+        listStatusView.setPadding(dp(24), dp(16), dp(24), dp(16));
+        listStatusView.setVisibility(View.GONE);
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER);
+        listContainer.addView(listStatusView, statusParams);
+
+        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        listParams.topMargin = dp(8);
+        root.addView(listContainer, listParams);
+        return root;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        destroyed = false;
+        refresh();
+        if (expandedPackage != null) {
+            updateProtectionState();
+            loadBlockedTrackers();
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        expiryHandler.removeCallbacks(expiryRunnable);
+        if (isAdded())
+            DetailsActivity.savePrefs(requireContext());
+    }
+
+    @Override
+    public void onDestroyView() {
+        destroyed = true;
+        refreshGeneration++;
+        blockedTrackerLoadGeneration++;
+        protectionController = null;
+        swipeRefresh = null;
+        recyclerView = null;
+        listStatusView = null;
+        adapter = null;
+        super.onDestroyView();
+    }
+
+    public String getSortMode() {
+        return sortMode;
+    }
+
+    public void setSortMode(String value) {
+        if (!FirewallPolicyLogic.isSupportedSort(value))
+            value = FirewallPolicyLogic.SORT_NAME;
+        sortMode = value;
+        PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                .putString(PREF_SORT, sortMode).apply();
+        applyFilterAndSort();
+    }
+
+    public boolean isFilterEnabled(String key) {
+        return PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getBoolean(FILTER_PREFIX + key, defaultFilterValue(key));
+    }
+
+    public void setFilter(String key, boolean enabled) {
+        if (!isSupportedFilter(key))
+            return;
+        PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                .putBoolean(FILTER_PREFIX + key, enabled).apply();
+        applyFilterAndSort();
+    }
+
+    private static boolean isSupportedFilter(String key) {
+        return "show_user".equals(key) || "show_system".equals(key)
+                || "show_nointernet".equals(key) || "show_unprotected".equals(key)
+                || "show_frozen".equals(key);
+    }
+
+    private static boolean defaultFilterValue(String key) {
+        return "show_user".equals(key) || "show_nointernet".equals(key);
+    }
+
+    public void setSearchQuery(String query) {
+        searchQuery = query == null ? "" : query.trim();
+        applyFilterAndSort();
+    }
+
+    public void refresh() {
+        if (!isAdded() || adapter == null)
+            return;
+        final androidx.fragment.app.FragmentActivity activity = getActivity();
+        if (activity == null)
+            return;
+
+        final int generation = ++refreshGeneration;
+        if (swipeRefresh != null)
+            swipeRefresh.setRefreshing(true);
+        if (allRules.isEmpty())
+            showListStatus(getString(R.string.firewall_apps_loading), true);
+
+        final Context context = requireContext().getApplicationContext();
+        AsyncTask.execute(() -> {
+            List<Rule> loadedRules = null;
+            boolean loadedVpnAvailable = false;
+            Throwable loadError = null;
+            try {
+                // Keep the existing automatic permission-policy reconciliation.
+                // This refresh change only isolates Firewall's display inventory;
+                // it does not alter the policy writer or VPN enforcement path.
+                if (InternetPermissionPolicy.reconcile(context))
+                    ServiceSinkhole.reload("automatic Internet-permission policy", context, false);
+                loadedRules = Rule.getFirewallRules(context);
+                if (loadedRules == null)
+                    throw new IllegalStateException("App inventory returned no result");
+                loadedVpnAvailable = isRemoteVpnAvailable(context);
+            } catch (Throwable ex) {
+                loadError = ex;
+                Log.e("FirewallFragment", "Unable to refresh Firewall app list", ex);
+            }
+
+            final List<Rule> result = loadedRules;
+            final boolean routeAvailable = loadedVpnAvailable;
+            final Throwable failure = loadError;
+            activity.runOnUiThread(() -> {
+                if (generation != refreshGeneration || destroyed || !isAdded() || adapter == null)
+                    return;
+                if (failure == null) {
+                    allRules.clear();
+                    allRules.addAll(result);
+                    remoteVpnAvailable = routeAvailable;
+                    applyFilterAndSort();
+                } else if (allRules.isEmpty()) {
+                    showListStatus(getString(R.string.firewall_apps_load_failed), true);
+                } else {
+                    Toast.makeText(requireContext(), R.string.firewall_apps_load_failed,
+                            Toast.LENGTH_LONG).show();
+                }
+                if (swipeRefresh != null)
+                    swipeRefresh.setRefreshing(false);
+            });
+        });
+    }
+
+    private void showListStatus(String message, boolean visible) {
+        if (listStatusView == null)
+            return;
+        listStatusView.setText(message);
+        listStatusView.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private void applyFilterAndSort() {
+        if (adapter == null || !isAdded())
+            return;
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        boolean showUser = prefs.getBoolean(FILTER_PREFIX + "show_user", true);
+        boolean showSystem = prefs.getBoolean(FILTER_PREFIX + "show_system", false);
+        boolean showNoInternet = prefs.getBoolean(FILTER_PREFIX + "show_nointernet", true);
+        boolean showUnprotected = prefs.getBoolean(FILTER_PREFIX + "show_unprotected", false);
+        boolean showFrozen = prefs.getBoolean(FILTER_PREFIX + "show_frozen", false);
+
+        final String query = searchQuery.toLowerCase(Locale.ROOT);
+        List<Rule> filtered = new ArrayList<>();
+        for (Rule rule : allRules) {
+            if (!rule.pkg)
+                continue;
+            boolean unprotected = !rule.apply || !rule.tracker_protect;
+            if (!FirewallPolicyLogic.isVisible(rule.system, rule.internet, rule.enabled,
+                    unprotected, showUser, showSystem, showNoInternet, showFrozen,
+                    showUnprotected))
+                continue;
+            String appName = rule.name == null ? "" : rule.name;
+            String packageName = rule.packageName == null ? "" : rule.packageName;
+            if (!TextUtils.isEmpty(query)
+                    && !appName.toLowerCase(Locale.ROOT).contains(query)
+                    && !packageName.toLowerCase(Locale.ROOT).contains(query))
+                continue;
+            filtered.add(rule);
+        }
+
+        final InternetBlocklist internet = InternetBlocklist.getInstance(requireContext());
+        final Comparator<FirewallPolicyLogic.Entry> comparator =
+                FirewallPolicyLogic.comparator(sortMode);
+        final Map<String, FirewallPolicyLogic.Entry> entries = new HashMap<>();
+        for (Rule rule : filtered) {
+            int priority = FirewallPolicyLogic.priority(
+                    rule.apply, internet.blockedInternet(rule.uid),
+                    remoteVpnAvailable && rule.wg_route);
+            entries.put(rule.packageName, new FirewallPolicyLogic.Entry(
+                    priority, rule.name, rule.packageName, rule.firstInstallTime,
+                    rule.uid, rule.getTrackerCount(true), rule.getTrackerCount(false),
+                    rule.getLastTrackerTime()));
+        }
+        Collections.sort(filtered, (left, right) ->
+                comparator.compare(entries.get(left.packageName), entries.get(right.packageName)));
+        adapter.setItems(filtered);
+        if (!filtered.isEmpty()) {
+            showListStatus("", false);
+        } else if (allRules.isEmpty()) {
+            showListStatus(getString(R.string.firewall_apps_empty), true);
+        } else {
+            showListStatus(getString(R.string.firewall_apps_no_matches), true);
+        }
+    }
+
+    private View globalActionColumn(Context context, int heading, String action) {
+        LinearLayout column = new LinearLayout(context);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        TextView label = new TextView(context);
+        label.setText(heading);
+        label.setTextSize(9);
+        label.setGravity(Gravity.CENTER);
+        label.setSingleLine(true);
+        label.setAllCaps(true);
+        label.setTextColor(MaterialColors.getColor(label,
+                com.google.android.material.R.attr.colorOnSurfaceVariant));
+        column.addView(label, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(16)));
+
+        MaterialButton button = new MaterialButton(context);
+        button.setText(R.string.firewall_all_short);
+        button.setTextSize(10);
+        button.setAllCaps(false);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setCornerRadius(dp(7));
+        button.setPadding(0, 0, 0, 0);
+        button.setBackgroundTintList(ColorStateList.valueOf(MaterialColors.getColor(
+                button, com.google.android.material.R.attr.colorSecondaryContainer)));
+        button.setTextColor(MaterialColors.getColor(button,
+                com.google.android.material.R.attr.colorOnSecondaryContainer));
+        button.setContentDescription(context.getString(heading) + " " +
+                context.getString(R.string.firewall_all_accessibility));
+        TooltipCompat.setTooltipText(button, context.getString(heading) + " " +
+                context.getString(R.string.firewall_all_accessibility));
+        button.setOnClickListener(view -> confirmGlobalAction(action));
+        column.addView(button, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));
+        return column;
+    }
+
+    private void confirmGlobalAction(String action) {
+        if (ACTION_VPN.equals(action) && !remoteVpnAvailable) {
+            Toast.makeText(requireContext(), R.string.app_route_unavailable_no_vpn,
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(ACTION_BLOCK.equals(action) ? R.string.firewall_block_all
+                        : ACTION_VPN.equals(action) ? R.string.firewall_vpn_all
+                        : R.string.firewall_direct_all)
+                .setMessage(R.string.firewall_global_action_message)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> applyGlobalAction(action))
+                .show();
+    }
+
+    private void applyGlobalAction(String action) {
+        if (!isAdded())
+            return;
+        List<Rule> targets = new ArrayList<>();
+        for (Rule rule : allRules) {
+            if (rule.pkg && !rule.system
+                    && !InternetPermissionPolicy.isProtectedIdentity(
+                            requireContext(), rule.packageName, rule.uid))
+                targets.add(rule);
+        }
+        if (targets.isEmpty())
+            return;
+
+        SharedPreferences routePrefs = requireContext().getSharedPreferences(
+                Rule.PREF_WG_ROUTE, Context.MODE_PRIVATE);
+        SharedPreferences.Editor routeEditor = routePrefs.edit();
+        List<AppProtectionWriter.PackageChange> changes = new ArrayList<>();
+        boolean routeChanged = !ACTION_BLOCK.equals(action);
+        AppProtectionState.Change change = ACTION_BLOCK.equals(action)
+                ? AppProtectionState.of(AppProtectionState.NO_INTERNET)
+                : AppProtectionState.allowInternetKeepingProtection();
+
+        for (Rule rule : targets) {
+            rule.apply = true;
+            if (ACTION_VPN.equals(action)) {
+                routeEditor.putBoolean(rule.packageName, true);
+                rule.wg_route = true;
+            } else if (ACTION_DIRECT.equals(action)) {
+                routeEditor.putBoolean(rule.packageName, false);
+                rule.wg_route = false;
+            }
+            changes.add(new AppProtectionWriter.PackageChange(rule.packageName, rule.uid, change));
+        }
+        if (routeChanged)
+            routeEditor.apply();
+        AppProtectionWriter.applyManualBatch(requireContext(), changes, routeChanged);
+        refresh();
+    }
+
+    private static boolean isRemoteVpnAvailable(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        return prefs.getBoolean("wg_enabled", false)
+                && !TextUtils.isEmpty(prefs.getString("wg_config", ""))
+                && RemoteRoutingHelper.hasDefaultRoutes(context, prefs);
+    }
+
+    private void setPolicy(Rule rule, String action) {
+        if (rule == null || !rule.pkg
+                || InternetPermissionPolicy.isProtectedIdentity(
+                        requireContext(), rule.packageName, rule.uid))
+            return;
+        if (ACTION_VPN.equals(action) && !remoteVpnAvailable) {
+            Toast.makeText(requireContext(), R.string.app_route_unavailable_no_vpn,
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (ACTION_VPN.equals(action) || ACTION_DIRECT.equals(action)) {
+            boolean tunnelled = ACTION_VPN.equals(action);
+            requireContext().getSharedPreferences(Rule.PREF_WG_ROUTE, Context.MODE_PRIVATE)
+                    .edit().putBoolean(rule.packageName, tunnelled).apply();
+            rule.apply = true;
+            rule.wg_route = tunnelled;
+            AppProtectionWriter.applyManualAndReload(requireContext(), rule.packageName, rule.uid,
+                    AppProtectionState.allowInternetKeepingProtection());
+        } else {
+            rule.apply = true;
+            AppProtectionWriter.applyManual(requireContext(), rule.packageName, rule.uid,
+                    AppProtectionState.of(AppProtectionState.NO_INTERNET));
+        }
+        if (adapter != null)
+            adapter.notifyDataSetChanged();
+        refresh();
+    }
+
+    private void toggleExpanded(Rule rule) {
+        if (rule == null || !rule.pkg
+                || InternetPermissionPolicy.isProtectedIdentity(
+                        requireContext(), rule.packageName, rule.uid))
+            return;
+        String next = TextUtils.equals(expandedPackage, rule.packageName) ? null : rule.packageName;
+        expandedPackage = next;
+        protectionController = null;
+        blockedTrackerCategories.clear();
+        blockedTrackersLoaded = false;
+        blockedRecordingUnavailable = false;
+        blockedTrackerLoadGeneration++;
+        expiryHandler.removeCallbacks(expiryRunnable);
+        if (next != null) {
+            updateProtectionState();
+            loadBlockedTrackers();
+        }
+        if (adapter != null)
+            adapter.notifyDataSetChanged();
+    }
+
+    private boolean isExpanded(Rule rule) {
+        return rule != null && TextUtils.equals(expandedPackage, rule.packageName);
+    }
+
+    private void installProtectionPanel(ComposeView composeView, Rule rule) {
+        protectionController = ProtectionScreen.installInline(
+                composeView,
+                buildScreenModel(rule),
+                protectionCallbacks(rule),
+                getString(R.string.firewall_excluded_note));
+    }
+
+    private ProtectionScreenCallbacks protectionCallbacks(Rule rule) {
+        return new ProtectionScreenCallbacks() {
+            @Override
+            public void onPauseResume() {
+                pauseOrResume(rule);
+            }
+
+            @Override
+            public void onStateSelected(AppProtectionState value) {
+                AppProtectionState.Change change = AppProtectionState.of(value);
+                AppProtectionWriter.applyManual(requireContext(), rule.packageName,
+                        rule.uid, change);
+                // Keep the bound row accurate while the fresh rule inventory
+                // and VPN-service reload complete asynchronously.
+                rule.apply = change.apply;
+                if (change.trackerProtect != null)
+                    rule.tracker_protect = change.trackerProtect;
+                if (adapter != null)
+                    adapter.notifyDataSetChanged();
+                updateProtectionState();
+                refresh();
+            }
+
+            @Override
+            public void onRouteSelected(boolean tunnelled) {
+                applyRoute(rule, tunnelled);
+            }
+
+            @Override
+            public void onCategoryToggle(String categoryKey, boolean checked) {
+                toggleCategory(rule, categoryKey, checked);
+            }
+
+            @Override
+            public void onCompanyClick(String blockingKey) {
+                toggleCompany(rule, blockingKey);
+            }
+        };
+    }
+
+    private ProtectionScreenModel buildScreenModel(Rule rule) {
+        AppProtectionState state = currentState(rule);
+        boolean paused = PausedApps.isPaused(requireContext(), rule.packageName);
+        showingResume = paused;
+        List<String> sharedPackages = PausedApps.getSharedUidPackages(
+                requireContext(), rule.packageName, rule.uid);
+
+        PauseSection pause = null;
+        boolean pauseAvailable = paused || state == AppProtectionState.PROTECTED
+                || state == AppProtectionState.MINIMAL_ONLY
+                || state == AppProtectionState.TRACKERS_ALLOWED;
+        if (pauseAvailable) {
+            String status;
+            String action;
+            if (paused) {
+                int remainingMinutes = PausedApps.getRemainingMinutes(requireContext(), rule.packageName);
+                status = getResources().getQuantityString(
+                        R.plurals.protection_paused_resumes, remainingMinutes, remainingMinutes);
+                action = getString(R.string.protection_resume);
+            } else {
+                status = stateLabel(state);
+                int pauseMinutes = PausedApps.getConfiguredDurationMinutes(requireContext());
+                action = getResources().getQuantityString(R.plurals.pause,
+                        pauseMinutes, pauseMinutes);
+            }
+            String sharedUidText = sharedPackages.isEmpty() ? null
+                    : getString(R.string.protection_pause_shared_uid, packageLabels(sharedPackages));
+            String lockdownText = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    ? getString(R.string.protection_lockdown_note) : null;
+            pause = new PauseSection(status, sharedUidText, action, lockdownText);
+        }
+
+        List<StateOption> stateOptions = buildStateOptions(rule, state, paused, sharedPackages);
+        BlockedState blocked = buildBlockedState(rule, state);
+        return new ProtectionScreenModel(pause, blocked, stateOptions, buildRouteModel(rule));
+    }
+
+    private List<StateOption> buildStateOptions(Rule rule, AppProtectionState state,
+            boolean paused, List<String> sharedPackages) {
+        AppProtectionState shownState = paused ? AppProtectionState.BYPASSED : state;
+        String noInternetExplanation = getString(R.string.app_state_no_internet_explanation);
+        if (!sharedPackages.isEmpty())
+            noInternetExplanation = getString(R.string.app_state_no_internet_explanation_shared,
+                    noInternetExplanation,
+                    getString(R.string.app_state_no_internet_shared_uid, packageLabels(sharedPackages)));
+
+        boolean showMinimal = !BlockingMode.isMinimalMode(requireContext())
+                && !Util.isPlayStoreInstall(requireContext());
+        List<StateOption> options = new ArrayList<>();
+        options.add(new StateOption(AppProtectionState.PROTECTED,
+                getString(R.string.app_state_protected),
+                getString(R.string.app_state_protected_explanation),
+                shownState == AppProtectionState.PROTECTED, true));
+        options.add(new StateOption(AppProtectionState.MINIMAL_ONLY,
+                getString(R.string.app_state_essential_only),
+                getString(R.string.app_state_essential_only_explanation),
+                shownState == AppProtectionState.MINIMAL_ONLY, showMinimal));
+        options.add(new StateOption(AppProtectionState.TRACKERS_ALLOWED,
+                getString(R.string.app_state_trackers_allowed),
+                getString(R.string.app_state_trackers_allowed_explanation),
+                shownState == AppProtectionState.TRACKERS_ALLOWED, true));
+        options.add(new StateOption(AppProtectionState.NO_INTERNET,
+                getString(R.string.app_state_no_internet), noInternetExplanation,
+                shownState == AppProtectionState.NO_INTERNET, true));
+        options.add(new StateOption(AppProtectionState.BYPASSED,
+                getString(paused ? R.string.firewall_paused_state_label
+                        : R.string.firewall_exclude_from_trackercontrol),
+                getString(paused ? R.string.firewall_paused_state_explanation
+                        : R.string.firewall_exclude_from_trackercontrol_explanation),
+                shownState == AppProtectionState.BYPASSED, true));
+        return Collections.unmodifiableList(options);
+    }
+
+    private BlockedState buildBlockedState(Rule rule, AppProtectionState state) {
+        if (!blockedTrackersLoaded)
+            return new BlockedState(false, null, Collections.emptyList());
+        if (blockedRecordingUnavailable)
+            return new BlockedState(false, getString(R.string.protection_recording_unavailable),
+                    Collections.emptyList());
+
+        SharedPreferences trackerProtect = requireContext()
+                .getSharedPreferences("tracker_protect", Context.MODE_PRIVATE);
+        boolean trackerProtectionEnabled = BlockingMode.isTrackerProtectionEnabled(
+                requireContext(), trackerProtect, rule.packageName);
+        boolean minimal = BlockingMode.isMinimalMode(requireContext());
+        boolean minimalOnly = state == AppProtectionState.MINIMAL_ONLY;
+        boolean readOnlyMinimal = minimal || minimalOnly;
+        TrackerBlocklist blocklist = TrackerBlocklist.getInstance(requireContext());
+        List<CategoryModel> categories = new ArrayList<>();
+        for (TrackerCategory category : blockedTrackerCategories)
+            categories.add(buildCategoryModel(rule, category, blocklist,
+                    trackerProtectionEnabled, minimal, readOnlyMinimal, state));
+        String message = categories.isEmpty()
+                ? getString(R.string.protection_no_blocked_trackers) : null;
+        return new BlockedState(true, message, Collections.unmodifiableList(categories));
+    }
+
+    private CategoryModel buildCategoryModel(Rule rule, TrackerCategory category,
+            TrackerBlocklist blocklist, boolean trackerProtectionEnabled, boolean minimal,
+            boolean readOnlyMinimal, AppProtectionState state) {
+        String categoryName = category.getCategoryName();
+        String categoryDisplayName = category.getDisplayName(requireContext());
+        boolean categoryMinimallyBlocked = readOnlyMinimal && category.getChildren().stream()
+                .anyMatch(TrackerList::isMinimallyBlocked);
+        boolean categoryChecked = readOnlyMinimal
+                ? trackerProtectionEnabled && categoryMinimallyBlocked
+                : blocklist.blocked(rule.uid, categoryName);
+        boolean categoryEnabled = !readOnlyMinimal && state == AppProtectionState.PROTECTED;
+        List<CompanyModel> companies = new ArrayList<>();
+        for (Tracker tracker : category.getChildren()) {
+            TrackerStatusLogic.Result status = TrackerStatusLogic.resolve(
+                    trackerProtectionEnabled,
+                    minimal,
+                    BlockingMode.isStrictMode(requireContext()),
+                    state,
+                    TrackerList.isMinimallyBlocked(tracker),
+                    TrackerList.isMinimallyKnown(tracker),
+                    blocklist.blocked(rule.uid, tracker.category),
+                    blocklist.blocked(rule.uid, TrackerBlocklist.getBlockingKey(tracker)),
+                    tracker.isAllowedInStandardMode());
+            boolean statusBlocked = status.status == TrackerStatusLogic.Status.BLOCKED;
+            String lastSeen = tracker.lastSeen != null && tracker.lastSeen != 0
+                    ? Util.relativeTime(tracker.lastSeen).toString() : null;
+            companies.add(new CompanyModel(
+                    TrackerBlocklist.getBlockingKey(tracker), tracker.getName(), lastSeen,
+                    statusString(status.status), statusBlocked,
+                    state == AppProtectionState.PROTECTED && !readOnlyMinimal,
+                    getString(statusBlocked ? R.string.feed_allow_company_in_app
+                                    : R.string.feed_block_company_in_app,
+                            tracker.getName(), rule.name)));
+        }
+        String lastContact = category.lastSeen != null && category.lastSeen != 0
+                ? getString(R.string.feed_section_last_contact, Util.relativeTime(category.lastSeen)) : null;
+        String explainer = category.isUncertain() ? getString(R.string.uncertain_entry) : null;
+        return new CategoryModel(categoryName, categoryName, categoryDisplayName,
+                lastContact, explainer, categoryChecked, categoryEnabled,
+                getString(R.string.toggle_block_category_description, categoryDisplayName),
+                Collections.unmodifiableList(companies));
+    }
+
+    private RouteModel buildRouteModel(Rule rule) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        boolean wgEnabled = prefs.getBoolean("wg_enabled", false)
+                && !TextUtils.isEmpty(prefs.getString("wg_config", ""));
+        boolean applyApp = requireContext().getSharedPreferences("apply", Context.MODE_PRIVATE)
+                .getBoolean(rule.packageName, true);
+        boolean defaultRoutes = wgEnabled && RemoteRoutingHelper.hasDefaultRoutes(requireContext(), prefs);
+        RemoteRoutingLogic.Unavailable unavailable =
+                RemoteRoutingLogic.getUnavailableReason(wgEnabled, defaultRoutes, applyApp);
+        if (unavailable != null)
+            return new RouteModel.Unavailable(explainUnavailable(unavailable));
+        boolean tunnelled = routesThroughTunnel(rule);
+        return new RouteModel.Available(Arrays.asList(
+                new RouteOption(true, getString(R.string.app_route_through),
+                        getString(R.string.app_route_through_explanation), tunnelled),
+                new RouteOption(false, getString(R.string.app_route_direct),
+                        getString(R.string.app_route_direct_explanation), !tunnelled)));
+    }
+
+    private void applyRoute(Rule rule, boolean wantsTunnel) {
+        if (wantsTunnel == routesThroughTunnel(rule))
+            return;
+        requireContext().getSharedPreferences(Rule.PREF_WG_ROUTE, Context.MODE_PRIVATE)
+                .edit().putBoolean(rule.packageName, wantsTunnel).apply();
+        rule.wg_route = wantsTunnel;
+        if (adapter != null)
+            adapter.notifyDataSetChanged();
+        Rule.clearCache(requireContext());
+        ServiceSinkhole.reload("app routing changed", requireContext(), false);
+        refresh();
+    }
+
+    private boolean routesThroughTunnel(Rule rule) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        String mode = RemoteRoutingLogic.normalizeMode(
+                prefs.getString(Rule.PREF_WG_ROUTE_MODE, RemoteRoutingLogic.getDefaultMode()));
+        return RemoteRoutingLogic.routesThroughTunnel(mode,
+                RemoteRoutingHelper.getRouteOverride(requireContext(), rule.packageName), rule.apply);
+    }
+
+    private String explainUnavailable(RemoteRoutingLogic.Unavailable unavailable) {
+        switch (unavailable) {
+            case BYPASSED:
+                return getString(R.string.app_route_unavailable_bypassed);
+            case PARTIAL_ROUTES:
+                return getString(R.string.app_route_unavailable_partial_routes);
+            case NO_REMOTE_VPN:
+            default:
+                return getString(R.string.app_route_unavailable_no_vpn);
+        }
+    }
+
+    private void updateProtectionState() {
+        if (!isAdded() || expandedPackage == null)
+            return;
+        boolean paused = PausedApps.isPaused(requireContext(), expandedPackage);
+        expiryHandler.removeCallbacks(expiryRunnable);
+        showingResume = paused;
+        if (paused)
+            expiryHandler.postDelayed(expiryRunnable,
+                    PausedApps.remainingMillis(requireContext(), expandedPackage) + 1_000L);
+        renderProtectionPanel();
+    }
+
+    private void onPauseExpired() {
+        AsyncTask.execute(() -> {
+            if (!isAdded())
+                return;
+            PausedApps.sweep(requireContext());
+            if (isAdded())
+                requireActivity().runOnUiThread(() -> {
+                    if (!destroyed)
+                        updateProtectionState();
+                });
+        });
+    }
+
+    private void pauseOrResume(Rule rule) {
+        if (showingResume) {
+            PausedApps.resume(requireContext(), rule.packageName, rule.uid);
+            updateProtectionState();
+            return;
+        }
+        AppProtectionState state = currentState(rule);
+        if (state != AppProtectionState.PROTECTED
+                && state != AppProtectionState.MINIMAL_ONLY
+                && state != AppProtectionState.TRACKERS_ALLOWED)
+            return;
+        if (Util.lockdownState(requireContext()) == Util.LockdownState.ENABLED) {
+            Util.areYouSure(requireActivity(), R.string.protection_pause_lockdown_warning,
+                    () -> pauseNow(rule));
+        } else {
+            pauseNow(rule);
+        }
+    }
+
+    private void pauseNow(Rule rule) {
+        PausedApps.pause(requireContext(), rule.packageName, rule.uid);
+        updateProtectionState();
+    }
+
+    private void loadBlockedTrackers() {
+        if (expandedPackage == null || !isAdded())
+            return;
+        final String packageName = expandedPackage;
+        Rule rule = findRule(packageName);
+        if (rule == null)
+            return;
+        final int uid = rule.uid;
+        final int generation = ++blockedTrackerLoadGeneration;
+        if (!PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getBoolean("log_app", true)) {
+            blockedTrackersLoaded = true;
+            blockedRecordingUnavailable = true;
+            renderProtectionPanel();
+            return;
+        }
+        blockedTrackersLoaded = false;
+        blockedRecordingUnavailable = false;
+        renderProtectionPanel();
+        Context context = requireContext().getApplicationContext();
+        androidx.fragment.app.FragmentActivity activity = getActivity();
+        if (activity == null)
+            return;
+        AsyncTask.execute(() -> {
+            List<TrackerCategory> categories = TrackerList.getInstance(context)
+                    .getBlockedAppTrackers(context, uid);
+            activity.runOnUiThread(() -> {
+                if (!isAdded())
+                    return;
+                if (!destroyed && generation == blockedTrackerLoadGeneration
+                        && TextUtils.equals(packageName, expandedPackage)) {
+                    blockedTrackerCategories.clear();
+                    if (categories != null)
+                        blockedTrackerCategories.addAll(categories);
+                    blockedTrackersLoaded = true;
+                    blockedRecordingUnavailable = false;
+                    renderProtectionPanel();
+                }
+            });
+        });
+    }
+
+    private void toggleCategory(Rule rule, String categoryKey, boolean checked) {
+        TrackerCategory category = null;
+        for (TrackerCategory candidate : blockedTrackerCategories)
+            if (TextUtils.equals(categoryKey, candidate.getCategoryName())) {
+                category = candidate;
+                break;
+            }
+        if (category == null)
+            return;
+        TrackerBlocklist blocklist = TrackerBlocklist.getInstance(requireContext());
+        if (checked)
+            blocklist.block(rule.uid, category.getCategoryName());
+        else {
+            blocklist.unblock(rule.uid, category.getCategoryName());
+            Toast.makeText(requireContext(), R.string.category_unblocked,
+                    Toast.LENGTH_SHORT).show();
+        }
+        blocklist.saveSettings(requireContext());
+        renderProtectionPanel();
+    }
+
+    private void toggleCompany(Rule rule, String blockingKey) {
+        Tracker tracker = null;
+        for (TrackerCategory category : blockedTrackerCategories) {
+            for (Tracker candidate : category.getChildren())
+                if (TextUtils.equals(blockingKey, TrackerBlocklist.getBlockingKey(candidate))) {
+                    tracker = candidate;
+                    break;
+                }
+            if (tracker != null)
+                break;
+        }
+        if (tracker == null)
+            return;
+        if (InternetBlocklist.getInstance(requireContext()).blockedInternet(rule.uid))
+            return;
+        if (!BlockingMode.isStrictMode(requireContext()) && tracker.isAllowedInStandardMode()) {
+            Toast.makeText(requireContext(), R.string.allowed_shared_ip, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        TrackerBlocklist blocklist = TrackerBlocklist.getInstance(requireContext());
+        if (!blocklist.blocked(rule.uid, tracker.category)) {
+            Toast.makeText(requireContext(), R.string.category_unblocked_warning,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (blocklist.blockedTracker(rule.uid, tracker))
+            blocklist.unblock(rule.uid, tracker);
+        else
+            blocklist.block(rule.uid, tracker);
+        blocklist.saveSettings(requireContext());
+        renderProtectionPanel();
+    }
+
+    private void renderProtectionPanel() {
+        if (protectionController == null || expandedPackage == null)
+            return;
+        Rule rule = findRule(expandedPackage);
+        if (rule != null)
+            protectionController.update(buildScreenModel(rule));
+    }
+
+    private Rule findRule(String packageName) {
+        for (Rule rule : allRules)
+            if (TextUtils.equals(rule.packageName, packageName))
+                return rule;
+        return null;
+    }
+
+    private AppProtectionState currentState(Rule rule) {
+        SharedPreferences apply = requireContext().getSharedPreferences("apply", Context.MODE_PRIVATE);
+        SharedPreferences trackerProtect = requireContext().getSharedPreferences("tracker_protect", Context.MODE_PRIVATE);
+        SharedPreferences minimalOnly = requireContext().getSharedPreferences("tracker_essential", Context.MODE_PRIVATE);
+        return AppProtectionState.resolve(
+                apply.getBoolean(rule.packageName, true),
+                BlockingMode.isTrackerProtectionEnabled(requireContext(), trackerProtect, rule.packageName),
+                InternetBlocklist.getInstance(requireContext()).blockedInternet(rule.uid),
+                BlockingMode.isMinimalOnlyApp(requireContext(), minimalOnly, rule.packageName));
+    }
+
+    private String statusString(TrackerStatusLogic.Status status) {
+        switch (status) {
+            case BLOCKED:
+                return getString(R.string.timeline_tracker_blocked);
+            case ALLOWED_BY_USER:
+                return getString(R.string.feed_allowed_by_you);
+            case ALLOWED_SHARED_IP:
+                return getString(R.string.feed_allowed_shared_ip);
+            case MONITORED:
+                return getString(R.string.feed_monitored);
+            case ALLOWED:
+            default:
+                return getString(R.string.timeline_tracker_allowed);
+        }
+    }
+
+    private String packageLabels(List<String> packages) {
+        List<String> labels = new ArrayList<>();
+        PackageManager pm = requireContext().getPackageManager();
+        for (String packageName : packages) {
+            try {
+                labels.add(pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString());
+            } catch (PackageManager.NameNotFoundException ex) {
+                labels.add(packageName);
+            }
+        }
+        return TextUtils.join(", ", labels);
+    }
+
+    private String stateLabel(AppProtectionState state) {
+        switch (state) {
+            case TRACKERS_ALLOWED:
+                return getString(R.string.app_state_trackers_allowed);
+            case MINIMAL_ONLY:
+                return getString(R.string.app_state_essential_only);
+            case NO_INTERNET:
+                return getString(R.string.app_state_no_internet);
+            case BYPASSED:
+                return getString(R.string.app_state_bypassed);
+            case PROTECTED:
+            default:
+                return getString(R.string.app_state_protected);
+        }
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private final class FirewallAdapter extends RecyclerView.Adapter<FirewallViewHolder> {
+        private final List<Rule> items = new ArrayList<>();
+
+        void setItems(List<Rule> values) {
+            final List<Rule> nextItems = new ArrayList<>(values);
+            DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+                @Override
+                public int getOldListSize() {
+                    return items.size();
+                }
+
+                @Override
+                public int getNewListSize() {
+                    return nextItems.size();
+                }
+
+                @Override
+                public boolean areItemsTheSame(int oldPosition, int newPosition) {
+                    Rule oldRule = items.get(oldPosition);
+                    Rule newRule = nextItems.get(newPosition);
+                    return oldRule.uid == newRule.uid
+                            && TextUtils.equals(oldRule.packageName, newRule.packageName);
+                }
+
+                @Override
+                public boolean areContentsTheSame(int oldPosition, int newPosition) {
+                    Rule oldRule = items.get(oldPosition);
+                    Rule newRule = nextItems.get(newPosition);
+                    return TextUtils.equals(oldRule.name, newRule.name)
+                            && oldRule.system == newRule.system
+                            && oldRule.internet == newRule.internet
+                            && oldRule.enabled == newRule.enabled
+                            && oldRule.apply == newRule.apply
+                            && oldRule.tracker_protect == newRule.tracker_protect
+                            && oldRule.wg_route == newRule.wg_route
+                            && oldRule.icon == newRule.icon;
+                }
+            });
+            items.clear();
+            items.addAll(nextItems);
+            diff.dispatchUpdatesTo(this);
+        }
+
+        @Override
+        public FirewallViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            Context context = parent.getContext();
+            LinearLayout root = new LinearLayout(context);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setBackgroundResource(android.R.drawable.list_selector_background);
+
+            LinearLayout header = new LinearLayout(context);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
+            header.setPadding(dp(6), dp(8), dp(4), dp(8));
+            root.addView(header, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            ImageView icon = new ImageView(context);
+            header.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+            LinearLayout labels = new LinearLayout(context);
+            labels.setOrientation(LinearLayout.VERTICAL);
+            labels.setPadding(dp(8), 0, dp(4), 0);
+            header.addView(labels, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView name = new TextView(context);
+            name.setTextSize(14);
+            name.setMaxLines(1);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            labels.addView(name);
+            TextView status = new TextView(context);
+            status.setTextSize(10);
+            labels.addView(status);
+
+            LinearLayout buttons = new LinearLayout(context);
+            buttons.setOrientation(LinearLayout.HORIZONTAL);
+            header.addView(buttons, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            MaterialCheckBox block = rowChoice(context, R.string.firewall_block);
+            MaterialCheckBox vpn = rowChoice(context, R.string.firewall_vpn);
+            MaterialCheckBox direct = rowChoice(context, R.string.firewall_direct);
+            buttons.addView(block, new LinearLayout.LayoutParams(dp(60), dp(48)));
+            buttons.addView(vpn, new LinearLayout.LayoutParams(dp(54), dp(48)));
+            buttons.addView(direct, new LinearLayout.LayoutParams(dp(64), dp(48)));
+
+            LinearLayout expanded = new LinearLayout(context);
+            expanded.setOrientation(LinearLayout.VERTICAL);
+            expanded.setVisibility(View.GONE);
+            expanded.setPadding(dp(4), 0, dp(4), dp(8));
+            root.addView(expanded, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return new FirewallViewHolder(root, header, icon, name, status,
+                    block, vpn, direct, expanded);
+        }
+
+        @Override
+        public void onBindViewHolder(FirewallViewHolder holder, int position) {
+            Rule rule = items.get(position);
+            Context context = holder.itemView.getContext();
+            holder.name.setText(rule.name);
+            holder.name.setTextColor(rule.system
+                    ? MaterialColors.getColor(holder.name,
+                            com.google.android.material.R.attr.colorOnSurfaceVariant)
+                    : MaterialColors.getColor(holder.name,
+                            com.google.android.material.R.attr.colorOnSurface));
+            holder.status.setText(statusLabel(rule));
+            holder.status.setTextColor(MaterialColors.getColor(holder.status,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant));
+            if (rule.icon <= 0) {
+                holder.icon.setImageResource(android.R.drawable.sym_def_app_icon);
+            } else {
+                Uri iconUri = Uri.parse("android.resource://" + rule.packageName + "/" + rule.icon);
+                GlideApp.with(context).load(iconUri)
+                        .override(dp(40), dp(40)).into(holder.icon);
+            }
+            boolean blocked = InternetBlocklist.getInstance(context).blockedInternet(rule.uid);
+            int quickAction = FirewallPolicyLogic.quickAction(
+                    rule.apply, blocked, remoteVpnAvailable, rule.wg_route);
+            boolean blockSelected = quickAction == FirewallPolicyLogic.QUICK_ACTION_BLOCK;
+            boolean vpnSelected = quickAction == FirewallPolicyLogic.QUICK_ACTION_VPN;
+            boolean directSelected = quickAction == FirewallPolicyLogic.QUICK_ACTION_DIRECT;
+            boolean protectedEngineApp = InternetPermissionPolicy.isProtectedIdentity(
+                    context, rule.packageName, rule.uid);
+            boolean canManage = rule.pkg && !protectedEngineApp;
+            holder.block.setEnabled(canManage);
+            holder.vpn.setEnabled(canManage && remoteVpnAvailable);
+            holder.direct.setEnabled(canManage);
+            setQuickChoice(holder.block, blockSelected);
+            setQuickChoice(holder.vpn, vpnSelected);
+            setQuickChoice(holder.direct, directSelected);
+
+            String expandDescription = context.getString(
+                    isExpanded(rule) ? R.string.firewall_collapse_app
+                            : R.string.firewall_expand_app, rule.name);
+            holder.icon.setContentDescription(expandDescription);
+            holder.name.setContentDescription(expandDescription);
+            holder.icon.setEnabled(canManage);
+            holder.name.setEnabled(canManage);
+            holder.icon.setOnClickListener(view -> toggleExpanded(rule));
+            holder.name.setOnClickListener(view -> toggleExpanded(rule));
+            holder.block.setContentDescription(protectedEngineApp
+                    ? getString(R.string.firewall_self_app_note)
+                    : context.getString(R.string.firewall_action_for_app,
+                            context.getString(R.string.firewall_block), rule.name));
+            holder.vpn.setContentDescription(protectedEngineApp
+                    ? getString(R.string.firewall_self_app_note)
+                    : !remoteVpnAvailable ? getString(R.string.app_route_unavailable_no_vpn)
+                    : context.getString(R.string.firewall_action_for_app,
+                            context.getString(R.string.firewall_vpn), rule.name));
+            holder.direct.setContentDescription(protectedEngineApp
+                    ? getString(R.string.firewall_self_app_note)
+                    : context.getString(R.string.firewall_action_for_app,
+                            context.getString(R.string.firewall_direct), rule.name));
+            holder.header.setOnClickListener(null);
+            holder.block.setOnClickListener(view -> {
+                selectQuickAction(holder, FirewallPolicyLogic.QUICK_ACTION_BLOCK);
+                setPolicy(rule, ACTION_BLOCK);
+            });
+            holder.vpn.setOnClickListener(view -> {
+                selectQuickAction(holder, FirewallPolicyLogic.QUICK_ACTION_VPN);
+                setPolicy(rule, ACTION_VPN);
+            });
+            holder.direct.setOnClickListener(view -> {
+                selectQuickAction(holder, FirewallPolicyLogic.QUICK_ACTION_DIRECT);
+                setPolicy(rule, ACTION_DIRECT);
+            });
+
+            holder.boundPackage = rule.packageName;
+            holder.expanded.removeAllViews();
+            boolean expanded = isExpanded(rule);
+            holder.expanded.setVisibility(expanded ? View.VISIBLE : View.GONE);
+            if (expanded) {
+                ComposeView composeView = new ComposeView(context);
+                holder.expanded.addView(composeView, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                installProtectionPanel(composeView, rule);
+            }
+        }
+
+        @Override
+        public void onViewRecycled(FirewallViewHolder holder) {
+            if (TextUtils.equals(holder.boundPackage, expandedPackage))
+                protectionController = null;
+            holder.expanded.removeAllViews();
+            holder.boundPackage = null;
+            super.onViewRecycled(holder);
+        }
+
+        @Override
+        public int getItemCount() {
+            return items.size();
+        }
+
+        private void selectQuickAction(FirewallViewHolder holder, int selected) {
+            setQuickChoice(holder.block,
+                    selected == FirewallPolicyLogic.QUICK_ACTION_BLOCK);
+            setQuickChoice(holder.vpn,
+                    selected == FirewallPolicyLogic.QUICK_ACTION_VPN);
+            setQuickChoice(holder.direct,
+                    selected == FirewallPolicyLogic.QUICK_ACTION_DIRECT);
+        }
+
+        private String statusLabel(Rule rule) {
+            if (TextUtils.equals(rule.packageName, requireContext().getPackageName()))
+                return getString(R.string.firewall_self_app_note);
+            if (!rule.apply)
+                return getString(R.string.firewall_excluded_status);
+            if (InternetBlocklist.getInstance(requireContext()).blockedInternet(rule.uid))
+                return getString(R.string.firewall_block);
+            if (!rule.internet)
+                return getString(R.string.no_internet);
+            return remoteVpnAvailable && rule.wg_route
+                    ? getString(R.string.firewall_vpn)
+                    : getString(R.string.firewall_direct);
+        }
+
+        private MaterialCheckBox rowChoice(Context context, int label) {
+            MaterialCheckBox choice = new MaterialCheckBox(context);
+            choice.setText(label);
+            choice.setTextSize(11);
+            choice.setMinWidth(0);
+            choice.setMinimumWidth(0);
+            choice.setMinHeight(dp(48));
+            choice.setPadding(dp(1), 0, dp(1), 0);
+            choice.setUseMaterialThemeColors(true);
+            return choice;
+        }
+
+        private void setQuickChoice(MaterialCheckBox choice, boolean selected) {
+            choice.setOnCheckedChangeListener(null);
+            choice.setChecked(selected);
+        }
+    }
+
+    private static final class FirewallViewHolder extends RecyclerView.ViewHolder {
+        final LinearLayout header;
+        final ImageView icon;
+        final TextView name;
+        final TextView status;
+        final MaterialCheckBox block;
+        final MaterialCheckBox vpn;
+        final MaterialCheckBox direct;
+        final LinearLayout expanded;
+        String boundPackage;
+
+        FirewallViewHolder(View itemView, LinearLayout header, ImageView icon,
+                TextView name, TextView status, MaterialCheckBox block, MaterialCheckBox vpn,
+                MaterialCheckBox direct, LinearLayout expanded) {
+            super(itemView);
+            this.header = header;
+            this.icon = icon;
+            this.name = name;
+            this.status = status;
+            this.block = block;
+            this.vpn = vpn;
+            this.direct = direct;
+            this.expanded = expanded;
+        }
+    }
+}

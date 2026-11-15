@@ -1,0 +1,1099 @@
+package com.example.feature.sidebar
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.SystemClock
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
+import com.example.core.SidebarPage
+import com.example.util.AppLogger
+import com.example.core.AppWidgetHelper
+import kotlin.math.max
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+
+@SuppressLint("ViewConstructor")
+class SidebarView(
+    context: Context,
+    private val prefs: SharedPreferences,
+    private val windowManager: WindowManager,
+    val physicalHandleId: String,
+    val containerId: String,
+    pageConfigs: List<SidebarPage>,
+    private val defaultPageIndex: Int,
+    private val onClose: () -> Unit
+) : FrameLayout(context) {
+
+    private val pageConfigs: List<SidebarPage> = pageConfigs
+
+    val isRight: Boolean = run {
+        val legacyEdge = if (prefs.getBoolean("sidebar_position_left", false)) "left" else "right"
+        prefs.getString("handle_${physicalHandleId}_edge", if (physicalHandleId == "sidebar") legacyEdge else "right") == "right"
+    }
+    private val wrapContent = prefs.getBoolean("handle_${containerId}_sidebar_wrap_content", prefs.getBoolean("sidebar_wrap_content", true))
+    private val layoutParams: WindowManager.LayoutParams
+    val sidebarLayoutParams: WindowManager.LayoutParams get() = layoutParams
+    private val viewPager: ViewPager2
+    private lateinit var container: FrameLayout
+    private lateinit var dotsLayout: LinearLayout
+    private val dots = mutableListOf<View>()
+    private lateinit var editButton: ImageView
+    private var isAttached = false
+    private val viewScope = CoroutineScope(Dispatchers.Main + Job())
+    private val pageFactory: SidebarPageFactory = DefaultSidebarPageFactory(prefs)
+    private val dimOverlay: View
+    private var pageChangeCallback: ViewPager2.OnPageChangeCallback? = null
+    private val isLooping = pageConfigs.size > 2
+    private val startingIndex = if (isLooping) {
+        val half = Int.MAX_VALUE / 2
+        half - (half % pageConfigs.size) + max(0, defaultPageIndex)
+    } else {
+        max(0, defaultPageIndex)
+    }
+    private val pageHeights = mutableMapOf<String, Int>()
+
+    // Keyboard and IME interaction state
+    private var isKeyboardOpen: Boolean = false
+    private var lastKeyboardCloseTime: Long = 0L
+    private var originalYBeforeKeyboard: Int = 0
+    private var isShiftedForKeyboard: Boolean = false
+    private var globalLayoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+
+    fun setDimmed(dimmed: Boolean) {
+        if (dimmed) {
+            dimOverlay.visibility = View.VISIBLE
+            dimOverlay.animate().alpha(0.5f).setDuration(180).start()
+        } else {
+            dimOverlay.animate().alpha(0f).setDuration(180).withEndAction {
+                dimOverlay.visibility = View.GONE
+            }.start()
+        }
+    }
+
+    init {
+        AppLogger.d("SidebarView", "Init sidebar for containerId: $containerId")
+        val windowType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val density = context.resources.displayMetrics.density
+
+        val initialActualPos = if (pageConfigs.isNotEmpty()) (if (isLooping) startingIndex % pageConfigs.size else startingIndex).coerceIn(0, pageConfigs.size - 1) else 0
+        val initialPage = pageConfigs.getOrNull(initialActualPos)
+
+        val targetWidthDp = if (initialPage?.useCustomSettings == true && initialPage.width > 0) {
+            initialPage.width
+        } else {
+            when (initialPage?.type) {
+                "calculator", "compass", "resources_tracker", "media_player" -> 320
+                "scheduler", "notifications", "notification", "app_tracker" -> 330
+                "widgets_grid", "widget" -> {
+                    val cols = prefs.getInt("handle_${containerId}_widgets_grid_cols_${initialPage?.id}", prefs.getInt("widgets_grid_cols_${initialPage?.id}", 4))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
+                    else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
+                }
+                "hybrid_grid", "default_hybrid" -> {
+                    val cols = prefs.getInt("handle_${containerId}_hybrid_grid_cols_${initialPage?.id}", prefs.getInt("hybrid_grid_cols_${initialPage?.id}", 4))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
+                    else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
+                }
+                "apps" -> {
+                    val c = prefs.getInt("handle_${containerId}_page_${initialPage?.id}_columns", prefs.getInt("handle_${physicalHandleId}_page_${initialPage?.id}_columns", -1))
+                    val defaultCols = prefs.getInt("handle_${containerId}_columns", prefs.getInt("handle_${physicalHandleId}_columns", prefs.getInt("sidebar_columns", 3)))
+                    val cols = if (initialPage?.useCustomSettings == true) initialPage.gridColumns else (if (c != -1) c else defaultCols)
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
+                    else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
+                }
+                else -> prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+            }
+        }
+        val widthPx = (targetWidthDp * density).toInt()
+
+        val isInitialWrap = if (initialPage?.useCustomSettings == true) {
+            initialPage.wrapContentHeight
+        } else {
+            when (initialPage?.type) {
+                "calculator", "compass", "resources_tracker", "app_tracker", "scheduler", "notifications", "notification", "media_player" -> true
+                "apps", "widgets_grid", "hybrid_grid", "default_hybrid", "widget" -> true
+                else -> true
+            }
+        }
+
+        val heightPx = if (isInitialWrap) {
+            WindowManager.LayoutParams.WRAP_CONTENT
+        } else {
+            val targetHeightDp = if (initialPage?.useCustomSettings == true && initialPage.height > 0) {
+                initialPage.height
+            } else {
+                when (initialPage?.type) {
+                    "calculator" -> 460
+                    "compass" -> 480
+                    "scheduler" -> 520
+                    "notifications", "notification" -> 520
+                    "resources_tracker" -> 460
+                    "app_tracker" -> 260
+                    "media_player" -> 200
+                    else -> prefs.getInt("handle_${containerId}_sidebar_height", prefs.getInt("sidebar_height", 360))
+                }
+            }
+            (targetHeightDp * density).toInt()
+        }
+
+        val legacyEdge = if (prefs.getBoolean("sidebar_position_left", false)) "left" else "right"
+        val isRight = prefs.getString("handle_${physicalHandleId}_edge", if (physicalHandleId == "sidebar") legacyEdge else "right") == "right"
+        val gravityEdge = if (isRight) Gravity.END else Gravity.START
+
+        val stickAlignment = if (initialPage?.useCustomSettings == true) initialPage.stickAlignment else "bottom"
+        val gravityVertical = when (stickAlignment) {
+            "top" -> Gravity.TOP
+            "center" -> Gravity.CENTER_VERTICAL
+            else -> Gravity.BOTTOM
+        }
+
+        layoutParams = WindowManager.LayoutParams(
+            widthPx,
+            heightPx,
+            windowType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = gravityEdge or gravityVertical
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED or
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            x = 0
+            y = 0
+        }
+
+        setupKeyboardHandling()
+
+        isFocusableInTouchMode = true
+        setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                if (isKeyboardActive()) {
+                    hideKeyboard()
+                    true
+                } else if (SystemClock.uptimeMillis() - lastKeyboardCloseTime < 500L) {
+                    true
+                } else {
+                    onClose()
+                    true
+                }
+            } else {
+                false
+            }
+        }
+
+        val opacity = prefs.getFloat("handle_${containerId}_sidebar_transparency", prefs.getFloat("sidebar_transparency", 0.9f))
+        val alphaInt = (opacity * 255).toInt().coerceIn(0, 255)
+
+        val drawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            val colorHex = prefs.getString("handle_${containerId}_sidebar_color", prefs.getString("sidebar_color", "#1E1E2E")) ?: "#1E1E2E"
+            val baseColor = try { Color.parseColor(colorHex) } catch(e:Exception){ Color.parseColor("#1E1E2E") }
+            val r = Color.red(baseColor)
+            val g = Color.green(baseColor)
+            val b = Color.blue(baseColor)
+            setColor(Color.argb(alphaInt, r, g, b))
+
+            setStroke((1 * density).toInt(), Color.argb(80, 255, 255, 255))
+
+            val radius = 16f * density
+            cornerRadii = if (isRight) {
+                floatArrayOf(radius, radius, 0f, 0f, 0f, 0f, radius, radius)
+            } else {
+                floatArrayOf(0f, 0f, radius, radius, radius, radius, 0f, 0f)
+            }
+        }
+        background = drawable
+
+        val headerHeight = (22 * density).toInt()
+        val edgeMargin = (10 * density).toInt()
+
+        val header = FrameLayout(context).apply {
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, headerHeight)
+        }
+
+        val closeText = TextView(context).apply {
+            text = "✕"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(headerHeight, headerHeight).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                marginEnd = edgeMargin
+            }
+            setOnClickListener { onClose() }
+        }
+        header.addView(closeText)
+
+        val settingsBtn = android.widget.ImageView(context).apply {
+            setImageResource(android.R.drawable.ic_menu_preferences)
+            setColorFilter(Color.WHITE)
+            val pad = (3 * density).toInt()
+            setPadding(pad, pad, pad, pad)
+            layoutParams = FrameLayout.LayoutParams(headerHeight, headerHeight).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                marginEnd = edgeMargin + headerHeight
+            }
+            setOnClickListener {
+                val intent = Intent(context, com.example.SettingsActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                context.startActivity(intent)
+                onClose()
+            }
+        }
+        header.addView(settingsBtn)
+
+        editButton = android.widget.ImageView(context).apply {
+            setImageResource(android.R.drawable.ic_menu_edit)
+            setColorFilter(Color.WHITE)
+            val pad = (3 * density).toInt()
+            setPadding(pad, pad, pad, pad)
+            layoutParams = FrameLayout.LayoutParams(headerHeight, headerHeight).apply {
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                marginStart = edgeMargin
+            }
+            setOnClickListener {
+                val sess = "edit_${System.currentTimeMillis() % 100000}"
+                if (pageConfigs.isNotEmpty()) {
+                    val currentItem = viewPager.currentItem
+                    val actualPosition = if (pageConfigs.size > 2) currentItem % pageConfigs.size else currentItem
+                    val pageConfig = pageConfigs.getOrNull(actualPosition)
+                    com.example.core.LogKeeper.log(
+                        context,
+                        "MiniAppLaunchRouting",
+                        "ROUTING_DIAG: EDIT_BUTTON_CLICKED sess=$sess containerId=$containerId pageIndex=$actualPosition pageType=${pageConfig?.type} pageId=${pageConfig?.id}"
+                    )
+                    if (pageConfig != null) {
+                        SidebarEditNavigator.navigateToEditScreen(
+                            context = context,
+                            pageConfig = pageConfig,
+                            containerId = containerId,
+                            physicalHandleId = physicalHandleId,
+                            onClose = onClose
+                        )
+                    }
+                } else {
+                    val intent = Intent(context, com.example.SettingsActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        putExtra("start_route", "pages_${containerId}")
+                    }
+                    context.startActivity(intent)
+                    onClose()
+                }
+            }
+        }
+        header.addView(editButton)
+
+        container = FrameLayout(context).apply {
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = headerHeight
+            }
+        }
+
+        viewPager = ViewPager2(context).apply {
+            layoutParams = if (wrapContent) {
+                FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+            } else {
+                FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            }
+            offscreenPageLimit = ViewPager2.OFFSCREEN_PAGE_LIMIT_DEFAULT
+        }
+        
+        viewPager.adapter = object : RecyclerView.Adapter<SidebarPageViewHolder>() {
+            override fun getItemViewType(position: Int): Int {
+                if (pageConfigs.isEmpty()) return 0
+                return if (isLooping) position % pageConfigs.size else position
+            }
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SidebarPageViewHolder {
+                val frame = FrameLayout(parent.context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+                return SidebarPageViewHolder(frame)
+            }
+            override fun onBindViewHolder(holder: SidebarPageViewHolder, position: Int) {
+                if (pageConfigs.isEmpty()) return
+                val actualPosition = if (isLooping) position % pageConfigs.size else position
+                val config = pageConfigs[actualPosition]
+                // Only immediately instantiate if it is the initially active starting page.
+                // Other pages load on-demand when scrolled into view.
+                val isCurrentOrTarget = (position == viewPager.currentItem) || (holder.pageView != null)
+                holder.bind(config, isCurrentOrTarget)
+            }
+            override fun getItemCount(): Int = if (isLooping) Int.MAX_VALUE else pageConfigs.size
+        }
+        
+        // Indicator container constrained between start (edit button) and end (settings + close buttons)
+        val startReserved = edgeMargin + headerHeight + (4 * density).toInt()
+        val endReserved = edgeMargin + (headerHeight * 2) + (4 * density).toInt()
+
+        val dotsScrollView = android.widget.HorizontalScrollView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+                marginStart = startReserved
+                marginEnd = endReserved
+            }
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isHorizontalScrollBarEnabled = false
+        }
+
+        dotsLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+                gravity = Gravity.CENTER
+            }
+        }
+        dotsScrollView.addView(dotsLayout)
+        
+        setupDots(pageConfigs.size)
+
+        if (pageConfigs.isEmpty()) {
+            val emptyH = (120 * density).toInt()
+            val emptyContainerView = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                val pad = (16 * density).toInt()
+                setPadding(pad, pad, pad, pad)
+                val tv = TextView(context).apply {
+                    text = "No pages added\nTap to add pages"
+                    setTextColor(Color.LTGRAY)
+                    textSize = 13f
+                    gravity = Gravity.CENTER
+                }
+                addView(tv)
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, emptyH)
+                setOnClickListener {
+                    val intent = Intent(context, com.example.SettingsActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        putExtra("start_route", "pages_${containerId}")
+                    }
+                    context.startActivity(intent)
+                    onClose()
+                }
+            }
+            container.addView(emptyContainerView)
+        }
+        container.addView(viewPager)
+        header.addView(dotsScrollView)
+
+        addView(header)
+        addView(container)
+
+        val dimDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Color.BLACK)
+            val radius = 16f * density
+            cornerRadii = if (isRight) {
+                floatArrayOf(radius, radius, 0f, 0f, 0f, 0f, radius, radius)
+            } else {
+                floatArrayOf(0f, 0f, radius, radius, radius, radius, 0f, 0f)
+            }
+        }
+        dimOverlay = View(context).apply {
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            background = dimDrawable
+            alpha = 0f
+            visibility = View.GONE
+            isClickable = false
+        }
+        addView(dimOverlay)
+
+        if (pageConfigs.isNotEmpty()) {
+            viewPager.setCurrentItem(startingIndex, false)
+        }
+
+        val callback = object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                super.onPageSelected(position)
+                if (pageConfigs.isNotEmpty()) {
+                    val actualPosition = if (isLooping) position % pageConfigs.size else position
+                    updateDots(actualPosition)
+                    updateWindowForPage(actualPosition)
+                    
+                    val pageConfig = pageConfigs.getOrNull(actualPosition)
+                    if (::editButton.isInitialized) {
+                        editButton.visibility = View.VISIBLE
+                    }
+                    
+                    AppWidgetHelper.startListening(context)
+
+                    // Synchronize active page selection with SidebarManager and persistence
+                    pageConfig?.let {
+                        SidebarManager.getInstance(context).selectPage(actualPosition)
+                    }
+                }
+                
+                // Notify lifecycle and ensure current page is loaded on demand
+                val rcv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+                rcv?.let {
+                    for (i in 0 until it.childCount) {
+                        val child = it.getChildAt(i)
+                        val holder = it.getChildViewHolder(child) as? SidebarPageViewHolder
+                        if (holder?.bindingAdapterPosition == position) {
+                            holder.ensureLoaded()
+                            (holder.pageView as? SidebarPageControllable)?.onPageSelected()
+                            
+                            // Measure and adjust height immediately for non-grid wrapped pages
+                            holder.pageView?.let { pv ->
+                                pv.post {
+                                    val actualPos = if (isLooping) position % pageConfigs.size else position
+                                    val page = pageConfigs.getOrNull(actualPos)
+                                    val isPageWrap = if (page?.useCustomSettings == true) page.wrapContentHeight else true
+                                    if (isPageWrap) {
+                                        if (pv is HeavyPagePlaceholderView) {
+                                            // HeavyPagePlaceholderView reports its desired height asynchronously via onHeightChanged
+                                            // once the SurfacePackage is attached. Do not measure with UNSPECIFIED
+                                            // or force an unattached provisional bootstrap height on SidebarView.
+                                        } else {
+                                            val density = context.resources.displayMetrics.density
+                                            val targetW = layoutParams.width.takeIf { it > 0 } ?: (320 * density).toInt()
+                                            pv.measure(
+                                                View.MeasureSpec.makeMeasureSpec(targetW, View.MeasureSpec.EXACTLY),
+                                                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                                            )
+                                            val measuredH = pv.measuredHeight
+                                            if (measuredH > 0) {
+                                                handleChildHeightChange(position, measuredH)
+                                            } else if (pv.height > 0) {
+                                                handleChildHeightChange(position, pv.height)
+                                            }
+                                        }
+                                    } else {
+                                        updateWindowForPage(actualPos)
+                                    }
+                                }
+                            }
+                        } else {
+                            (holder?.pageView as? SidebarPageControllable)?.onPageUnselected()
+                        }
+                    }
+                }
+            }
+
+            override fun onPageScrollStateChanged(state: Int) {
+                super.onPageScrollStateChanged(state)
+                val rcv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
+                for (i in 0 until rcv.childCount) {
+                    val child = rcv.getChildAt(i)
+                    val holder = rcv.getChildViewHolder(child) as? SidebarPageViewHolder
+                    (holder?.pageView as? SidebarPageControllable)?.onPageScrollStateChanged(state)
+                }
+            }
+        }
+        pageChangeCallback = callback
+        viewPager.registerOnPageChangeCallback(callback)
+
+        viewPager.post {
+            if (pageConfigs.isNotEmpty()) {
+                val actualPos = if (isLooping) startingIndex % pageConfigs.size else startingIndex
+                updateDots(actualPos)
+                updateWindowForPage(actualPos)
+                val rcv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+                rcv?.let {
+                    for (i in 0 until it.childCount) {
+                        val child = it.getChildAt(i)
+                        val holder = it.getChildViewHolder(child) as? SidebarPageViewHolder
+                        if (holder?.bindingAdapterPosition == startingIndex) {
+                            holder.ensureLoaded()
+                            (holder.pageView as? SidebarPageControllable)?.onPageSelected()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fun updateWindowForPage(actualPosition: Int) {
+        if (pageConfigs.isEmpty()) return
+        val page = pageConfigs.getOrNull(actualPosition) ?: return
+        val density = context.resources.displayMetrics.density
+        val headerHeight = (22 * density).toInt()
+
+        val targetWidthDp = if (page.useCustomSettings && page.width > 0) {
+            page.width
+        } else {
+            when (page.type) {
+                "calculator" -> 280
+                "compass" -> 250
+                "resources_tracker" -> 320
+                "scheduler", "notifications", "notification", "app_tracker" -> 330
+                "widgets_grid", "widget" -> {
+                    val cols = prefs.getInt("handle_${containerId}_widgets_grid_cols_${page.id}", prefs.getInt("widgets_grid_cols_${page.id}", 4))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
+                    else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
+                }
+                "hybrid_grid", "default_hybrid" -> {
+                    val cols = prefs.getInt("handle_${containerId}_hybrid_grid_cols_${page.id}", prefs.getInt("hybrid_grid_cols_${page.id}", 4))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
+                    else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
+                }
+                "apps" -> {
+                    val c = prefs.getInt("handle_${containerId}_page_${page.id}_columns", prefs.getInt("handle_${physicalHandleId}_page_${page.id}_columns", -1))
+                    val defaultCols = prefs.getInt("handle_${containerId}_columns", prefs.getInt("handle_${physicalHandleId}_columns", prefs.getInt("sidebar_columns", 3)))
+                    val cols = if (page.useCustomSettings) page.gridColumns else (if (c != -1) c else defaultCols)
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
+                    else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
+                }
+                else -> prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+            }
+        }
+        val targetWidthPx = (targetWidthDp * density).toInt()
+
+        val isPageWrap = if (page.useCustomSettings) {
+            page.wrapContentHeight
+        } else {
+            true
+        }
+
+        val screenHeight = context.resources.displayMetrics.heightPixels
+        val maxAllowedHeight = (screenHeight * 0.85f).toInt() - headerHeight
+
+        val targetContentHeightPx = if (page.useCustomSettings && page.height > 0) {
+            (page.height * density).toInt()
+            val lastMeasured = pageHeights[page.id]
+                ?: if (page.type == "hybrid_grid" || page.type == "default_hybrid") {
+                    prefs.getInt("handle_${containerId}_hybrid_grid_height_${page.id}", -1).takeIf { it > 0 }
+                } else null
+            if (lastMeasured != null && lastMeasured > 0) {
+                lastMeasured.coerceIn((60 * density).toInt(), maxAllowedHeight)
+            } else {
+                val childHeight = queryChildPageHeight(actualPosition)
+                if (childHeight > 0) {
+                    pageHeights[page.id] = childHeight
+                    childHeight.coerceIn((60 * density).toInt(), maxAllowedHeight)
+                } else {
+                    val compactInitialDp = when (page.type) {
+                        "calculator" -> 260
+                        "compass" -> 270
+                        "resources_tracker" -> 160
+                        "scheduler" -> 200
+                        "notifications", "notification" -> 160
+                        "app_tracker" -> 260
+                        "media_player" -> 200
+                        "apps" -> 140
+                        "widgets_grid", "widget" -> 140
+                        "hybrid_grid", "default_hybrid" -> 140
+                        else -> 140
+                    }
+                    (compactInitialDp * density).toInt()
+                }
+            }
+        } else {
+            val targetHeightDp = when (page.type) {
+                "calculator" -> 260
+                "compass" -> 270
+                "resources_tracker" -> 160
+                "scheduler" -> 200
+                "notifications", "notification" -> 160
+                "app_tracker" -> 260
+                "media_player" -> 200
+                "widgets_grid", "widget" -> prefs.getInt("handle_${containerId}_sidebar_height", prefs.getInt("sidebar_height", 280))
+                "hybrid_grid", "default_hybrid" -> prefs.getInt("handle_${containerId}_sidebar_height", prefs.getInt("sidebar_height", 280))
+                else -> prefs.getInt("handle_${containerId}_sidebar_height", prefs.getInt("sidebar_height", 280))
+            }
+            (targetHeightDp * density).toInt()
+        }
+
+        val targetHeightPx = headerHeight + targetContentHeightPx
+
+        val legacyEdge = if (prefs.getBoolean("sidebar_position_left", false)) "left" else "right"
+        val isRight = prefs.getString("handle_${physicalHandleId}_edge", if (physicalHandleId == "sidebar") legacyEdge else "right") == "right"
+        val gravityEdge = if (isRight) Gravity.END else Gravity.START
+
+        val stickAlignment = if (page.useCustomSettings) page.stickAlignment else "bottom"
+        val gravityVertical = when (stickAlignment) {
+            "top" -> Gravity.TOP
+            "center" -> Gravity.CENTER_VERTICAL
+            else -> Gravity.BOTTOM
+        }
+        val targetGravity = gravityEdge or gravityVertical
+
+        var changed = false
+        if (layoutParams.width != targetWidthPx) {
+            layoutParams.width = targetWidthPx
+            changed = true
+        }
+        if (layoutParams.height != targetHeightPx) {
+            layoutParams.height = targetHeightPx
+            changed = true
+        }
+        if (layoutParams.gravity != targetGravity) {
+            layoutParams.gravity = targetGravity
+            changed = true
+        }
+
+        val vpParams = viewPager.layoutParams
+        if (vpParams.height != targetContentHeightPx) {
+            vpParams.height = targetContentHeightPx
+            viewPager.layoutParams = vpParams
+        }
+
+        if (changed && isAttached) {
+            try {
+                windowManager.updateViewLayout(this, layoutParams)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun queryChildPageHeight(actualPosition: Int): Int {
+        val rcv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return 0
+        for (i in 0 until rcv.childCount) {
+            val child = rcv.getChildAt(i)
+            val holder = rcv.getChildViewHolder(child) as? SidebarPageViewHolder ?: continue
+            val pos = holder.bindingAdapterPosition
+            val actPos = if (isLooping && pos != -1) pos % pageConfigs.size else pos
+            if (actPos == actualPosition) {
+                val pv = holder.pageView ?: continue
+                return when (pv) {
+                    is AppsPageView -> pv.getCurrentHeightPx()
+                    is HybridGridPageView -> pv.getCurrentHeightPx()
+                    is WidgetsGridPageView -> pv.getCurrentHeightPx()
+                    is WidgetPageView -> pv.getCurrentHeightPx()
+                    is HeavyPagePlaceholderView -> pv.getReportedDesiredHeightPx()
+                    else -> pv.height
+                }
+            }
+        }
+        return 0
+    }
+
+    private fun handleChildHeightChange(bindingAdapterPosition: Int, newHeight: Int) {
+        val actualPosition = if (isLooping) viewPager.currentItem % pageConfigs.size else viewPager.currentItem
+        val page = pageConfigs.getOrNull(actualPosition) ?: return
+        if (newHeight > 0) {
+            pageHeights[page.id] = newHeight
+        }
+        val isPageWrap = if (page.useCustomSettings) {
+            page.wrapContentHeight
+        } else {
+            true
+        }
+        if (isPageWrap && viewPager.currentItem == bindingAdapterPosition && newHeight > 0) {
+            val density = context.resources.displayMetrics.density
+            val headerHeight = (22 * density).toInt()
+            val screenHeight = context.resources.displayMetrics.heightPixels
+            val maxAllowedHeight = (screenHeight * 0.85f).toInt() - headerHeight
+            val boundedContentHeight = newHeight.coerceIn((60 * density).toInt(), maxAllowedHeight)
+            val totalWindowHeight = boundedContentHeight + headerHeight
+
+            com.example.core.LogKeeper.log(context, "SidebarView", "handleChildHeightChange: page='${page.id}', requestedHeight=$newHeight, boundedContentH=$boundedContentHeight, totalWindowH=$totalWindowHeight, currentLp=(w=${layoutParams.width}, h=${layoutParams.height}, g=0x${Integer.toHexString(layoutParams.gravity)})")
+
+            var changed = false
+            val vpParams = viewPager.layoutParams
+            if (vpParams.height != boundedContentHeight) {
+                vpParams.height = boundedContentHeight
+                viewPager.layoutParams = vpParams
+                changed = true
+            }
+            if (layoutParams.height != totalWindowHeight) {
+                layoutParams.height = totalWindowHeight
+                changed = true
+            }
+            if (changed && isAttached) {
+                try {
+                    windowManager.updateViewLayout(this@SidebarView, layoutParams)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+    
+    private fun setupDots(count: Int) {
+        dots.clear()
+        dotsLayout.removeAllViews()
+        if (count <= 1) {
+            dotsLayout.visibility = View.GONE
+            return
+        }
+        dotsLayout.visibility = View.VISIBLE
+        val density = context.resources.displayMetrics.density
+        val size = (5 * density).toInt()
+        val margin = (2.5f * density).toInt()
+        
+        for (i in 0 until count) {
+            val dot = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                    setMargins(margin, 0, margin, 0)
+                }
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.WHITE)
+                }
+            }
+            dots.add(dot)
+            dotsLayout.addView(dot)
+        }
+        updateDots(0)
+    }
+    
+    private fun updateDots(position: Int) {
+        if (dots.isEmpty()) return
+        val density = context.resources.displayMetrics.density
+        
+        for (i in dots.indices) {
+            val bg = dots[i].background as? android.graphics.drawable.GradientDrawable
+            if (i == position) {
+                bg?.setStroke(0, Color.TRANSPARENT)
+                bg?.setColor(Color.WHITE)
+                dots[i].layoutParams = (dots[i].layoutParams as LinearLayout.LayoutParams).apply {
+                    width = (5 * density).toInt()
+                    height = (5 * density).toInt()
+                }
+            } else {
+                bg?.setStroke((1 * density).toInt(), Color.WHITE)
+                bg?.setColor(Color.TRANSPARENT)
+                dots[i].layoutParams = (dots[i].layoutParams as LinearLayout.LayoutParams).apply {
+                    width = (4 * density).toInt()
+                    height = (4 * density).toInt()
+                }
+            }
+        }
+    }
+
+    fun attach() {
+        if (!isAttached) {
+            com.example.core.LogKeeper.writeLog("Sidebar", "Attached sidebar for containerId: $containerId")
+            AppWidgetHelper.startListening(context)
+            
+            try {
+                if (parent == null) {
+                    windowManager.addView(this, layoutParams)
+                }
+            } catch (e: Exception) {
+                // Overlay might be managed by FloatingWindowManager
+            }
+            isAttached = true
+            animateIn()
+        }
+    }
+
+    fun animateIn() {
+        val density = context.resources.displayMetrics.density
+        val slideDist = (layoutParams.width.toFloat()).coerceAtLeast(200f * density)
+        translationX = if (isRight) slideDist else -slideDist
+        alpha = 0.6f
+        animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(160)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+    }
+
+    fun updateState(state: SidebarRuntimeState) {
+        if (state.currentPageIndex in pageConfigs.indices) {
+            val targetIdx = if (isLooping) {
+                val half = Int.MAX_VALUE / 2
+                half - (half % pageConfigs.size) + state.currentPageIndex
+            } else {
+                state.currentPageIndex
+            }
+            if (viewPager.currentItem != targetIdx) {
+                viewPager.setCurrentItem(targetIdx, true)
+            }
+        }
+    }
+
+    fun navigatePage(delta: Int) {
+        if (pageConfigs.isEmpty()) return
+        val current = viewPager.currentItem
+        val nextItem = if (isLooping) {
+            current + delta
+        } else {
+            (current + delta).coerceIn(0, pageConfigs.size - 1)
+        }
+        if (nextItem != current) {
+            viewPager.setCurrentItem(nextItem, true)
+        }
+    }
+    
+    fun closeWithAnimation(onFinished: () -> Unit) {
+        if (!isAttached) {
+            onFinished()
+            return
+        }
+        val density = context.resources.displayMetrics.density
+        val slideDist = (layoutParams.width.toFloat()).coerceAtLeast(200f * density)
+        val targetX = if (isRight) slideDist else -slideDist
+        animate()
+            .translationX(targetX)
+            .alpha(0f)
+            .setDuration(130)
+            .setInterpolator(android.view.animation.AccelerateInterpolator())
+            .withEndAction {
+                onFinished()
+            }
+            .start()
+    }
+    
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_OUTSIDE) {
+            if (isKeyboardActive()) {
+                com.example.core.LogKeeper.writeLog("Sidebar", "Outside touch ignored because keyboard/input is active")
+                return true
+            }
+            if (SystemClock.uptimeMillis() - lastKeyboardCloseTime < 500L) {
+                com.example.core.LogKeeper.writeLog("Sidebar", "Outside touch ignored during keyboard dismissal transition")
+                return true
+            }
+            com.example.core.LogKeeper.writeLog("Sidebar", "Outside touch detected, closing sidebar")
+            onClose()
+            return true
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP) {
+                if (isKeyboardActive()) {
+                    hideKeyboard()
+                    return true
+                }
+                if (SystemClock.uptimeMillis() - lastKeyboardCloseTime < 500L) {
+                    return true
+                }
+                onClose()
+                return true
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        isAttached = true
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        isAttached = false
+    }
+
+    fun isKeyboardActive(): Boolean {
+        if (isKeyboardOpen) return true
+        val focused = findFocus()
+        if (focused is EditText) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val insets = rootWindowInsets
+            if (insets != null && insets.isVisible(android.view.WindowInsets.Type.ime())) {
+                return true
+            }
+        }
+        val rect = Rect()
+        getWindowVisibleDisplayFrame(rect)
+        val screenHeight = resources.displayMetrics.heightPixels
+        val keypadHeight = screenHeight - rect.bottom
+        return keypadHeight > screenHeight * 0.15
+    }
+
+    fun hideKeyboard() {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        val focused = findFocus()
+        if (focused is EditText) {
+            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
+            focused.clearFocus()
+        }
+        clearFocus()
+        lastKeyboardCloseTime = SystemClock.uptimeMillis()
+        isKeyboardOpen = false
+        if ((layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0) {
+            layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            if (isAttached) {
+                try {
+                    windowManager.updateViewLayout(this@SidebarView, layoutParams)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    private fun setupKeyboardHandling() {
+        viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
+            if (newFocus is EditText) {
+                if ((layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) != 0) {
+                    layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                    if (isAttached) {
+                        try {
+                            windowManager.updateViewLayout(this, layoutParams)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            } else {
+                val currentFocus = findFocus()
+                if (currentFocus !is EditText) {
+                    if ((layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0) {
+                        layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        if (isAttached) {
+                            try {
+                                windowManager.updateViewLayout(this, layoutParams)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        globalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+            if (!isAttached) return@OnGlobalLayoutListener
+            val rect = Rect()
+            getWindowVisibleDisplayFrame(rect)
+            val screenHeight = resources.displayMetrics.heightPixels
+            val keypadHeight = screenHeight - rect.bottom
+            val keyboardCurrentlyVisible = keypadHeight > screenHeight * 0.15
+
+            if (keyboardCurrentlyVisible && !isKeyboardOpen) {
+                isKeyboardOpen = true
+                com.example.core.LogKeeper.writeLog("Sidebar", "Keyboard visible (height=$keypadHeight)")
+            } else if (!keyboardCurrentlyVisible && isKeyboardOpen) {
+                isKeyboardOpen = false
+                lastKeyboardCloseTime = SystemClock.uptimeMillis()
+                com.example.core.LogKeeper.writeLog("Sidebar", "Keyboard hidden")
+            }
+        }
+        viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
+    }
+
+    fun detach() {
+        if (isAttached) {
+            com.example.core.LogKeeper.writeLog("Sidebar", "Detached sidebar for containerId: $containerId")
+            animate().cancel()
+            globalLayoutListener?.let { listener ->
+                viewTreeObserver.removeOnGlobalLayoutListener(listener)
+                globalLayoutListener = null
+            }
+            pageChangeCallback?.let {
+                viewPager.unregisterOnPageChangeCallback(it)
+                pageChangeCallback = null
+            }
+            // Release and unselect all children
+            val rcv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+            rcv?.let {
+                for (i in 0 until it.childCount) {
+                    val child = it.getChildAt(i)
+                    val holder = it.getChildViewHolder(child) as? SidebarPageViewHolder
+                    holder?.release()
+                }
+                it.adapter = null
+                it.recycledViewPool.clear()
+            }
+            viewPager.adapter = null
+            container.removeAllViews()
+
+            AppWidgetHelper.stopListening()
+            pageFactory.destroy()
+
+            dots.clear()
+            dotsLayout.removeAllViews()
+            removeAllViews()
+
+            try {
+                windowManager.removeView(this)
+            } catch (e: Exception) {}
+            isAttached = false
+            viewScope.cancel()
+        }
+    }
+    
+    inner class SidebarPageViewHolder(private val frame: FrameLayout) : RecyclerView.ViewHolder(frame) {
+        var pageView: View? = null
+        private var currentConfig: SidebarPage? = null
+
+        fun release() {
+            (pageView as? SidebarPageControllable)?.onPageUnselected()
+            frame.removeAllViews()
+            pageView = null
+            currentConfig = null
+        }
+
+        fun bind(config: SidebarPage, loadImmediately: Boolean) {
+            val configChanged = (currentConfig?.id != config.id) || (currentConfig?.type != config.type)
+            if (configChanged) {
+                (pageView as? SidebarPageControllable)?.onPageUnselected()
+                pageView = null
+                frame.removeAllViews()
+            }
+            currentConfig = config
+            if (loadImmediately) {
+                ensureLoaded()
+            } else {
+                // If not needed immediately, keep uninflated / empty to save RAM and initialization time
+                if (pageView == null) {
+                    frame.removeAllViews()
+                }
+            }
+        }
+
+        fun ensureLoaded() {
+            val config = currentConfig ?: return
+            if (pageView != null && frame.childCount > 0) return
+
+            frame.removeAllViews()
+            val context = frame.context
+            
+            pageView = pageFactory.createPageView(
+                context = context,
+                config = config,
+                physicalHandleId = physicalHandleId,
+                containerId = containerId,
+                viewScope = viewScope,
+                onClose = { onClose() },
+                setDimmed = { dimmed -> setDimmed(dimmed) },
+                onHeightChanged = { newHeight ->
+                    handleChildHeightChange(bindingAdapterPosition, newHeight)
+                }
+            )
+            frame.addView(pageView)
+        }
+    }
+}

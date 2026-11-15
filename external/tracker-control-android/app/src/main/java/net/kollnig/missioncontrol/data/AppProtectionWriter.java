@@ -1,0 +1,237 @@
+/*
+ * TrackerControl is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package net.kollnig.missioncontrol.data;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.AsyncTask;
+
+import java.util.List;
+
+import eu.faircode.netguard.Rule;
+import eu.faircode.netguard.ServiceSinkhole;
+
+/**
+ * Writes the four stores behind the per-app protection state.
+ */
+public final class AppProtectionWriter {
+    private AppProtectionWriter() {
+    }
+
+    /**
+     * Apply a user-selected state. A manual selection always ends a temporary
+     * pause first; the selected state is the only state this write changes.
+     */
+    public static void applyManual(Context context, String packageName, int uid,
+            AppProtectionState.Change change) {
+        if (change == null)
+            return;
+        Context appContext = context.getApplicationContext();
+        InternetPermissionPolicy.recordManualDecision(appContext, packageName, uid,
+                change.internetBlocked);
+        PausedApps.cancel(appContext, packageName, uid);
+        apply(appContext, packageName, uid, change);
+    }
+
+    /**
+     * Apply several user-selected per-app changes as one preference update and
+     * at most one VPN reload. This keeps Firewall's global actions from queuing
+     * one service rebuild per installed app.
+     */
+    public static void applyManualBatch(Context context, List<PackageChange> changes,
+            boolean forceReload) {
+        if (changes == null || changes.isEmpty())
+            return;
+
+        Context appContext = context.getApplicationContext();
+        SharedPreferences apply = appContext.getSharedPreferences("apply", Context.MODE_PRIVATE);
+        SharedPreferences trackerProtect = appContext.getSharedPreferences("tracker_protect", Context.MODE_PRIVATE);
+        SharedPreferences minimalOnlyPrefs = appContext.getSharedPreferences("tracker_essential", Context.MODE_PRIVATE);
+        InternetBlocklist internetBlocklist = InternetBlocklist.getInstance(appContext);
+
+        SharedPreferences.Editor applyEditor = apply.edit();
+        SharedPreferences.Editor trackerEditor = trackerProtect.edit();
+        SharedPreferences.Editor minimalEditor = minimalOnlyPrefs.edit();
+        boolean reloadNeeded = forceReload;
+        boolean internetChanged = false;
+
+        for (PackageChange item : changes) {
+            if (item == null || item.packageName == null || item.change == null)
+                continue;
+
+            InternetPermissionPolicy.recordManualDecision(appContext, item.packageName,
+                    item.uid, item.change.internetBlocked);
+            if (PausedApps.isPaused(appContext, item.packageName))
+                PausedApps.cancel(appContext, item.packageName, item.uid);
+
+            AppProtectionState.Change change = item.change;
+            boolean applyBefore = apply.getBoolean(item.packageName, true);
+            boolean protectBefore = BlockingMode.isTrackerProtectionEnabled(
+                    appContext, trackerProtect, item.packageName);
+            boolean internetBefore = internetBlocklist.blockedInternet(item.uid);
+
+            applyEditor.putBoolean(item.packageName, change.apply);
+            if (change.apply)
+                BlockingMode.clearAutoExcludedApp(appContext, item.packageName);
+            if (change.trackerProtect != null)
+                trackerEditor.putBoolean(item.packageName, change.trackerProtect);
+            if (change.minimalOnly != null)
+                minimalEditor.putBoolean(item.packageName, change.minimalOnly);
+            if (change.internetBlocked != null) {
+                if (change.internetBlocked)
+                    internetBlocklist.block(item.uid);
+                else
+                    internetBlocklist.unblock(item.uid);
+                internetChanged |= change.internetBlocked != internetBefore;
+            }
+
+            reloadNeeded |= shouldReloadAfterChange(change.apply, applyBefore,
+                    change.trackerProtect, protectBefore,
+                    change.internetBlocked, internetBefore);
+        }
+
+        applyEditor.apply();
+        trackerEditor.apply();
+        minimalEditor.apply();
+        if (internetChanged)
+            internetBlocklist.saveSettings(appContext);
+        if (reloadNeeded)
+            reload(appContext);
+    }
+
+    /** One package's member of a batched manual protection update. */
+    public static final class PackageChange {
+        public final String packageName;
+        public final int uid;
+        public final AppProtectionState.Change change;
+
+        public PackageChange(String packageName, int uid, AppProtectionState.Change change) {
+            this.packageName = packageName;
+            this.uid = uid;
+            this.change = change;
+        }
+    }
+
+    /**
+     * Apply a manual state change and force a service reload. Use when the
+     * caller also changed remote-routing preferences, which are not part of
+     * AppProtectionState's four-store change plan.
+     */
+    public static void applyManualAndReload(Context context, String packageName, int uid,
+            AppProtectionState.Change change) {
+        if (change == null)
+            return;
+        Context appContext = context.getApplicationContext();
+        InternetPermissionPolicy.recordManualDecision(appContext, packageName, uid,
+                change.internetBlocked);
+        PausedApps.cancel(appContext, packageName, uid);
+        apply(appContext, packageName, uid, change, true);
+    }
+
+    /**
+     * Apply a scheduled raw apply value. This path deliberately never cancels
+     * a pause snapshot, because it is used while sweeping that snapshot.
+     */
+    public static void applyScheduled(Context context, String packageName, int uid,
+            boolean applyValue) {
+        Context appContext = context.getApplicationContext();
+        apply(appContext, packageName, uid, applyValue, null, null, null);
+    }
+
+    /** Apply one scheduled apply value to a UID's packages in one preference edit. */
+    static void applyScheduled(Context context, List<String> packageNames, boolean applyValue) {
+        Context appContext = context.getApplicationContext();
+        SharedPreferences apply = appContext.getSharedPreferences("apply", Context.MODE_PRIVATE);
+        boolean changed = false;
+        SharedPreferences.Editor editor = apply.edit();
+        for (String packageName : packageNames) {
+            changed |= apply.getBoolean(packageName, true) != applyValue;
+            editor.putBoolean(packageName, applyValue);
+        }
+        editor.apply();
+        if (changed)
+            reload(appContext);
+    }
+
+    /**
+     * Apply a scheduled complete state without cancelling pause snapshots.
+     */
+    public static void applyScheduled(Context context, String packageName, int uid,
+            AppProtectionState.Change change) {
+        if (change != null)
+            apply(context.getApplicationContext(), packageName, uid, change);
+    }
+
+    private static void apply(Context context, String packageName, int uid,
+            AppProtectionState.Change change) {
+        apply(context, packageName, uid, change, false);
+    }
+
+    private static void apply(Context context, String packageName, int uid,
+            AppProtectionState.Change change, boolean forceReload) {
+        apply(context, packageName, uid, change.apply, change.trackerProtect,
+                change.internetBlocked, change.minimalOnly, forceReload);
+    }
+
+    private static void apply(Context context, String packageName, int uid,
+            boolean applyValue, Boolean trackerProtectValue, Boolean internetBlocked,
+            Boolean minimalOnlyValue) {
+        apply(context, packageName, uid, applyValue, trackerProtectValue,
+                internetBlocked, minimalOnlyValue, false);
+    }
+
+    private static void apply(Context context, String packageName, int uid,
+            boolean applyValue, Boolean trackerProtectValue, Boolean internetBlocked,
+            Boolean minimalOnlyValue, boolean forceReload) {
+        SharedPreferences apply = context.getSharedPreferences("apply", Context.MODE_PRIVATE);
+        SharedPreferences trackerProtect = context.getSharedPreferences("tracker_protect", Context.MODE_PRIVATE);
+        SharedPreferences minimalOnlyPrefs = context.getSharedPreferences("tracker_essential", Context.MODE_PRIVATE);
+        InternetBlocklist internetBlocklist = InternetBlocklist.getInstance(context);
+
+        boolean applyBefore = apply.getBoolean(packageName, true);
+        boolean protectBefore = BlockingMode.isTrackerProtectionEnabled(context, trackerProtect, packageName);
+        boolean internetBefore = internetBlocklist.blockedInternet(uid);
+
+        apply.edit().putBoolean(packageName, applyValue).apply();
+        if (applyValue)
+            BlockingMode.clearAutoExcludedApp(context, packageName);
+
+        if (trackerProtectValue != null)
+            trackerProtect.edit().putBoolean(packageName, trackerProtectValue).apply();
+        if (minimalOnlyValue != null)
+            minimalOnlyPrefs.edit().putBoolean(packageName, minimalOnlyValue).apply();
+
+        internetBlocklist.apply(context, uid, internetBlocked);
+
+        // The service reads this per-package flag through the live preferences
+        // handle, so changing it alone needs no service reload.
+        if (!forceReload && !shouldReloadAfterChange(applyValue, applyBefore, trackerProtectValue,
+                protectBefore, internetBlocked, internetBefore))
+            return;
+
+        AsyncTask.execute(() -> {
+            Rule.clearCache(context);
+            ServiceSinkhole.reload("app protection changed", context, false);
+        });
+    }
+
+    private static void reload(Context context) {
+        AsyncTask.execute(() -> {
+            Rule.clearCache(context);
+            ServiceSinkhole.reload("app protection changed", context, false);
+        });
+    }
+
+    static boolean shouldReloadAfterChange(boolean applyValue, boolean applyBefore,
+            Boolean trackerProtectValue, boolean protectBefore, Boolean internetBlocked,
+            boolean internetBefore) {
+        return applyValue != applyBefore
+                || (trackerProtectValue != null && trackerProtectValue != protectBefore)
+                || (internetBlocked != null && internetBlocked != internetBefore);
+    }
+}

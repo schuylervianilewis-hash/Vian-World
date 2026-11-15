@@ -1,0 +1,59 @@
+name: Build Vian World Android
+
+on:
+  push:
+    branches:
+      - main
+      - integration/vian-world-launcher
+      - integration/firewall-sidebar-launcher
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test Android modules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools ndk;29.0.14206865 cmake;3.22.1
+      - name: Set up Gradle wrapper caching
+        uses: gradle/actions/setup-gradle@v4
+      - name: Install Firewall Rust toolchain
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --target aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          rustup default 1.95.0
+          cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Fetch locked Firewall Rust dependencies
+        run: cargo fetch --locked --manifest-path external/tracker-control-android/wgbridge-rs/Cargo.toml
+      - name: Grant wrapper permission
+        run: chmod +x ./gradlew
+      - name: Run launcher, Firewall and host unit tests
+        run: ./gradlew :launcher:testDebugUnitTest :firewall:testGithubDebugUnitTest :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Assemble Vian World debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload Vian World debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vian-world-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

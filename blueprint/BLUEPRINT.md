@@ -1,0 +1,554 @@
+# Vian OS App Migration Blueprint (Updated)
+
+## Completed Core Architecture
+- [x] **Phase 8: Floating Apps & Utilities (Part 1)**: `CalculatorFloatingWindow`, `CompassFloatingWindow`, `DictionaryFloatingWindow`, `MiniAppManager`, Grid adapters.
+- [x] **Phase 8.5: Orphaned Sidebar Pages Catch-up**: `MediaPlayerPageView`, `WidgetPageView`, `AppTrackerPageView`, `ResourcesTrackerPageView`.
+- [x] **Phase 9: The UI Spines**: Settings & Handle Customization (`SettingsActivity`, `SidebarSettingsScreen`, `HandlesListSettingsScreen`, `AddElementActivity`, `ActionPickerActivity`).
+- [x] **Phase 10: The Background System Hub (Plugins & Accessibility)**: `VianSideAccessibilityService` unified System Tools Hub with on-demand module instantiation (Cursor, AutoScroll, Screenshot, AppKiller), hardware controls, CallRecorder, and screen-aware NetSpeedManager with Android 13+ POST_NOTIFICATIONS support.
+- [x] **Phase 11: Sidebar On-Demand Optimization**: `ViewPager2` lazy-loading, robust page ID resolution, zero phantom duplicate pages.
+- [x] **Phase 11.5: Native Buffer & Heap Lifecycle Optimization**: Strict ML Kit on-demand lifecycle (`close()` on translation, OCR, and barcode analyzers) and complete heap reclaim on `SidebarView.detach()` (adapter nullification, ViewHolder unbinding, view pool recycling).
+- [x] **Phase 12: Unified Z-Window Manager & OS Popups (Part 1)**: Centralized `FloatingWindowManager` with automated Z-ordering, dormant folding, and magnetic grouping.
+- [x] **Phase 12.5: Multi-Process Isolation & IPC Architecture**: Service isolation (`:overlay` process for `HandleService` and `SidebarService` keeping idle background RAM at ~15-20MB), cross-process `OverlaySyncManager` IPC with broadcast synchronization, native status bar icon dimension query (44px on Xiaomi/Redmi) eliminating downsampling blur, standalone decoupled Force Stop Apps execution from widgets/gestures without requiring App Tracker page open, and overhauled Log Keeper with a clean Light Theme and separate Crash Log tab.
+- [x] **Phase 12.6: 3-Process Architecture & Gesture Container Isolation**: Split runtime into `:core` (resident touch/sensors daemon ~18MB), `:sidebar` (ephemeral on-demand overlay host stopping via `stopSelf()` on dismiss, reducing permanent idle RAM to ~30-32MB), and `:ui` (main Settings/Compose process ~70MB). Strict gesture container isolation (`${handleId}_${gesture}`) with default `swipe_left` gesture mapping to the primary Home Grid page deck, backed by `IconCacheManager` downsampled 48x48 WebP disk caching to eliminate main-thread Binder IPC.
+- [x] **Process 1 Restructure: Persistent `:core` Process Optimization**: Streamlined `:core` to contain strictly essential background components (`HandleService`, edge gesture detection, `NetSpeedManager` + continuous foreground notification with exact-dimension immutable `DynamicSpeedIconGenerator` snapshots, `DailyDataUsageHelper` via `NetworkStatsManager`, `CallStateReceiver` / `CallRecorderManager`, and `BootReceiver`). Implemented `onTrimMemory()` forwarding and deferred UI cache initializations away from `:core` startup.
+- [x] **Main Runtime Element/Action Foundation**: Lightweight, on-demand Element/Action contracts (`ElementActionContract`, `ElementDescriptor`, `ElementExecutionContext`, `ElementCategory`, `ElementActionFactory`) and lazy dispatcher (`ElementActionRegistry`) in Main process preserving `GestureTarget` distinction (`Container` vs `Action` vs `None`).
+- [x] **Main Runtime Edit Mode & Add Element Foundation**: Scoped `EditModeController` / `EditModeState` (`containerId` + `pageId`), `AddElementRequest` / `AddElementResult`, `ElementPlacement`, and `ElementPlacementManager` isolated SharedPreferences JSON persistence (`handle_${containerId}_page_${pageId}_elements`). Zero UI, zero eager Element instantiation.
+- [x] **Main Runtime Sidebar Page Runtime Foundation**: Established `SidebarPageRuntimeContract` and implemented full page runtime in `SidebarManager` (scoped page stack, stable page IDs, ordered pages, first/default page, current page selection, next/previous navigation, page switching preserving container identity, persistent selected page survival across close/reopen and process recreation under `handle_${containerId}_selected_page`, scoped element placements, and synchronized Edit Mode lifecycle). UI-free.
+- [x] **Main Runtime Sidebar Page Container Rendering Layer**: Connected `SidebarManager` and `SidebarPageRuntimeContract` to hardware-accelerated floating overlay UI (`SidebarView`, `SidebarPageRenderer`, `SidebarWindowCoordinator`, `SidebarWindow`). Audited and strictly aligned with reference architecture:
+  - **Authoritative Hierarchy Integration**: Created `SidebarWindow` (extending `FloatingWindow(TYPE_PAGE)`) and updated `SidebarWindowCoordinator` to delegate overlay registration, Z-ordering, display, and teardown directly to `FloatingWindowManager`.
+  - **Reference UI Structure**: 198dp calibrated width, edge-aware docking (`HandleEdge.RIGHT` -> `Gravity.END` with left-rounded corners; `HandleEdge.LEFT` -> `Gravity.START` with right-rounded corners), slide-in/slide-out animations, outside-touch auto-dismissal, hardware back-button interception, floating top bar (Edit Mode toggle, previous/next page navigation, page position indicator, and close affordance), and horizontal page tabs strip.
+  - **Scope Discipline & Minimal Page-Type Contract**: Stripped premature inline feature implementations (ad-hoc calculator arithmetic evaluator, mock compass dial, media key broadcaster, and daily data usage query) from `SidebarPageRenderer`. Retained clean page-type header badges (`HYBRID`, `APPS`, `WIDGETS`, `MEDIA`, `TOOLS`, `APP_TRACKER`, `CALCULATOR`, `COMPASS`) and the placed elements grid strictly scoped to `containerId` + `pageId`.
+  - **In-Sidebar Add Element Picker**: Uses `ElementActionRegistry.getAllDescriptors()` and `ElementPlacementManager.addElement()` without creating parallel element systems or eager element instances.
+  - **Single Source of Truth**: All page navigation, edit mode toggling, and element mutations route exclusively through `SidebarManager`. All files kept under 500 lines.
+- [x] **Main Runtime Common Element Runtime Foundation**:
+  - **Unified Contract (`CommonElementRuntimeContract`)**: Extends `ElementActionContract` with on-demand lifecycle (`onInitialize`, `onRelease`) and sidebar page element rendering (`renderSidebarElement(ElementRenderContext): View?`).
+  - **Supported Element Categories**: Unified across all 6 categories (`FULL_SCREEN_CONTENT`, `ANOTHER_APP_LINK`, `ANDROID_WIDGET`, `SCREEN_OVERLAY`, `TOOL_ACTION`, `SIDEBAR_PAGE_CONTENT`).
+  - **On-Demand Lazy Resolver (`ElementRuntimeResolver`)**: Resolves, initializes, and caches active element contracts strictly on demand when an element placement needs to be rendered or executed. Zero eager mass-instantiation on Sidebar open.
+  - **Enforced Execution Scope & Isolation**: Provides strongly-typed `ElementRenderContext` and `ElementExecutionContext` conveying `handleId`, `gesture`, `containerId`, `pageId`, and placement config. Element instances never determine their own container/page scope.
+  - **Renderer Integration**: `SidebarPageRenderer` resolves placed elements via `ElementRuntimeResolver`, delegates rendering to `renderSidebarElement` with canonical fallback tile rendering, routes clicks to `executePlacement`, and dispatches scoped removal to `ElementPlacementManager`.
+  - **Lifecycle Management**: Coordinated `releaseAll()` invoked on `SidebarManager.closeContainer()` and `SidebarManager.dismiss()`, properly cleaning up runtime resources. All files under 500 lines.
+- [x] **Phase 12.7: Final Main ↔ Heavy Process IPC Foundation**:
+  - **Strict Two-Process Architecture**: Main process (`com.example`) is the lightweight resident runtime and sole authoritative source of truth (Handles, Gestures, Containers, Pages, Element Placements, Edit Mode, FloatingWindowManager hierarchy/Z-order). Heavy process (`:heavy`) is on-demand and disposable for heavy content without maintaining a duplicate hierarchy.
+  - **Contract & Transaction Protocol (`IpcContracts.kt`, `IpcModels.kt`)**: Explicit Binder/AIDL-compatible transaction protocol using standard IBinder transactions, transaction codes, descriptors, and parcel contracts (`IHeavyHostContract`, `IMainCallbackContract`).
+  - **Command, Event & Snapshot Data Models**:
+    - Commands: `HeavyCommand` (`START_OPERATION`, `STOP_OPERATION`, `PAUSE_OPERATION`, `RESUME_OPERATION`, `UPDATE_CONFIG`, `PING`, `CUSTOM`).
+    - Events: `HeavyEvent` (`LIFECYCLE_CHANGED`, `STATE_UPDATED`, `OPERATION_FINISHED`, `ERROR_REPORTED`, `HEARTBEAT`, `CUSTOM`).
+    - Snapshots: `MainStateSnapshot` (minimal, immutable read-only context pushed on-demand).
+    - Actions: `MainCommandRequest` (`CLOSE_WINDOW`, `SHOW_TOAST`, `TRIGGER_ACTION`, etc.).
+    - Results: `IpcResult` with typed `IpcErrorCode` (`OK`, `HEAVY_UNAVAILABLE`, `TIMEOUT`, `MARSHAL_ERROR`, `REJECTED`, `DEAD_BINDER`, `UNKNOWN_ERROR`).
+    - Lightweight, zero-dependency serialization via `IpcJsonUtils` ensuring JVM unit test stability without Android JSON stubs.
+  - **Main Process Connection Manager (`HeavyProcessConnectionManager.kt`)**: Thread-safe connection lifecycle (`DISCONNECTED`, `CONNECTING`, `CONNECTED`, `DEAD`), `IBinder.DeathRecipient` monitoring with automatic state transition to `DEAD` without crashing Main, on-demand asynchronous binding, listener callbacks, and safe error fallbacks when Heavy is unavailable.
+  - **Heavy Process Host Controller (`HeavyProcessHost.kt`)**: Implements `IHeavyHostHandler`, stores read-only cached snapshot, dispatches commands to registered heavy modules, and reports events/action requests back to Main.
+  - **Host Service Integration (`HeavyFloatingHostService.kt`)**: Implemented `onBind` returning `HeavyProcessHost`'s `HeavyHostBinder` and wired command listeners to `HeavyFloatingHost`.
+  - **Bridge Integration (`FloatingMiniAppBridge.kt`)**: Routed window lifecycle commands through `HeavyProcessConnectionManager` with graceful fallback.
+  - **Comprehensive Unit Testing (`IpcFoundationTest.kt`)**: 10 unit tests covering command/event serialization, snapshot isolation, unavailable behavior, mock connection dispatch, death handling, and command registration.
+
+- [x] **Phase 12.8: Call Sensor → Heavy Wake Foundation**:
+  - **Strict Two-Process Alignment**: Eliminated legacy `:core` process by removing `android:process=":core"` from `CallStateReceiver` in `AndroidManifest.xml`. Call Sensor operates exclusively in Main (`com.example`), available continuously when screen is OFF/locked without depending on handle, gesture, or NetSpeed screen-on lifecycles.
+  - **Minimal Call IPC Contract (`CallIpcContract.kt`, `IpcModels.kt`)**: Added `CALL_STATE_CHANGED` and `REQUEST_CALL_RECORDER` commands to `HeavyCommandType`. Transmits minimal payloads (state integer, state name, transition identifier, timestamp) strictly preserving privacy with zero audio, contacts, or PII.
+  - **CallRecorderManager Sensor & Wake Dispatcher (`CallRecorderManager.kt`)**: Tracks transitions (`RINGING`, `CALL_STARTED`, `CALL_ENDED`), dispatches minimal wake commands across Binder to `:heavy`, and queues asynchronous delivery via `HeavyProcessConnectionManager`.
+  - **Heavy Process Extension Point (`HeavyCallHostExtension.kt`, `HeavyProcessHost.kt`)**: Implemented pluggable `HeavyCallHostExtension` in `:heavy` acknowledging call events and recorder requests safely without implementing audio recording, UI, or recording engines.
+  - **Resilience & Queueing (`HeavyProcessConnectionManager.kt`)**: Asynchronous process wake command queueing (capped at 20 commands) ensures commands are delivered when Heavy finishes connecting, and binder death is handled with zero Main crash or ANR risk.
+  - **Unit Testing Suite (`CallSensorIpcTest.kt`)**: Comprehensive test suite covering call contract mapping, state transition sequencing, Heavy extension routing, and unavailable/dead process resilience.
+
+### 12.9 — Heavy-Process Welcome Page (Permission / Setup Entry of Settings) (Completed)
+- [x] **Heavy-Process Welcome Foundation**:
+  - **Process Assignment**: `WelcomeActivity` and `MainActivity` reside strictly in `android:process=":heavy"` with `launchMode="singleTop"`. Main process remains purely the lightweight resident runtime with zero Compose UI dependencies.
+  - **Reference UI Preservation**: Reused the exact layout, text, test tags (`grant_overlay_button`, `net_speed_switch`, `start_core_button`, `stop_core_button`, `open_log_keeper_button`), and permission flows (overlay check and notification launcher).
+  - **Narrow IPC Boundary (`WelcomeIpcContract.kt`, `HeavyProcessHost.kt`)**: Added `HeavyCommandType.SHOW_WELCOME` with minimal payload (`reason`, `timestamp`). No internal managers or runtime hierarchies exposed to Heavy.
+  - **Launch Deduplication & Debounce (`HeavyWelcomeHostExtension.kt`)**: `DefaultHeavyWelcomeHostExtension` detects active foreground state (`WelcomeActivity.isWelcomeActive`) and suppresses rapid redundant launches via a configurable debounce window.
+  - **Main-Process Request Controller (`MainWelcomeController.kt`)**: Provides `requestWelcome(reason)` in Main via `HeavyProcessConnectionManager`, queuing or reporting gracefully if Heavy is offline or dead.
+  - **Process Death & Lifecycle Resilience**: Heavy process terminates on demand without lingering services. If killed, Main daemon (`HandleService`, handles, gestures, NetSpeed) continues running uninterrupted.
+  - **Test Coverage (`WelcomeIpcTest.kt`)**: Validated contract serialization, IPC routing, launch deduplication/debouncing, and process death resilience.
+
+### 12.10 — Capability Architecture & Heavy Module Foundation (Completed)
+- [x] **Capability Architecture & Heavy Module Foundation**:
+  - **Main Process Capability Layer (`CapabilityContract.kt`, `CapabilityManager.kt`, `CapabilityTypes.kt`)**: Lightweight, process-safe session tracking (`CapabilitySession`), on-demand lazy registration, reference-counted mount/use/unmount lifecycle, and auto-discard when all sessions release.
+  - **Remote Heavy Routing (`HeavyCapabilityRouter.kt`)**: Bridges Main capability requests across existing Binder IPC to `:heavy` (`START_OPERATION`, `CUSTOM`, `STOP_OPERATION`) without leaking heavy UI or engine dependencies into Main. Survives Heavy process death with typed `IpcErrorCode.DEAD_BINDER` mapping to `CapabilityErrors.PROCESS_DIED`.
+  - **Element Runtime Integration (`ElementCapabilityExtensions.kt`)**: Safe extension helpers (`mountCapability`, `unmountCapabilities`) enabling placed Elements to bind to capabilities without manual lifecycle management.
+  - **Heavy Module System (`HeavyModuleContract.kt`, `HeavyModuleTypes.kt`, `HeavyModuleManager.kt`)**: Process-local registry resident strictly in `:heavy`. Enforces lazy instantiation, concurrent reference-counted mounting, safe operation dispatch (`onUse`), and guaranteed resource disposal (`onDispose`) when active session count reaches 0.
+  - **IPC Command Translation (`HeavyProcessHost.kt`)**: Integrated `isModuleCommand` routing module commands directly to `HeavyModuleManager.handleIpcCommand()` with full JSON/payload marshalling.
+  - **Disposable Teardown Sync (`HeavyFloatingHostService.kt`)**: `checkDisposableTeardown()` queries active mini-apps and active heavy module sessions, calling `stopSelf()` when idle to prevent `:heavy` from lingering.
+  - **Test Suites (`CapabilityManagerTest.kt`, `HeavyModuleManagerTest.kt`)**: 20 comprehensive unit tests verifying registration, reference counting, unmount teardown, error mapping, and IPC execution.
+
+### 12.11 — Real Call Recorder Engine & Multi-Process Architecture (Completed)
+- [x] **Strict 2-Process Architecture**:
+  - **Main Process (`com.example`)**: Resident, lightweight Call Sensor (`CallRecorderManager.kt`, `CallStateReceiver.kt`). Holds 0 audio buffers, 0 MediaRecorder instances, 0 recording databases, and 0 recording UI. Maintains only authoritative call state, expected recording intent, and active session tokens. Handles IPC reconnect/recovery and duplicate callback deduplication.
+  - **Heavy Process (`:heavy`)**: Real recording engine (`HeavyCallRecorderEngine.kt`, `RealHeavyCallHostExtension.kt`). Hosts `MediaRecorder` lifecycle, audio configuration (`MPEG_4`/`THREE_GPP`), SAF and app-private storage resolution (`.Records/CALL_*.m4a`), fallback audio source capture (`VOICE_RECOGNITION` -> `MIC`), and dispatches async lifecycle events (`STATE_UPDATED`, `OPERATION_FINISHED`, `ERROR_REPORTED`) back to Main across Binder.
+  - **Authoritative Idempotent State Machine**: Deduplicates incoming Telephony callbacks and BroadcastReceivers. `IDLE -> OFFHOOK` requests exactly one session; duplicate `OFFHOOK` calls are ignored; `OFFHOOK -> IDLE` stops the session cleanly once.
+  - **Fault Tolerance & Recovery**: If `:heavy` crashes during an active call, Main catches the dead Binder, prevents infinite reconnect loops, initiates on-demand reconnection, and resynchronizes active session state upon reconnect.
+  - **Test Coverage (`CallSensorIpcTest.kt`, `HeavyCallRecorderEngineTest.kt`)**: Validates contract payload serialization, state transitions, duplicate callback filtering, heavy process death resilience, reconnect resynchronization, and engine lifecycle delegation.
+
+### 12.12 — Elements System & Structural Separation (Completed)
+- [x] **Strict Hierarchy Architecture**: `Handle → Gesture → Container → Page → Element`
+  - **SidebarView Minimal Structural Split**: Extracted page edit navigation routing to `SidebarEditNavigator.kt`, preserving `SidebarView` strictly as high-level Sidebar coordinator, keyboard/IME handler, and window layout orchestrator.
+  - **Authoritative Element Models (`SidebarItem.kt`)**: Decoupled sealed class `SidebarItem` and all action lists (`ALL_QUICK_TILES`, `ALL_SYSTEM_ACTIONS`, `ALL_SCREEN_CAPTURE_ACTIONS`, `ALL_VOLUME_ACTIONS`, `ALL_MEDIA_ACTIONS`, `ALL_SETTINGS_SHORTCUTS`, `ALL_DISPLAY_ACTIONS`, `ALL_UTILITIES_ACTIONS`, `ALL_FLOATING_WINDOWS`) from `SidebarAppsManager.kt` into dedicated model file.
+  - **Dedicated Element View Rendering (`ElementViewRenderer.kt`)**: Extracted tile layout binding, dynamic icon binding, launchable action close coordination, context menu popups ("App Info", "Remove", "Change Icon", "Reset Icon"), and modal popups (Folders with custom grids, Popup Widgets with `AppWidgetHostView`).
+  - **Action Registration & Dispatch (`ElementActionRegistry.kt`, `ElementActionDispatcher.kt`)**: Modular prefix resolution (`app:`, `system:`, `display:`, `volume:`, `quicktile:`, `media:`, `settings_shortcut:`, `folder:`, `widget:`, `link:`) and full system/accessibility action dispatching.
+  - **HybridGridPageView Optimization**: Delegated element view rendering, popup management, and context menus directly to `ElementViewRenderer`, eliminating ~700 lines of duplicated logic while preserving container isolation and page persistence.
+  - **Test Suite (`ElementSystemTest.kt`)**: Comprehensive unit tests covering element hierarchy, ID prefixing, action list coverage, registry prefix resolution, and edit navigation intent creation.
+
+### 12.13 — Modular Accessibility Architecture & Action Execution Engine (Completed)
+- [x] **Modular Accessibility Architecture**:
+  - **Modular Service Coordinator**: `VianSideAccessibilityService` coordinates and dispatches via `AccessibilityActionRegistry`, strictly avoiding monolithic `when(action)` branches.
+  - **On-Demand Lifecycle**: Registered modules (`AutoScrollActionModule`, `CursorActionModule`, `LongScreenshotActionModule`, `ScreenshotActionModule`, `GlobalNavigationActionModule`, etc.) load lazily when invoked and immediately unload on completion (or on toggle-off for continuous overlays like auto-scroll and cursor).
+  - **State Discrimination**: Strict typed hierarchy (`AccessibilityActionResult.Success`, `AccessibilityActionResult.Unavailable`, `AccessibilityActionResult.Failed`, `AccessibilityActionResult.ServiceUnavailable`). UI layers (`ElementActionDispatcher`, `AppsPageView`, `HybridGridPageView`) only open Android Accessibility Settings when the service itself is actually disabled or disconnected, never on module absence or execution failure.
+  - **Optional Heavy Scanner Boundary (`ScannerCapabilityContract.kt`)**: Decoupled ML/OCR/QR/barcode functionality (`qr_scan`, `barcode_scanner`, `redact_screenshot`) as optional downloadable capabilities with clean boundary interfaces. Main startup remains lightweight with zero heavy ML resource initialization.
+  - **Structured Diagnostic Logging**: Exact diagnostic format logging requested action ID, selected module/handler, module load, execution result, module unload, and failure reason.
+  - **Test Suite (`ModularAccessibilityActionTest.kt`)**: 8 comprehensive unit tests verifying service unavailable redirection, global navigation dispatch, screenshot execution, toggle lifecycle loading/unloading, scanner capability unavailable reporting without settings redirect, and diagnostic log verification.
+
+### 12.14 — Precision Tooling: Freehand Redaction, Multi-Shape Scanner & Cursor Click (Completed)
+- [x] **Freehand Brush-Based Screenshot Redaction** (`RedactScreenshotActivity`):
+  - Replaced legacy drag bounding boxes with a path-based freehand brush engine (`RedactStroke`, `RedactPoint`).
+  - Supports Blackout mode (solid black `#000000` with round cap/join) and Blur / Mosaic mode (high-quality localized pixelated mosaic rendering).
+  - Top bar features Undo, Clear All, and Save & Share; toolbar provides brush size presets (Small, Medium, Large) and mode toggles.
+- [x] **Interactive Multi-Shape Scanner Selection & Handles** (`SecureScreenScannerActivity`, `SecureCameraScannerActivity`, `ScannerSelectionHelper`):
+  - Replaced multi-point tap-to-start with an immediate single-drag initial region creation gesture.
+  - Interactive grab handles across all shapes: 4 corner handles + 4 edge handles for Rectangle & Square, 4 cardinal handles for Circle, and 4 independently movable vertex handles for Custom freeform polygon.
+  - Full region translation by dragging inside bounds, and single-drag redraw by dragging outside or tapping Reset.
+  - Post-selection action bar with Share, QR Code ("QR Code scanning coming soon"), and OCR ("OCR coming soon") with zero external recognition dependencies.
+- [x] **Cursor Precision Double-Tap Synthetic Click Injection** (`CursorManager`):
+  - Restored reliable synthetic click delivery by solving Android `InputDispatcher` hit-test overlay interception.
+  - Arms on second tap `ACTION_DOWN` and dispatches only upon physical `ACTION_UP` release.
+  - Temporarily sets `FLAG_NOT_TOUCHABLE`, hides trackpad view (`visibility = View.GONE`), and delays dispatch by 80ms for Binder IPC synchronization.
+  - Employs calibrated 50ms synthetic touch stroke with buffered touch restoration upon completion.
+
+---
+
+## Phase 13: Floating Window Mini-Apps (Ordered by Complexity & Difficulty)
+
+### 13.0 — Floating Windows Foundation & Heavy Process Boundary (Completed)
+- [x] **Hierarchy Window Manager & Multi-Process Boundary**:
+  - Main-process `FloatingWindowManager` remains strictly authoritative for hierarchy, Z-order, focus, layout parameters, touch interception, magnetic snapping, and folding.
+  - `HeavyFloatingHost` & `HeavyFloatingHostService` in `:heavy` establish on-demand, disposable host infrastructure for floating mini-app instances without Main having compile-time dependencies on individual mini-apps.
+  - `MiniAppContract`: Formalized `MiniAppRecord`, `MiniAppInstance`, `MiniAppLifecycleState`, and `MiniAppFactory` contracts.
+  - `DurableMiniAppStore`: Atomic JSON file persistence (`filesDir/floating_miniapps/`) preserving mini-app state across Heavy process death, Heavy process restart, and full app restarts.
+  - `FloatingMiniAppBridge`: Main-side coordinator bridging lifecycle events to `:heavy` via minimal IPC intents while maintaining all window hierarchy and Z-ordering in Main.
+
+- [x] **Privacy Curtain (Anti-Peep Mode)** (`PrivacyCurtainManager`): Full-screen darkening overlay with resizable transparent rectangular viewing box, 100% native touch pass-through for underlying apps, dark area swipe-to-reposition, long-press dismissal exit gate, opacity control, and on-demand toggle in Utilities.
+- [x] **Redact Screenshot Dual-Engine** (`RedactScreenshotActivity`): Simultaneous support for Freehand Brush and Bounding Box Blocks with Blackout and Blur styles, unified chronological undo/clear history stack, and combined bitmap rendering.
+- [x] **Scanner Tap-to-Join Custom Area System** (`SecureScreenScannerActivity`, `SecureCameraScannerActivity`, `ScannerSelectionHelper`): Blank-slate Custom polygon marking with discrete tap-to-tap vertex placement, interactive connection path, tap-to-join closing near origin or via action pill, post-join vertex grab handles, and multi-point arbitrary polygon bitmap cropping.
+- [x] **Screen Capture & Recording Settings** (`ScreenCapSettingsScreen`, `SettingsActivity`, `ScreenshotActionModule`): Integrated "Record" item into Settings home and dedicated `ScreenCapSettingsScreen`. Manages SAF custom save location with persistable URI grants and reset button, screenshot delay slider (0–10s), screen record microphone audio toggle (`record_audio`), video resolution quality picker (720p, 1080p, Original), and connected delayed execution / SAF storage pipeline in `ScreenshotActionModule`.
+- [x] **Link Element & Custom Tab Subsystem** (`CustomTabLauncher`, `LinkPickerActivity`, `ElementMetadataStore`, `SidebarItem.Link`): Full integration of verified HTTPS Link Elements with per-link Custom Tab browser/provider selection (dynamically resolving Chrome, Firefox, etc.), unified `CustomTabLauncher` execution across Sidebar views (`AppsPageView`, `HybridGridPageView`, `WidgetsGridPageView`), dedicated `LinkPickerActivity` management destination with FAB `+`, responsive grid, tap to open, long-press CRUD actions (Select, Open, Edit, Delete), and extensible non-invasive Account configuration.
+- [x] **Site Brand Favicon Engine & Direct Add-to-Grid** (`FaviconFetcher`, `ElementMetadataStore`, `LinkPickerActivity`, `SidebarAppsManager`): High-resolution asynchronous brand favicon downloader (`FaviconFetcher`) caching site icons (e.g. Duolingo owl, ChatGPT, Google) to compact WebP disk cache (`icons_webp_cache/`) with fallback to Material globe (`ic_language`). Grid tap action streamlined to immediately select/place links into sidebar grid, with custom browser launch retained in the options menu.
+- [x] **Continuous Fast-Add Subpage Architecture** (`ElementPlacementHelper`, `AddElementActivity`, `ActionPickerActivity`, `AppPickerActivity`, `LinkPickerActivity`, `HybridGridEditActivity`): Multi-add flow allowing rapid consecutive additions of apps, actions, and sites without kicking the user back to the edit grid on each selection. Subpages stay active with instant placement and visual toast confirmation, with immediate automatic synchronization on return.
+- [x] **Scanner Area Selection Standard Android Share** (`FileProvider`, `file_paths.xml`, `ScannerSelectionHelper`, `AndroidManifest.xml`): Declared `FileProvider` component and paths mapping cache directories, resolving `IllegalArgumentException` on cropped screenshot/camera selections and enabling clean sharing to any external target app.
+- [x] **E-Ink Paper Mode** (`EInkPaperFilterManager`, `DisplayHandler`, `ALL_UTILITIES_ACTIONS`): 100% Out-of-the-Box (Zero ADB required) eye-comfort screen overlay. Features calibrated Warm Sepia / Unbleached Paper Tint (`#54DCD4C0`) that completely extinguishes the harsh 6500K blue-light spike (450nm) and clamps glaring white points down to natural book-paper reflectance. Zero blur, zero grain, zero shaders for 100% razor-sharp typography and subpixel font readability. 100% native touch pass-through (`FLAG_NOT_TOUCHABLE`) with 0 ms added latency, persistent preference storage, and real-time active tile state indicator (`#E6C280`) in Sidebar.
+- [x] **Standalone Force Stop Apps Element & On-Demand Container Sync** (`AppTrackerHelper`, `AppTrackerSettingsActivity`, `AppTrackerOpenerActivity`, `HybridGridPageView`, `ElementViewRenderer`, `AppsPageView`): Decoupled the Force Stop Apps utility element into a completely standalone button independent of whether an App Tracker sidebar page is present. Implemented container-isolated whitelist storage (`handle_${containerId}_force_stop_whitelist`). Added long-press "Edit" context menu option specifically for Force Stop Apps across Hybrid Grid tiles, folder popups, and standard Apps lists. Opens a focused setup interface (`AppTrackerSettingsActivity` in `force_stop_only` mode) displaying "Running" whitelist configuration with system/user filtering and "Permissions" guidance with loop testing. Strictly enforces sequential manual loop presentation ("No clicking. Only loop. User will click.") without accessibility automated clicking, and performs on-demand whitelist synchronization strictly within the same container when an App Tracker page is configured.
+- [x] **Strict Container Isolation & First-Handle Invariant Architecture** (`HandleManager`, `PageManager`, `AppsPageView`, `SidebarEditActivity`, `ElementIdParser`, `ElementMetadataStore`): Hardened the two-process architecture (resident Main vs on-demand Heavy). Enforced strict container isolation across handles and gestures (`handle_${containerId}_*` and `sidebar_apps_${containerId}_*`), eliminating cross-container column/row and page deck bleed. Secured First-Handle Invariant (`handle_1` undeletable, permanent default sidebar gesture, and seamless container migration upon primary gesture reassignment while enabling multi-gesture coexistence). Validated on-demand `ElementIdParser` and `ElementActionRegistry` execution without resident runtime overhead in Main.
+- [x] **Per-Container Gesture Action Flow & Sidebar Page Management** (`HandleSettingsScreen`, `ContainerPageManagementScreen`, `HandleManager`, `PageManager`, `AddElementActivity`): Streamlined gesture configuration into exactly two primary choices ("Sidebar Page" vs "Element directly"). "Sidebar Page" automatically resolves `containerId = HandleManager.getContainerId(handleId, gesture)` and routes to dedicated `ContainerPageManagementScreen` allowing users to view, add (from all 11 supported `PageFactory` types), delete, rename, reorder, and select opening face (`handle_${containerId}_selected_page`). "Element directly" launches `AddElementActivity` and connects the selected action/element cleanly via `HandleManager.configureGesture`. Preserves first handle startup invariant with `default_hybrid` strictly on handle 1 primary gesture and isolated defaults on all others.
+- [ ] **Work Notes & Scratchpad** (`WorkNotesFloatingWindow`): Lightweight Room-backed markdown/scratchpad floating window with auto-save and responsive drag resize.
+- [ ] **Floating Web Browser** (`FloatingBrowserWindow`): Android `WebView` overlay with back/forward history navigation stack, URL search bar, desktop mode toggle, and multi-tab state.
+
+### 13.2 — Real-Time Sensors & Tactical Monitors (Tier 2 - Medium Difficulty)
+- [ ] **Network Radar** (`NetworkRadarFloatingWindow`):
+  - **Tactical Circular Radar**: Rotating $360^\circ$ sweep beam, concentric dBm distance rings, center device dot with nearby Wi-Fi & cellular tower blips.
+  - **Dropdown Selector**: Switch between Wi-Fi and Cellular (SIM) scanning.
+  - **Cross-Carrier Detection**: Scans and displays serving + neighboring telecom towers (AT&T, T-Mobile, Verizon, etc.) with MCC/MNC, PLMN, RSRP, and band identity via `TelephonyManager.getAllCellInfo()`.
+  - **Interactive Multi-Touch Canvas**: Pinch-to-zoom (adjust dBm sensitivity range) and drag-to-pan.
+  - **Retro Frequency Tuner Dial**: Vintage radio-style 2.4 GHz, 5 GHz, and 6 GHz spectrum dial.
+  - **Network Controls**: Wi-Fi toggle, Data shortcuts, and live ping/latency gauge.
+- [ ] **Floating Audio Recorder & Tools** (`AudioRecorderFloatingWindow`): Real-time waveform amplitude visualizer, recording pause/resume buffer, and local audio management.
+
+### 13.3 — System Control & File Traversal (Tier 3 - Medium-High Difficulty)
+- [ ] **Floating File Explorer** (`FileExplorerFloatingWindow`): Storage Access Framework (SAF) integration, internal/SD card navigation, fast file operations (copy, move, delete, rename, share), and MIME-type intent dispatching.
+- [ ] **Virtual Cursor & Precision Trackpad** (`CursorFloatingOverlay`): Floating trackpad overlay with virtual mouse pointer, sensitivity scaling, and accessibility gesture injection.
+
+### 13.4 — Document Engines & Developer Subsystems (Tier 4 - High Difficulty)
+- [ ] **eReader Subsystem (EPUB & PDF)** (`EpubReaderFloatingWindow`): EPUB archive parser, pagination layout canvas, reading progress state, night mode/theming, font scale, and bookmarks.
+- [ ] **Local Terminal & Termux Bridge** (`TerminalFloatingWindow`): Pseudo-terminal (PTY) process runner, ANSI color escape code parser, virtual keyboard bridge, and Termux Intent bridge.
+
+### 13.5 — Isolated Appywork Module (Tier 5 - High Architectural Isolation)
+- [ ] **Appywork Module** (`feature/appywork/`): Fully isolated and deprecatable vibe-coding execution engine with dedicated database, clean decoupled Intent triggers, and zero cross-module dependencies for clean excision once external AI Host is connected.
+
+---
+
+### 12.10 — Sidebar Page Identity, Opening Face & Container Isolation Corrections (Completed)
+- [x] **Page Type Identity & Resolution**:
+  - `PageTypes.resolvePageType`: Restricted to exact standard tokens (`HYBRID`, `HYBRID_GRID`, `home_grid`, `APPS`, `APPS_GRID`, `WIDGETS`, `WIDGETS_GRID`, `WIDGET`, `SINGLE_WIDGET`) and system timestamp prefixes (`apps_`, `widgets_grid_`, `widget_`, `hybrid_grid_`). Eradicated loose `.contains(...)` substring matching to prevent arbitrary IDs (`user_apps_notes`, `my_widgets_area`, `my_widget_view`) from misclassifying as built-in types.
+  - Legacy `tools` type mapped cleanly to `HYBRID_GRID` without deleting constants or factory branches.
+  - Display titles strictly resolved: "Apps Grid", "Widgets Grid", "Single Widget", and "Home Grid".
+- [x] **Configured Opening Face vs. Session Selection**:
+  - `PageManager.getOpeningFaceId`: Guarantees independent opening face per container, with fallback to clean handle / legacy `default_page_index`, defaulting to first page of container stack. Never falls back to session swiped pages.
+  - `SidebarManager.openContainer`: Reopening a container strictly restores its configured opening face. Live swiping updates only runtime session selection (`saveSelectedPageId`).
+- [x] **SidebarAppsManager Compound Page ID Extraction**:
+  - Eradicated `substringAfterLast("_")` truncation. Introduced `parseContainerAndPageId` resolving gestures and compound IDs (`apps_grid_123`, `default_apps`) preserving full canonical IDs and migrating legacy keys without data loss.
+- [x] **Hybrid & Widgets Grid Container Persistence Isolation**:
+  - Container-scoped preferences (`handle_${containerId}_hybrid_grid_$pageId`, `handle_${containerId}_widgets_grid_$pageId`) with alt key and legacy migration preserving the resident Home Grid.
+  - Wired `containerId` across `WidgetsGridEditActivity` and `HybridGridEditActivity` editors.
+
+### 12.11 — Notification Sidebar DiffUtil & Scroll-Stability Correction (Completed)
+- [x] **Notification DiffUtil Updates**: Replaced unconditional `notifyDataSetChanged()` with Android identity-aware `DiffUtil.calculateDiff` matching `StatusBarNotification.key` (with package/id/tag fallback) and comparing displayed notification content fields (`title`, `text`, `subText`, `bigText`, `postTime`). Prevents viewport jumps while preserving in-place card updates for rapidly updating notifications.
+- [x] **Height Dispatch Guard**: Stabilized `loadNotifications()` with `lastDispatchedHeightPx` check, suppressing redundant `onHeightChanged` callbacks when calculated target height is unchanged to eliminate unnecessary WindowManager relayouts during scroll.
+
+### 12.12 — Main → Heavy Sidebar Page-Runtime Split: Calculator Embedded-Surface Vertical Slice (Implemented — Awaiting Physical Retest)
+- [x] **Cross-Process Embedded Surface Host (`SurfaceControlViewHost` / `SurfaceView`)**: Implemented Calculator cross-process embedded surface hosting gated on API 30+ (`Build.VERSION_CODES.R`). Main's `HeavyPagePlaceholderView` hosts a local `SurfaceView` (`setZOrderMediaOverlay(true)` and `PixelFormat.TRANSLUCENT`). When attached, it supplies its `hostToken: IBinder` and dimensions to `:heavy` across Binder.
+- [x] **Typed Binder IPC (`createSurfacePackage` / `relayoutSurfaceHost` / `releaseSurfaceHost`)**: Extended `IHeavyHostContract`, `HeavyHostBinder`, `HeavyProcessHost`, and `HeavyProcessConnectionManager` with typed `Bundle` transactions transporting `SurfacePackage` (Parcelable) and `hostToken` (IBinder) directly without string serialization.
+- [x] **Elimination of Secondary WindowManager Overlay on API 30+**: On API 30+, Calculator no longer creates a second `TYPE_APPLICATION_OVERLAY` window, eliminating independent screen-coordinate positioning, global Rect drift, and navigation-bar overlap. Main's Sidebar overlay is the sole WindowManager window.
+- [x] **Main ↔ Heavy Height Synchronization & In-Place Relayout**: `CalculatorPageView` measures and reports desired content height across Binder (`page_height_changed`). Main updates `SidebarView` layout, and the `SurfaceView` resize triggers `relayoutSurfaceHost(width, height)` to update the embedded `SurfaceControlViewHost` viewport without recreating the view instance.
+- [x] **Isolated Legacy Fallback**: Preserved legacy overlay fallback for API 26-29 without bumping application `minSdk`.
+- [ ] **Physical On-Device Verification**: Calculator cross-process embedded-surface vertical slice implemented — awaiting physical verification on Android 15/API 35.
+
+### 12.13 — Main → Heavy Sidebar Page-Runtime Split: Step 1 (Home Grid Residency & Heavy-to-Main Action IPC) (Implemented — Awaiting Physical Verification)
+- [x] **Step 1A — Home Grid Residency Rule (`SidebarPageFactory.isResidentDefaultHybrid`)**:
+  - Restricts Main-process residency to exactly ONE page: `config.id == "default_hybrid"` belonging to Handle 1's primary gesture/container (`handle_1_swipe_left`, `sidebar`, `handle_1`, or `handleManager.getFirstHandlePrimaryContainerId()`).
+  - All secondary Home Grids, generated `hybrid_grid_*` instances, Home Grids on Handle 2+, and Home Grids on non-primary gestures now route to `HeavyPagePlaceholderView` without modifying Calculator or other page types.
+- [x] **Step 1B — Heavy → Main Action Callback IPC**:
+  - Extended `MainActionType` enum with `SET_DIMMED`.
+  - Added typed convenience helpers on `HeavyProcessHost` (`requestCloseSidebar`, `requestSetDimmed`, `requestTriggerAction`).
+  - Implemented Main execution in `HeavyProcessConnectionManager.dispatchMainAction` dispatching `CLOSE_WINDOW` (via `SidebarWindowCoordinator.closeSidebar()`), `SET_DIMMED` (via `SidebarWindowCoordinator.setSidebarDimmed()`), `TRIGGER_ACTION` (via `ElementActionDispatcher.handleSystemAction()`), and `OPEN_CONTAINER` (via `SidebarManager.openContainerById()`).
+- [ ] **Physical On-Device Verification**: Awaiting physical testing of Handle 1 resident Home Grid, secondary grid placeholder routing, and Heavy-to-Main action dispatching.
+
+### 12.14 — Main → Heavy Sidebar Split: Hybrid Grid (Implemented — Awaiting Physical Verification)
+- [x] **Heavy Hybrid Grid Instantiation (`HeavyPageHostManager`)**:
+  - Extended `HeavyPageHostManager` on both `createSurfacePackage` (API 30+ SurfaceControlViewHost) and `mountPage` (API 26-29 overlay fallback) to support `"hybrid_grid"`, `"default_hybrid"`, and `"tools"` page types.
+  - Instantiates real `HybridGridPageView` in `:heavy` with `pageId`, `containerId`, `hostScope`, and wires action callbacks:
+    - `onClose` -> `HeavyProcessHost.getInstance(context).requestCloseSidebar(containerId)`
+    - `onDimSidebar` -> `HeavyProcessHost.getInstance(context).requestSetDimmed(dimmed, containerId)`
+    - `onHeightChanged` -> `reportDesiredPageHeight(pageId, newH)`
+  - Applies theme background (`applyThemeBackground`) with configured color, transparency, and corner radii matching the Sidebar theme.
+- [x] **Home Grid Main-Residency & Zero-Page Container Invariant**:
+  - Strictly enforced ownership rule: ONLY the original Handle 1 -> Swipe Left container (`handle_1_swipe_left`, `sidebar`, `handle_1`) gets the special `default_hybrid` Home Grid with its default starter tiles.
+  - All other newly created Sidebar containers (secondary gestures on Handle 1, Handle 2+ containers) start with ZERO pages.
+  - Eliminated automatic generation/cloning of `default_hybrid_<containerId>`.
+- [x] **Add Page List & Terminology Alignment**:
+  - Addable grid page type strictly displays and resolves as "Hybrid Grid", creating normal `hybrid_grid_*` pages running in `:heavy`.
+  - "Home Grid" is reserved exclusively for the special resident page and never appears as an addable type.
+- [x] **Truly Empty Hybrid Grid**:
+  - Newly created Hybrid Grids start completely empty: zero starter tiles, zero dummy elements, zero empty-state text, rendering the clean themed background. Edit Mode remains the mechanism for populating it.
+  - Storage isolation strictly enforced under `"handle_${containerId}_hybrid_grid_$pageId"`.
+- [x] **Heavy Hybrid Grid Startup Geometry & Jerkiness Elimination**:
+  - Called `loadWidgets()` upon instantiation in `:heavy` before SVCH measurement so `:heavy` reports legitimate initial desired height across Binder.
+  - In Main `SidebarView.calculateTargetHeight`, reused legitimate cached height (`"handle_${containerId}_hybrid_grid_height_${page.id}"`) avoiding generic 280px fallbacks.
+  - In `HeavyPagePlaceholderView`, deferred `SurfaceView.alpha = 1f` unmasking until stable bounds layout completes when initial dimensions differ.
+- [x] **Horizontal Line Below Sidebar Top Bar Removal**:
+  - Removed duplicated `setStroke` from `HybridGridPageView.applyThemeBackground`, preserving Main's ownership of the Sidebar shell/header chrome and eliminating the horizontal border under the top bar.
+- [ ] **Physical On-Device Verification**: Awaiting physical testing of newly created Hybrid Grids on secondary gestures/handles running in `:heavy` via SurfaceControlViewHost.
+
+### 12.15 — Automatic Initial Placement for Newly Created Sidebar Handles (Completed)
+- [x] **Deterministic Non-Overlapping Placement Algorithm (`HandleManager.calculateInitialPosition`)**:
+  - Gated exclusively to new handle creation (`createHandle()`); existing, saved, or reloaded handles strictly retain persisted coordinates without continuous auto-layout.
+  - Same-edge collision avoidance: Inspects existing handles exclusively along the target edge (e.g. RIGHT vs LEFT). Opposite-edge handles do not alter positioning.
+  - Spacing & Bounds Clamping: Applies 16dp minimum inter-handle spacing and clamps positions within usable bounds (`0.05f` to `0.95f`).
+  - Hierarchical slot search:
+    1. Preferred placement directly after/below the lowest existing handle on the edge.
+    2. Inter-handle gap search if bottom bound is reached.
+    3. Above/before the highest handle if interior space is saturated.
+    4. Proportional largest-gap centering fallback for heavily crowded edges.
+- [x] **Unit & Regression Test Coverage (`HandleInitialPlacementTest`)**:
+  - Validated Handle 2 non-overlapping initial position below Handle 1 on the same edge.
+  - Validated Handle 3 creation preserves Handle 1 and Handle 2 positions untouched.
+  - Validated strict bounds enforcement (`0.05f`..`0.95f`) across sequentially added handles.
+  - Validated custom manual positions are preserved without recalculation.
+  - Validated independence of handles on opposing screen edges.
+  - Validated reload/restart does not trigger re-placement.
+
+### 12.16 — Main → Heavy Sidebar Split: Apps Grid + Widgets Grid + Single Widget (Completed)
+- [x] **Main-Side Delegation (`SidebarPageFactory`)**:
+  - Routed `"apps"`, `"apps_grid"`, `"widgets_grid"`, `"widgets"`, `"widget"`, and `"single_widget"` to `HeavyPagePlaceholderView(context, config, containerId)`.
+  - Main keeps exclusively the single resident Home Grid (`default_hybrid` on Handle 1 -> Swipe Left -> first/default container).
+  - Main owns the single Sidebar window/overlay, gesture tracking, container metadata, and navigation routing.
+- [x] **Heavy Host Execution (`HeavyPageHostManager`)**:
+  - API 30+ SurfaceControlViewHost (`createSurfacePackageApi30`) and API 26-29 overlay fallback (`mountPage`):
+    - Apps Grid: instantiates `AppsPageView` with container-isolated `SidebarAppsManager` (`sidebar_apps_${containerId}_$pageId`), action callbacks (`onCloseSidebar`, `onDimSidebar`, `onHeightChanged`), theme background (`applyThemeBackground`), and initial active-apps data binding without falling back to all installed apps.
+    - Widgets Grid: initializes `AppWidgetHelper.startListening(context)` in `:heavy`, instantiates `WidgetsGridPageView` with `pageId`, `containerId`, `onClose` IPC callback, `onHeightChanged`, and `applyThemeBackground`.
+    - Single Widget: initializes `AppWidgetHelper.startListening(context)` in `:heavy`, instantiates `WidgetPageView` with robust ID parsing (`removePrefix("widget:").removePrefix("widget_").removePrefix("single_widget_")`), `onHeightChanged`, and `applyThemeBackground`.
+  - Geometry & Sizing: Reused `getCurrentHeightPx()` for dynamic child measurement and Binder event reporting (`reportDesiredPageHeight`).
+- [x] **Theme Background & Styling Synchronization**:
+  - Added `applyThemeBackground(bgColor, isRight)` and `themeBackgroundDrawable` across `AppsPageView`, `WidgetsGridPageView`, and `WidgetPageView` ensuring identical visual appearance, corner radii, and transparency to the Main Sidebar shell.
+- [x] **Unit & Regression Test Coverage (`HeavyAppWidgetSplitTest`)**:
+  - Validated Apps Grid, Widgets Grid, and Single Widget routing to Heavy.
+  - Validated exact `default_hybrid` Home Grid remains resident in Main.
+  - Validated secondary/other grids remain in Heavy.
+  - Validated storage and container isolation across containers and pages.
+  - Validated Calculator residency remains unchanged.
+  - Validated Internet Speed Monitor is untouched.
+
+### 12.17 — Main → Heavy Sidebar Split: Compass (Completed)
+- [x] **Main-Side Delegation (`SidebarPageFactory`)**:
+  - Routed `"compass"` to `HeavyPagePlaceholderView(context, config, containerId) { onHeightChanged(it) }`.
+  - Main preserves exclusively the single resident Home Grid (`default_hybrid` on Handle 1 -> Swipe Left -> first/default container).
+  - Main owns the single Sidebar window/overlay, gesture tracking, container metadata, and navigation routing.
+- [x] **Heavy Host Execution (`HeavyPageHostManager`)**:
+  - API 30+ SurfaceControlViewHost (`createSurfacePackageApi30`) and API 26-29 overlay fallback (`mountPage`):
+    - Instantiates `CompassPageView` in `:heavy` with dynamic height reporting via Binder (`reportDesiredPageHeight`).
+    - Applies Sidebar theme background and corner radii (`applyThemeBackground`).
+  - Height & Geometry: Dynamic child measurement via `getCurrentHeightPx()`.
+- [x] **Sensor Registration & Lifecycle Management (`CompassPageView`)**:
+  - Sensors (`TYPE_ACCELEROMETER`, `TYPE_MAGNETIC_FIELD`) are registered only while Compass is active in Heavy (`startListening()`).
+  - Registered upon window attachment (`onAttachedToWindow()`) or page selection (`onPageSelected()`).
+  - Completely unregistered when detached (`onDetachedFromWindow()`), unselected (`onPageUnselected()`), or when the Heavy embedded host is released (`releaseSurfaceHost()`, `unmountPageInternal()`).
+  - Safe null handling for sensor manager and defensive programmatic fallback for test environments.
+- [x] **Unit & Regression Test Coverage (`HeavyCompassSplitTest`)**:
+  - Validated Compass routes to Heavy in Main.
+  - Validated exact `default_hybrid` Home Grid remains resident in Main.
+  - Validated Calculator, Apps Grid, Widgets Grid, and Single Widget remain in Heavy.
+  - Validated secondary grids remain in Heavy.
+  - Validated sensor lifecycle starts on attach/select and unregisters on detach/unselect/release.
+  - Validated theme background and height measurement.
+  - Validated Internet Speed Monitor is untouched.
+
+### 12.18 — Main → Heavy Sidebar Split: Scheduler (Completed)
+- [x] **Main-Side Delegation (`SidebarPageFactory`)**:
+  - Routed `"scheduler"` to `HeavyPagePlaceholderView(context, config, containerId) { onHeightChanged(it) }`.
+  - Main preserves exclusively the single resident Home Grid (`default_hybrid` on Handle 1 -> Swipe Left -> first/default container).
+  - Main owns the single Sidebar window/overlay, gesture tracking, container metadata, and navigation routing.
+- [x] **Heavy Host Execution (`HeavyPageHostManager`)**:
+  - API 30+ SurfaceControlViewHost (`createSurfacePackageApi30`) and API 26-29 overlay fallback (`mountPage`):
+    - Instantiates `SchedulerPageView` in `:heavy` with dynamic height reporting via Binder (`reportDesiredPageHeight`).
+    - Applies Sidebar theme background and corner radii (`applyThemeBackground`).
+  - Height & Geometry: Dynamic child measurement via `getCurrentHeightPx()`.
+- [x] **Persistence & Data Isolation (`SchedulerPageView`)**:
+  - Data stored in standard Room database (`litereader_db`) using `SchedulerTask` entity and `SchedulerTaskDao`.
+  - Heavy and Main processes safely share the SQLite database via Room with zero database duplication.
+  - Alarms, tasks, and stored reminders survive Sidebar closures and `:heavy` process teardown/kills.
+  - Observers and background Coroutine collectors cleanly unregistered when detached (`onDetachedFromWindow()`), unselected (`onPageUnselected()`), or when the host is released (`cleanup()`).
+- [x] **Unit & Regression Test Coverage (`HeavySchedulerSplitTest`)**:
+  - Validated Scheduler routes to Heavy in Main.
+  - Validated exact `default_hybrid` Home Grid remains resident in Main.
+  - Validated Calculator, Apps Grid, Widgets Grid, Single Widget, and Compass remain in Heavy.
+  - Validated secondary grids remain in Heavy.
+  - Validated Scheduler lifecycle, coroutine job cancellation, and safe cleanup.
+  - Validated theme background and height measurement.
+  - Validated SchedulerTask entity integrity for cross-process persistence.
+  - Validated Internet Speed Monitor is untouched.
+  - Validated Scheduler FAB click switches from list to editor and cancel restores list (`testFabClickShowsEditUiAndCancelingRestoresList`).
+- [x] **Scheduler FAB Touch Fix (`page_scheduler.xml`, `SchedulerPageView`)**:
+  - Configured `android:elevation="8dp"`, `android:translationZ="8dp"`, `android:clickable="true"`, and `android:focusable="true"` on `fab_add` to trigger `hasChildWithZ()` pre-ordering in ViewGroup touch dispatch.
+  - Enforced `fabAdd?.bringToFront()` on initialization and in `hideEditUi()` to place `fab_add` at top of child index order above `ll_list`.
+  - Re-verified test suite and assembleDebug cleanly.
+
+### 12.19 — Main → Heavy Sidebar Split: App Tracker & Media Player (Completed)
+- [x] **Main-Side Delegation (`SidebarPageFactory`)**:
+  - Routed `"app_tracker"` and `"media_player"` to `HeavyPagePlaceholderView(context, config, containerId) { onHeightChanged(it) }`.
+  - Main preserves exclusively the single resident Home Grid (`default_hybrid` on Handle 1 -> Swipe Left -> first/default container).
+  - Main owns the single Sidebar window/overlay, gesture tracking, container metadata, and navigation routing.
+- [x] **Heavy Host Execution (`HeavyPageHostManager`)**:
+  - API 30+ SurfaceControlViewHost (`createSurfacePackageApi30`) and API 26-29 overlay fallback (`mountPage`):
+    - Instantiates `AppTrackerPageView` and `MediaPlayerPageView` in `:heavy` with dynamic height reporting via Binder (`reportDesiredPageHeight`).
+    - Applies Sidebar theme background and corner radii (`applyThemeBackground`).
+    - Driven lifecycle (`onPageSelected()` / `onPageUnselected()`) upon host attachment and release.
+- [x] **App Tracker Physical Bug Fixes & Swipe Regression Resolution**:
+  - Eliminated initial bottom-navigation overlap: aligned `SidebarView.kt` initial fallback heights (`"app_tracker" -> 180`, `"media_player" -> 100`) and clamped `AppTrackerPageView` to 180dp-360dp.
+  - Fixed empty results on permission grant: added initial `loadData()` call in `AppTrackerPageView.init`, and added `onWindowFocusChanged` / `onWindowVisibilityChanged` to immediately refresh permission and reload data upon return from system Settings.
+  - Enhanced `AppTrackerHelper.getRecentApps()`: added `MOVE_TO_FOREGROUND` event checking, `queryAndAggregateUsageStats`, and 7-day query fallback when 24h events are empty.
+  - Restored horizontal swiping: removed `android:clickable="true"` and `android:focusable="true"` from `item_app_tracker_running_icon.xml` and `item_app_tracker_grid.xml`. Configured `tv_empty` as `match_parent` centered and hid `RecyclerView` when empty so unhandled touches pass through to host ViewPager2.
+- [x] **Media Player Physical Bug Fixes & Swipe Regression Resolution**:
+  - Implemented real layout measurement in `MediaPlayerPageView.getCurrentHeightPx()` (80dp-120dp), preventing 360dp placeholder ballooning.
+  - Initialized `updateState()` and `updateUI()` in `init` and `onAttachedToWindow()`, correctly displaying unclickable "Nothing playing" banner when inactive so touches fall through to host ViewPager2.
+- [x] **Unit & Regression Test Coverage (`HeavyAppTrackerSplitTest`, `HeavyMediaPlayerSplitTest`)**:
+  - Validated App Tracker and Media Player routing to Heavy in Main (7/7 tests passed each).
+  - Validated exact `default_hybrid` Home Grid remains resident in Main.
+  - Validated Calculator, Compass, Scheduler, Apps, and Widgets remain in Heavy.
+  - Validated secondary grids remain in Heavy.
+  - Validated theme background, dynamic height measurement, and idempotent cleanup.
+  - Validated Internet Speed Monitor is untouched.
+
+---
+
+## Phase 13: Floating Mini-App Framework Optimization — Resize Efficiency & Keyboard Position Stability (Completed)
+- [x] **Safe Display Bounds Lookup Caching (`FloatingMiniAppWindow.kt`)**:
+  - Eliminated repetitive WindowManager display inquiries (previously ~202 queries during a single drag session).
+  - Cached `safeDisplayBounds` at gesture start (`ACTION_DOWN`) for both sticker resize (`setupStickerResizeTouch`) and top-bar drag (`setupTopBarGestures`).
+  - Added 1-second TTL memoization to `getSafeDisplayBounds(context)` so high-frequency mid-gesture coordinate clamping never queries WindowManager repeatedly.
+- [x] **Surface Relayout Suppression & Post-RESIZE_END Settlement (`FloatingMiniAppWindow.kt`)**:
+  - Resolved root cause of 29 relayouts occurring after `RESIZE_END`: `WindowManager.updateViewLayout` during active resizing triggered asynchronous `SurfaceHolder.Callback.surfaceChanged` events which queued up on the main looper.
+  - Added `isResizing` state flag to suppress intermediate `surfaceChanged` callbacks during active resize and drop stale queued callbacks whose dimensions do not match authoritative `bounds`.
+  - Added ~60fps / 8px delta throttling to embedded SurfaceControl IPC relayout during active drag to maintain 120fps smooth window frame motion without Binder buffer congestion.
+  - Added single unconditional surface settlement upon `ACTION_UP` (`RESIZE_END`), guaranteeing 0 subsequent relayouts arrive after resize concludes.
+- [x] **Keyboard Position Stability & Reversible Elevation (`FloatingMiniAppWindow.kt`, `FloatingMiniAppBridge.kt`)**:
+  - Shift calculations anchored strictly against `normalFloatingBounds.y` (`baselineY`) rather than live `layoutParams.y`, eliminating recursive upward drift and offscreen pushing.
+  - `normalFloatingBounds` is strictly invariant to keyboard state; all keyboard elevation adjustments are recorded in temporary state (`imeShiftOffsetY` / `isImeShifted`).
+  - Restores exact original `normalFloatingBounds.y` resting coordinates upon keyboard dismissal.
+  - Reset IME shift offset smoothly on manual top-bar drag without visual jumping.
+  - `FloatingMiniAppBridge.sleepMiniApp` persists `w.normalFloatingBounds`, guaranteeing durable recovery records never capture temporary keyboard coordinates.
+  - `toggleMaximize()` captures `normalFloatingBounds` into `maximizeRestoreBounds`, preventing keyboard offsets from corrupting maximize/restore bounds.
+- [x] **Unit & Regression Test Coverage (`FloatingMiniAppFrameworkTest.kt`)**:
+  - Validated cached display bounds across rapid inquiries.
+  - Validated clean resize settlement with 0 continuing relayouts post `RESIZE_END`.
+  - Validated keyboard open applies temporary shift without overwriting `normalFloatingBounds`.
+  - Validated fold while keyboard is open persists unshifted `normalFloatingBounds`.
+  - Validated maximize while keyboard is open preserves unshifted restore bounds.
+  - All 27 tests in `FloatingMiniAppFrameworkTest` passing.
+- [x] **Test Notes IME Bridge Repair & Window Attachment Crash Fix (`FloatingMiniAppWindow.kt`, `TestNotesMiniApp.kt`)**:
+  - Eliminated `NullPointerException at FloatingMiniAppWindow$createImeBridgeEditText$1.setText` by removing constructor-unsafe `setText()` override and manual `stubWatchers` dispatch from anonymous `EditText` subclass.
+  - Attached native Android `TextWatcher` post-construction with echo loop protection (`isSyncingImeBridge`).
+  - Enforced real Android `Editable` in production runtime, isolating stub fallbacks to headless JVM mock environments (`super.getText() == null`).
+  - Enforced explicit `TextAuthority` tracking (distinguishing Snapshot, Heavy, and IME Bridge) and empty-note preservation across fold/sleep/wake cycles.
+  - Implemented real system window focus gate (`hasWindowFocus() == true`) before requesting soft input.
+  - Added precision diagnostic checkpoints without logging note content.
+  - Added regression test `testCreateImeBridgeEditTextAndContentViewNoCrash()`; all 33 tests in `FloatingMiniAppFrameworkTest` passing.
+- [x] **Log Keeper Floating Mini-apps Filter Pill (`FloatingMiniAppLogFilter.kt`, `LogKeeperActivity.kt`)**:
+  - Implemented pure unit-testable log filter `FloatingMiniAppLogFilter` matching dedicated tags (`FloatingMiniAppBridge`, `FloatingMiniAppWindow`, `FloatingMiniAppLauncherBubble`, `HeavyFloatingHost`, `HeavyFloatingHostService`, `TestNotesImeDebug`), contextual shared component tags (`miniapp_`, `test_notes`, `speed_monitor`, `ebook_reader`), and uncaught crash report blocks.
+  - Added Material 3 `FilterChip` labelled "Floating Mini-apps" with test tag `filter_floating_mini_apps` on Diagnostic and Crash Reports tabs.
+  - Preserved filter state across tab switching and log refreshes; hidden on Running tab.
+  - Integrated filtered export into "Copy Logs" and TopAppBar "Share Logs" actions.
+  - Added `FloatingMiniAppLogFilterTest` unit tests covering all matching, exclusion, multiline exception, and empty state cases.
+- [x] **Phase 13.4: Shared Floating Mini-App Framework Stabilization & Note Mini-App (Stages B–E)**:
+  - **Stage B — Shared Shell & 16dp Rounded Clipping (`FloatingMiniAppWindow.kt`)**:
+    - Enforced 16dp rounded corner clipping across all four corners using `ViewOutlineProvider` with `setRoundRect` and `clipToOutline = true` on `rootCardView` and `contentContainer`.
+    - Protected embedded `SurfaceView` using reflection-safe `setCornerRadius(cardCornerRadius)` on API 30+ with `outlineProvider` + `clipToOutline = true` fallback.
+    - Updated `applyCardCornerRadius` to dynamically remove clipping (0dp radius) upon safe maximize and restore 16dp radius upon restore, cleanly filling display bounds.
+    - Implemented 48dp bottom clearance padding in `NoteMiniAppInstance` content view and fallback editor, ensuring scrollable text and cursor are never obscured by the bottom-right 3-control sticker `[ ×  —  ↘ ]`.
+    - Maintained top-bar drag with touch-slop detection, double-tap maximize/restore, and 36dp launcher bubble.
+  - **Stage C — Single Input Route & Focus Stabilization (`FloatingMiniAppWindow.kt`, `TestNotesMiniApp.kt`)**:
+    - Maintained Main-owned IME bridge (`createImeBridgeEditText`) and Heavy-owned editor (`EmbeddedNoteEditText`) via narrow Binder IPC.
+    - Strictly removed `JvmStubEditable` fallback from production `getText()`, always exposing real Android `Editable` (`super.getText()`) for native IME and selection handling.
+    - Stabilized overlay window focus sequence: clears `FLAG_NOT_FOCUSABLE` and `FLAG_ALT_FOCUSABLE_IM`, requests bridge view focus, listens to legitimate WMS window focus transitions, and requests soft-input without artificial synthetic touch simulation.
+    - Bidirectional synchronization (`syncLiveTextToHeavy` and `applyLiveTextFromHost`) with `isSyncingImeBridge` and `isApplyingHostUpdate` flags preventing echo loops.
+  - **Stage D — Production Note Mini-App in Heavy (`TestNotesMiniApp.kt`, `FloatingMiniAppWindow.kt`, `HeavyFloatingHost.kt`)**:
+    - Renamed displayed title to "Note" and registered `"note"` alias alongside `"test_notes"`.
+    - Added compact "Edit" control button in top bar and toggleable in-window Edit popover card (`editPopoverView`).
+    - Implemented formatting options: Font Size (- / +), Font Style (Regular, Bold, Italic, Monospace), Word wrap toggle (ON/OFF), and Line spacing (1.0x, 1.2x, 1.5x).
+    - Implemented content-scoped Undo/Redo stack (`undoStack`, `redoStack`) and Clear action in `:heavy` Note runtime.
+    - Persisted formatting attributes durably in `DurableMiniAppStore` snapshots across Sleep (Fold) / Wake cycles; discarded cleanly on Close.
+  - **Stage E — Test Validation (`FloatingMiniAppFrameworkTest.kt`)**:
+    - Added unit tests for 16dp rounded clipping, Note formatting controls, undo/redo state stack, and snapshot serialization across sleep/wake.
+    - All 36 tests in `FloatingMiniAppFrameworkTest` and all tests in `FloatingMiniAppLogFilterTest` passing 100%. Compile succeeded.
+- [x] **Phase 13.5: Main-Process Isolated Keyboard Diagnostic (Test A)**:
+  - Added temporary isolated diagnostic mode directly inside `FloatingMiniAppWindow` using the existing WindowManager overlay attachment (no Dialog, no Activity, no second window).
+  - Toggled via dedicated top-bar `[Test A]` / `[Exit Diag]` pill button.
+  - Temporarily detaches and disables embedded `SurfaceView` / fallback view so it cannot intercept touches or obscure the test view.
+  - Visible Main-owned multiline `EditText` with native `InputConnection` target, disconnected from Heavy and IPC.
+  - Genuine WindowManager overlay focus sequence upon touch: records `ACTION_DOWN`/`ACTION_UP`, clears `FLAG_NOT_FOCUSABLE` and `FLAG_ALT_FOCUSABLE_IM` via `applyLayoutUpdate()`, waits for actual WMS `onWindowFocusChanged(true)`, verifies view attachment & token, logs `onCreateInputConnection()`, and invokes `showSoftInput()`.
+  - Updated IME insets listener to prevent premature restoration of `FLAG_NOT_FOCUSABLE` while awaiting keyboard animation.
+  - Zero-PII diagnostics logging touch events, focus transitions, window flags, connection nullability, and text length/selection.
+  - Unit test `testIsolatedMainProcessImeDiagnosticModeTestA()` added; 37/37 framework tests passing 100%.
+
+- [x] **Phase 13.6: Floating Mini-App Initial Rendering Delay & Transparent Flash Fix**:
+  - Diagnosed initial transparency / un-rendered hole on opening/waking floating mini-apps.
+  - Added zero-PII timing logs in `HeavyPageHostManager`, `TestNotesMiniApp`, and `FloatingMiniAppWindow` using `SystemClock.elapsedRealtime()`.
+  - Added neutral 16dp rounded content placeholder (`contentPlaceholderView`) in `FloatingMiniAppWindow` container to mask un-rendered surface frames cleanly.
+  - Primed `lastRelayoutWidth = w` and `lastRelayoutHeight = h` in `tryAttachSurfacePackage()` to eliminate redundant IPC relayout during initial frame rendering.
+  - Implemented `miniapp_frame_committed` signal via `registerFrameCommitCallback` on Q+ in `:heavy` to notify Main when the first frame is drawn; Main unmasks surface and dismisses placeholder with 400ms fallback.
+  - Unit test `testContentPlaceholderAndFrameRevealTiming()` added; all 38 framework tests passing 100%.
+
+- [x] **Phase 13.7: Heavy Note Editor Typing Fix (IME Insets Focus Race & IMM Binding)**:
+  - Repaired WindowInsets focus race in `FloatingMiniAppWindow.kt`: added `isNoteEditorImeActive`, `isImeVisibleInInsets`, and `isAwaitingImeVisibility` state tracking, preventing `setOnApplyWindowInsetsListener` from prematurely re-arming `FLAG_NOT_FOCUSABLE` before soft keyboard opens.
+  - Implemented `deactivateEmbeddedEditorIme()` to safely restore `FLAG_NOT_FOCUSABLE`, clear bridge focus, and hide IME when keyboard is dismissed by user, or when the window folds/hides (`onHide()`) or closes (`onDestroy()`).
+  - Repaired InputMethodManager target binding in `triggerImeFocusOnBridge()`: verified bridge view attachment and valid window token, invoked `imm.viewClicked(bridge)` and `imm.restartInput(bridge)` before `imm.showSoftInput()`, and added `windowInsetsController?.show(WindowInsets.Type.ime())` on API 30+.
+- [x] **Phase 13.8: Note Launch Routing Diagnostics & Heavy Editor Touch Delivery Tracing**:
+  - **Problem A — Note Launch Routing Diagnostics (`SidebarView.kt`, `SidebarEditNavigator.kt`, `AddElementActivity.kt`, `SidebarEditActivity.kt`, `HybridGridEditActivity.kt`, `ElementActionDispatcher.kt`, `MiniAppManager.kt`, `FloatingMiniAppBridge.kt`)**:
+    - Added minimal zero-PII logging tagged `MiniAppLaunchRouting` and `ROUTING_DIAG` across the full action and navigation pipeline.
+    - Captures exact session IDs, container IDs, page IDs, target edit activities, element picker clicks (distinguishing `"system:test_notes"`), activity result intents, and caller stack traces (`class.method:line`) on `MiniAppManager.toggleMiniApp`, `FloatingMiniAppBridge.openMiniApp`, and `FloatingMiniAppBridge.toggleMiniApp`.
+    - Added `MiniAppLaunchRouting` to `FloatingMiniAppLogFilter` so routing diagnostics appear under the "Floating Mini-apps" filter chip in Log Keeper.
+  - **Problem B — Touch Delivery Path Tracing & Single IME Authority (`FloatingMiniAppWindow.kt`, `HeavyPageHostManager.kt`, `TestNotesMiniApp.kt`)**:
+    - Established end-to-end 6-boundary zero-PII touch logging:
+      * Boundary 1: `TOUCH_BOUNDARY_1_MAIN_OVERLAY` on `FloatingMiniAppWindow.rootCardView.dispatchTouchEvent`.
+      * Boundary 2: `TOUCH_BOUNDARY_2_MAIN_SURFACE_VIEW_DISPATCH` & `TOUCH_BOUNDARY_2_MAIN_SURFACE_VIEW_TOUCH` on `SurfaceView`.
+      * Boundary 3: Added `"note"` pageType support and logged `TOUCH_BOUNDARY_3_HEAVY_HOST_LIFECYCLE` on `HeavyPageHostManager.host.setView`.
+      * Boundary 4: `TOUCH_BOUNDARY_4_HEAVY_ROOT_DISPATCH` & `TOUCH_BOUNDARY_4_HEAVY_ROOT_TOUCH` on root layout in `TestNotesMiniApp`.
+      * Boundary 5: `TOUCH_BOUNDARY_5_HEAVY_EDITOR_DISPATCH` on `EmbeddedNoteEditText.dispatchTouchEvent`.
+      * Boundary 6: `TOUCH_BOUNDARY_6_HEAVY_EDITOR_TOUCH` on `EmbeddedNoteEditText.onTouchEvent` for both `ACTION_DOWN` and `ACTION_UP`.
+    - Focus Priming on `ACTION_DOWN`: Triggered `onEditorFocusedOrTouched()` on `ACTION_DOWN` so Main clears `FLAG_NOT_FOCUSABLE` and arms focus in advance of the `ACTION_UP` lift event.
+    - Single IME Authority: Removed competing `imm.showSoftInput(this)` and `windowInsetsController?.show` in `:heavy` within windowless `SurfaceControlViewHost`. Main alone owns window focus and soft keyboard activation.
+    - Added unit tests `testTouchDeliveryBoundariesAndActionDownPriming()` and `testRoutingDiagnosticsLoggingAndFilterTag()` in `FloatingMiniAppFrameworkTest.kt`; all 42 framework tests passing 100%. Compile succeeded.
+
+- [x] **Phase 14.1: Controlled Heavy-Native IME Experiment (`FloatingMiniAppWindow.kt`, `TestNotesMiniApp.kt`)**:
+  - Implemented reversible `EXPERIMENT_HEAVY_NATIVE_IME` toggle to test whether Heavy inside `SurfaceControlViewHost` could directly receive native `InputConnection` when Main acts strictly as the focus carrier.
+  - Demonstrated that Android's `WindowlessWindowManager` does not grant top-level window tokens for IME handoff across process boundaries, establishing that Main must host the authoritative `InputConnection`.
+
+- [x] **Phase 14.2: Complete Note Mini-App Rebuild — Main-Owned Native Editor Architecture (`FloatingMiniAppWindow.kt`, `TestNotesMiniApp.kt`)**:
+  - **Single Authoritative Editor**: Replaced cross-process `SurfaceControlViewHost` input forwarding and `alpha = 0.01f` bridge hack with a single, visible, authoritative native multiline `EditText` hosted directly in Main's `contentContainer` for `"note"` and `"test_notes"`.
+  - **Native IME & Gboard Integration**: Android `InputMethodManager` and Gboard bind directly to the visible Note editor with a valid top-level window token (`WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`). Full support for typing, word suggestions, swipe typing, cursor positioning, and selection handles with zero IPC latency.
+  - **Window Focus & Flag Management**: Touch `ACTION_DOWN` immediately clears `FLAG_NOT_FOCUSABLE` and `FLAG_ALT_FOCUSABLE_IM`, updates window layout, and requests soft input. Dismissal or fold/sleep safely restores `FLAG_NOT_FOCUSABLE`.
+  - **Shared Floating Shell Integrity**: Preserved 16dp rounded card clipping, top-bar drag with touch-slop detection, double-tap maximize/restore, persistent normal bounds, 36dp launcher bubble, and bottom-right sticker controls `[ ×  —  ↘ ]`. Single "Edit" button in top bar; obsolete "Test A" button removed.
+  - **Editor Layout & Clearance**: Single continuous multiline editable area filling the viewport with `48dp` bottom clearance padding to guarantee content and cursor are never obscured by `[ ×  —  ↘ ]`.
+  - **Formatting & Actions**: In-window formatting popover controls Font Size (- / +), Font Style (Regular, Bold, Italic, Monospace), Word Wrap toggle (ON/OFF), and Line Spacing (1.0x, 1.2x, 1.5x) directly on the editor, with Note-scoped Undo / Redo and Clear.
+  - **State Persistence & Lifecycle**: Text and formatting attributes are durably saved into `DurableMiniAppStore` on Sleep (Fold) and restored on Wake. Close with discard permanently deletes snapshot content.
+  - **Non-Note Mini-App Preservation**: `SurfaceView` and `SurfaceControlViewHost` continue to serve other embedded mini-apps (Reader, Speed Monitor, future PWAs) as designed.
+  - **Testing**: All 43 tests in `FloatingMiniAppFrameworkTest` passing 100%. Compile succeeded.
+
+- [x] **Phase 14.3: Main-Only Multi-Instance Note Mini-App Architecture (`ElementPlacementHelper.kt`, `ElementIdParser.kt`, `ElementActionDispatcher.kt`, `MiniAppManager.kt`, `FloatingMiniAppBridge.kt`, `FloatingMiniAppWindow.kt`)**:
+  - **Zero Heavy Dependency**: Note mini-app never acquires, starts, communicates with, or depends on `:heavy`. All IPC command sending (`sync_live_text`, `note_format`, `note_undo`, `START_OPERATION`, `PAUSE_OPERATION`, `STOP_OPERATION`), Heavy consumer acquisition (`acquireConsumer("miniapp_$instanceId")`), and `SurfaceView` / `SurfaceControlViewHost` dependencies are completely bypassed for `"note"` and `"test_notes"`. Result: 0 MB memory in `:heavy`, 0 IPC latency, 0 cross-process crash risk.
+  - **Multi-Instance Support Driven by Placement Identity**:
+    - Each placed Note element receives a stable unique identity: `system:test_notes:note_${timestamp}_${uuid}` generated at placement time via `ElementPlacementHelper.assignInstanceIfNote`.
+    - `ElementIdParser.parseSystemAction` parses `baseAction` (`test_notes`) while preserving full action ID (`test_notes:note_...`) on `SidebarItem.SystemAction`.
+    - `ElementActionDispatcher` and `MiniAppManager` route the placement's `instanceId` directly to `FloatingMiniAppBridge.toggleMiniApp(pageType, instanceId)`.
+    - Different Note elements open separate independent floating Note windows simultaneously.
+    - Tapping an existing Note element brings its window forward or wakes its folded bubble without creating duplicate instances.
+    - Each Note instance owns independent text, formatting (Font size, style, word wrap, line spacing), window bounds, folded launcher bubble, undo/redo stack, and snapshot in `DurableMiniAppStore`.
+    - Closing one Note instance deletes only its own snapshot, leaving all other open or sleeping Note windows intact.
+    - Legacy Note preservation: Clicking or restoring legacy `system:test_notes` without an instance ID seamlessly routes to `miniapp_test_notes` without data loss or crash.
+  - **Direct Native Input in Main**: Native multiline `EditText` hosted in `contentContainer` with direct Android IME and Gboard bindings under `TYPE_APPLICATION_OVERLAY`.
+  - **Shared Floating Shell Integrity**: Preserves `FloatingWindowManager`, `FloatingMiniAppWindow`, `FloatingMiniAppBridge`, `FloatingMiniAppLauncherBubble`, top-bar drag, maximize/restore, bottom-right sticker controls `[ ×  —  ↘ ]`, and `DurableMiniAppStore`.
+- [x] **Phase 14.4: Note Persistence Reliability & Undo/Redo Restoration (`NotePersistenceCoordinator.kt`, `FloatingMiniAppWindow.kt`, `FloatingMiniAppBridge.kt`)**:
+  - **Continuous Debounced Persistence**:
+    - Implemented `NotePersistenceCoordinator` encapsulating continuous saving for typing edits and formatting updates through `DurableMiniAppStore`.
+    - Safe 400ms debounce (`scheduleDebouncedSave(400L)`) eliminates disk I/O thrashing during fast typing.
+    - Single-threaded background executor (`NotePersistenceWorker`) offloads snapshot encoding and disk I/O off the main UI thread.
+    - Synchronous flush (`flushPendingSave()`) executed immediately before fold (`sleepMiniApp`), close (`closeMiniApp`), window hide (`onHide`), and window teardown (`onDestroy`), guaranteeing zero lost keystrokes.
+    - Monotonic sequence numbers (`saveSequence` vs `latestCommittedSequence`) prevent delayed background write tasks from overwriting newer flushes.
+  - **Undo / Redo History Persistence**:
+    - Bounded history limit (max 50 states) serialized cleanly into `undo_history` and `redo_history` as JSON arrays inside the durable snapshot payload.
+    - Full restoration of undo/redo stacks when reopening or waking Note from sleep.
+    - Strict editing behavior: editing after undo clears redo history; clear is undoable (pushes pre-clear text to undo stack); programmatic state restoration (`isRestoringState` flag) does not generate duplicate undo entries.
+    - Multiline text, double quotes, formatting characters, and emojis safely preserved via `JSONArray` escaping.
+    - Graceful fallback: legacy snapshots without history keys load with empty undo/redo stacks with zero migration crashes.
+- [x] **Phase 14.5: Serialize Note Persistence and Safe Lifecycle Flush (`NotePersistenceCoordinator.kt`, `FloatingMiniAppBridge.kt`, `DurableMiniAppStore.kt`)**:
+  - **Per-Instance Commit Serialization**:
+    - Serialized commit transactions per Note instance via `instanceCommitLock = getInstanceLock(instanceId)` using a `ConcurrentHashMap<String, Any>`.
+    - Protects the complete commit pipeline (stale check, snapshot loading, payload merge, and file writing) as one unified atomic transaction.
+    - Prevents interleaving between asynchronous debounced saves and synchronous lifecycle flushes without introducing a global persistence bottleneck between independent Note instances.
+  - **Safe UI Thread Lifecycle Flushing**:
+    - Eliminated main-thread disk I/O during `flushPendingSave()`.
+    - When called from the Android main thread, offloads disk writes to `backgroundExecutor` and safely awaits completion using a bounded `Future.get(timeoutMs, TimeUnit.MILLISECONDS)` with a 2000ms safety timeout to prevent deadlocks.
+    - Preserves durability guarantee: fold (`sleepMiniApp`) and non-deleted close (`closeMiniApp`) await background commit before concluding the lifecycle transition.
+    - Explicit failure handling: returns `false` on save failure or timeout; aborts fold transaction if durable write fails.
+  - **Clear Interaction Optimization**:
+    - Removed redundant synchronous flush from `prepareClear()`. Clear pushes pre-clear state to undo stack, empties latest text, and schedules debounced save through the normal async persistence path.
+  - **Testing**: 59/59 tests in `FloatingMiniAppFrameworkTest` passing 100%. `compile_applet` succeeded cleanly.
+- [x] **Phase 14.6: Authoritative, Non-Blocking Note Lifecycle Flush & Teardown Idempotency (`NotePersistenceCoordinator.kt`, `FloatingMiniAppWindow.kt`, `FloatingMiniAppBridge.kt`, `DurableMiniAppStore.kt`)**:
+  - **Authoritative Single-Coordinator Persistence**:
+    - Removed duplicate persistence paths: deleted secondary `durableStore.saveSnapshot()` in `FloatingMiniAppBridge.sleepMiniApp` and skipped redundant `durableStore.updatePayload()` in `FloatingMiniAppWindow.onDestroy()` for Main-only apps.
+    - Eliminated duplicate synchronous `flushPendingSave()` from `FloatingMiniAppWindow.onHide()` and `onDestroy()`. Replaced with idempotent `if (notePersistence.hasPendingEdits()) scheduleDebouncedSave(0L)`. Guarantees zero main-thread disk I/O during window teardown.
+    - `NotePersistenceCoordinator` is the sole authority for Note content, formatting, history, bounds, and lifecycle state (`MiniAppState.ACTIVE`, `SLEEPING`, `CLOSED`).
+    - Merged target lifecycle state into the atomic commit transaction so snapshots are persisted consistently in one atomic disk operation.
+  - **Non-Blocking Asynchronous UI Lifecycle Flush**:
+    - Added `flushPendingSaveAsync(timeoutMs, targetState, onComplete: (Boolean) -> Unit)` to `NotePersistenceCoordinator` and `FloatingMiniAppWindow`.
+    - Lifecycle transitions (`sleepMiniApp`, `closeMiniApp`) no longer block the Android UI/main thread. Dispatches disk I/O on background thread pool and invokes completion callback on `Looper.getMainLooper()`.
+    - Window teardown and launcher bubble display happen strictly after confirmed successful write.
+    - Failed or timed-out flushes abort the fold/close transaction, keeping the active Note window visible and recoverable with zero data loss.
+  - **Operation Generation Authorization & Race-Safety**:
+    - Implemented operation generation (`currentOperationGeneration`, `activeOperationGeneration`) tracking.
+    - Timed-out or aborted flushes invalidate `activeOperationGeneration`, preventing late background workers from committing target states (`SLEEPING` or `CLOSED`).
+    - Snapshot content (text and formatting) is preserved safely without corrupting lifecycle state.
+    - Backed timeouts by daemon `ScheduledExecutorService` (`timeoutScheduler`) for deterministic timeout triggers across Android devices and test environments.
+  - **Multi-Instance Thread Pool Isolation**:
+    - Replaced single-thread executor with `Executors.newCachedThreadPool` using daemon worker threads.
+    - Independent Note instances never head-of-line block each other's persistence or lifecycle flushes.
+    - Strict per-instance serialization preserved via `getInstanceLock(instanceId)`.
+  - **Testing**: 71/71 tests in `FloatingMiniAppFrameworkTest` passing 100% with genuine asynchronous multi-threaded verification. `compile_applet` succeeded cleanly.
+
+### Phase 14.7: Sidebar Three Combined Updates (COMPLETED)
+- **1. Note Floating-Window Keyboard Dismissal Stabilization**:
+  - Prevented premature editor deactivation caused by transient layout passes or insets updates during initial keyboard display.
+  - Implemented `scheduleDebouncedImeDismissCheck(source: String)` with `IME_DISMISS_DEBOUNCE_MS = 250L`.
+  - Added session tracking with `imeSessionToken: Long` to invalidate stale dismiss callbacks across new editor activations.
+  - Double verification of insets (`ViewCompat.getRootWindowInsets`) and display frame visible geometry (`getWindowVisibleDisplayFrame`) before confirming keyboard dismissal.
+  - Protected window resizing (`isResizing`) and window dragging (`isDraggingWindow`) from falsely terminating IME sessions.
+- **2. Android Settings Shortcuts Catalogue Expansion**:
+  - Expanded `ALL_SETTINGS_SHORTCUTS` in `SidebarItem.kt` from 11 items to 39 items covering all primary Android Settings categories: Wi-Fi, Bluetooth, Mobile Network, Data Usage, Hotspot, Airplane Mode, VPN, NFC, Cast, Display, Night Light, Wallpaper, Sound, DND, Notifications, All Apps, Default Apps, Permission Manager, Battery, Battery Saver, Storage, Security, Privacy, Biometrics, Accounts, Languages, Keyboard/Input, Backup, Accessibility, Captions, Developer Options, Device Info, and System Update.
+  - Handled all actions in `ElementActionDispatcher.kt` with explicit fallback to `Settings.ACTION_SETTINGS` in a `catch` block for OEM resilience.
+  - Added a search bar with real-time text matching and synonym keywords in `ActionPickerActivity.kt`.
+- **3. Internet Speed Monitor Daily Total Manual Correction**:
+  - Enhanced `DailyDataUsageHelper.kt` with `DailyCorrectionInfo`, offset accumulation (`rawBytes + offset`), and `convertToBytes` supporting B, KB, MB, and GB.
+  - Added persistent daily adjustment state with automatic midnight expiration (`yyyy-MM-dd`).
+  - Added "Overall Daily Data Total" control in `NetSpeedSettingsScreen.kt` with Material 3 adjustment dialog, unit selector, validation, and reset button.
+  - `HandleService.kt` notification displays corrected daily totals automatically.
+- **Testing**: 78/78 tests in `FloatingMiniAppFrameworkTest` passing 100%.
+
+---
+
+## Phase 14: PWA Engine & External AI App Integration (Tier 5 - Highest Complexity)
+- [ ] **14.1 Local PWA Runner Core**: Embedded lightweight local HTTP/asset server (`PwaServer`), `PwaWindowManager`, `PwaDatabase`, and ZIP manifest importer (`PwaImportActivity`).
+- [ ] **14.2 Dual-Mode Windowing**: Floating overlay for lightweight PWAs vs. Fullscreen `PwaActivity` for complex web applications.
+- [ ] **14.3 Remote AI Host App IPC**: `RemotePwaRepository` / `ContentResolver` querying `content://<ai_app_authority>/pwas`, asset streaming via `openFile()`, and state sync via `SidebarBridge.saveData()`.
+- [ ] **14.4 Headless Local AI Inference Client**: AIDL streaming client for background token inference and dynamic assistant tools.
+
+---
+
+## Phase 15: Polish, Launcher Prep & Finalization
+- [ ] Implement Advanced Floating Grouping & Snapping.
+- [ ] JSON Backup & Restore for all handles, pages, and floating window states.
+- [ ] Eradicate legacy `reference/` directory and prepare architecture hooks for external launcher merge.

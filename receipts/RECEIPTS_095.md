@@ -1,0 +1,495 @@
+# Receipts Ledger - Part 095
+
+* Timestamp: 2026-09-13T21:58:00Z
+* One-line summary: Implemented Heavy-process Welcome page with singleTop launch, IPC routing, launch deduplication, and safe process-death isolation.
+* Exact files touched:
+  - `app/src/main/java/com/example/core/ipc/IpcModels.kt`
+  - `app/src/main/java/com/example/core/ipc/WelcomeIpcContract.kt`
+  - `app/src/main/java/com/example/feature/welcome/WelcomeActivity.kt`
+  - `app/src/main/java/com/example/feature/welcome/HeavyWelcomeHostExtension.kt`
+  - `app/src/main/java/com/example/feature/welcome/MainWelcomeController.kt`
+  - `app/src/main/java/com/example/core/ipc/HeavyProcessHost.kt`
+  - `app/src/main/java/com/example/MainActivity.kt`
+  - `app/src/main/AndroidManifest.xml`
+  - `app/src/test/java/com/example/feature/welcome/WelcomeIpcTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Added `SHOW_WELCOME` to `HeavyCommandType` enum in `IpcModels.kt`.
+  - Created `WelcomeIpcContract.kt` defining minimal command generation (`createShowWelcomeCommand`), target `welcome`, and reason payload (`setup`, `overlay_required`, `user_request`) without passing Main hierarchy or internal managers.
+  - Created `WelcomeActivity.kt` in package `com.example.feature.welcome` under `:heavy` process, housing `WelcomeScreen` and preserving the exact existing layout, wording, test tags (`grant_overlay_button`, `net_speed_switch`, `start_core_button`, `stop_core_button`, `open_log_keeper_button`), and permission flows (overlay permission check, notification permission launcher).
+  - Maintained `MainActivity` as a clean subclass of `WelcomeActivity` in `:heavy` with `singleTop` launchMode.
+  - Declared `WelcomeActivity` in `AndroidManifest.xml` assigned strictly to `android:process=":heavy"` and `android:launchMode="singleTop"`.
+  - Implemented `HeavyWelcomeHostExtension` and `DefaultHeavyWelcomeHostExtension` in `:heavy` to handle `SHOW_WELCOME` commands, launch `WelcomeActivity` with `FLAG_ACTIVITY_NEW_TASK or FLAG_ACTIVITY_SINGLE_TOP`, and deduplicate rapid repeated launches using active foreground tracking and a debounce threshold.
+  - Wired `HeavyProcessHost` in `:heavy` to route `SHOW_WELCOME` commands directly to `HeavyWelcomeHostExtension`.
+  - Implemented `MainWelcomeController` in the Main process (`com.example`) allowing Main components to request the Welcome UI on demand via `HeavyProcessConnectionManager` without holding any heavy UI or Compose dependencies.
+  - Ensured process-death resilience: If the `:heavy` process is terminated or killed while Welcome is displayed, Main process runtime (`HandleService`, handles, gestures, internet speed monitor) continues unaffected without crashes or ANRs.
+  - Wrote comprehensive unit test suite in `WelcomeIpcTest.kt` covering contract integrity and JSON serialization, Main request → Heavy Welcome routing, duplicate launch debouncing and active state suppression, and Main process resilience when Heavy is disconnected or dead.
+* How it was verified: local build only (`gradle :app:testDebugUnitTest` - all unit tests passed; `compile_applet` passed cleanly).
+* Deviations: None.
+* Known issues: None.
+
+* Timestamp: 2026-09-16T02:58:00Z
+* One-line summary: Completed migration of AppsPageView, HybridGridPageView, and WidgetsGridPageView to SidebarManager and MiniAppManager, removed obsolete legacy services, and restored calculator styles to fix compilation.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/sidebar/SidebarManager.kt`
+  - `app/src/main/java/com/example/feature/sidebar/AppsPageView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/HybridGridPageView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/WidgetsGridPageView.kt`
+  - `app/src/main/java/com/example/SidebarEditActivity.kt`
+  - `app/src/main/java/com/example/WidgetPickerActivity.kt`
+  - `app/src/main/java/com/example/HybridGridEditActivity.kt`
+  - `app/src/main/res/values/styles_calc.xml`
+  - `app/src/main/AndroidManifest.xml`
+  - `app/src/main/java/com/example/service/SidebarService.kt` (deleted)
+  - `app/src/main/java/com/example/service/FloatingTriggerService.kt` (deleted)
+  - `app/src/main/java/com/example/feature/miniapps/reader/FloatingReaderService.kt` (deleted)
+* What was actually done:
+  - Added `openContainerById(containerId: String)` and `closeSidebar()` alias to `SidebarManager.kt` to allow clean resolution of containers via canonical handle/gesture format without passing raw intent triggers.
+  - Updated `AppsPageView.kt` to use `SidebarManager.getInstance(context).openContainerById(item.targetId)` and eliminated obsolete service import.
+  - Refactored `HybridGridPageView.kt` to route `FloatingTrigger` to `SidebarManager.getInstance(context).openContainerById(parsed.targetId)`, close actions to `SidebarManager.closeSidebar()`, and all floating app toggles (`dictionary`, `translation`, `hybrid_grid`, `work_notes`, `reader`) directly to `MiniAppManager.toggleApp(...)`.
+  - Refactored `WidgetsGridPageView.kt` to route `FloatingTrigger` to `SidebarManager.openContainerById(parsed.targetId)` and removed obsolete service imports.
+  - Cleaned up obsolete service references in `SidebarEditActivity.kt`, `WidgetPickerActivity.kt`, and `HybridGridEditActivity.kt`.
+  - Removed deprecated service declarations (`SidebarService`, `FloatingTriggerService`, `FloatingReaderService`) from `AndroidManifest.xml` and deleted their obsolete stub files.
+  - Restored `styles_calc.xml` defining `CalcBtn` and `CalcBtnSmall` styles required by `page_calculator.xml`.
+  - Verified that all compilation errors are resolved and the applet builds cleanly.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+* Timestamp: 2026-09-16T13:28:00Z
+* One-line summary: Added previous sidebar repo snapshot directory (Vian-Sidebar-main/) to .gitignore.
+* Exact files touched:
+  - `.gitignore`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Added `Vian-Sidebar-main/` under the Reference Folders & Scripts section in `.gitignore` to prevent exporting deprecated monolithic files and reference code into version control.
+* How it was verified: local build only (file syntax verified; project remains compiling).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+* Timestamp: 2026-09-17T22:25:00Z
+* One-line summary: Registered GhostCameraActivity and CameraMeasureActivity in manifest, declared mediaProjection foreground service attributes, and synchronized folder popup system action handling.
+* Exact files touched:
+  - `app/src/main/AndroidManifest.xml`
+  - `app/src/main/java/com/example/feature/sidebar/HybridGridPageView.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Inspected reference implementation in `Vian-Sidebar-main/app/src/main/AndroidManifest.xml` and identified missing `<activity>` declarations for `GhostCameraActivity` and `CameraMeasureActivity`.
+  - Added declarations for `.feature.system_hub.GhostCameraActivity` and `.feature.system_hub.CameraMeasureActivity` to `app/src/main/AndroidManifest.xml` with `android:exported="false"` and `android:theme="@style/Theme.LiteReader"`.
+  - Added `android:foregroundServiceType="mediaProjection"` to `.service.ScreenRecordService` and added `<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />` to satisfy Android 14 foreground service requirements for screen recording.
+  - Updated `showFolderPopup` in `HybridGridPageView.kt` to handle all system actions (`audio_record`, `camera_measure`, `arrangement_checker` / `ghost_camera`, `settings`, and accessibility service fallback), ensuring folder items function identically to root grid items without silent drops.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: Screen capture sub-actions (`redact_screenshot`, `qr_scan`, `barcode_scanner`) are defined as items in `SidebarAppsManager.kt` but do not have local activity implementations in this repository; they route gracefully to the accessibility service or display an enablement toast without crashing.
+
+* Timestamp: 2026-09-17T22:33:00Z
+* One-line summary: Restored Handle appearance (slanted block shape, #242962ff default color, right edge default) and robust gesture touch handling aligned with OG reference.
+* Exact files touched:
+  - `app/src/main/java/com/example/util/HandleShapeDrawable.kt`
+  - `app/src/main/java/com/example/core/HandleManager.kt`
+  - `app/src/main/java/com/example/core/TriggerHandleView.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Inspected OG reference in `Vian-Sidebar-main/app/src/main/java/com/example/util/HandleShapeDrawable.kt` and restored `SLANTED_BLOCK` geometry, robust `HandleShape.fromString()` and `HandleEdge.fromString()` factory methods, and precise edge slant path construction.
+  - Aligned default handle configuration in `HandleManager.kt` to match the OG reference: `HandleShape.SLANTED_BLOCK`, `HandleEdge.RIGHT`, default color `#242962ff` (14% alpha), width 12dp, height 120dp, `onSwipeLeftAction = "open_sidebar"`, and self-healed stale template placeholder defaults.
+  - Enhanced `TriggerHandleView.kt` with window layout parameter flags (`FLAG_NOT_TOUCH_MODAL`), `onDown: true` in `GestureDetector`, and inward horizontal/vertical gesture detection on `ACTION_MOVE` to ensure responsive, tactile swipe-to-open sidebar triggering with haptic feedback.
+  - Preserved the Main process runtime ownership of handle detection and the Handle → Gesture → Container → Page independent architecture.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+* Timestamp: 2026-09-18T13:38:30-07:00
+* One-line summary: Decoupled AppNotificationListener from Room/AppDatabase in resident Main using lightweight durable file buffer.
+* Exact files touched:
+  - `app/src/main/java/com/example/data/NotificationHistoryBuffer.kt`
+  - `app/src/main/java/com/example/service/AppNotificationListener.kt`
+  - `app/src/main/java/com/example/NotificationHistoryActivity.kt`
+  - `app/src/test/java/com/example/data/NotificationHistoryBufferTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Removed `com.example.data.AppDatabase.getDatabase(...)` call and all Room database initialization from `AppNotificationListener.kt`.
+  - Created `NotificationHistoryBuffer.kt` in `com.example.data` providing lightweight, durable append-only file persistence (`notification_history_buffer.log`) in internal storage with OS `FileChannel` file locks. Utilizes an in-memory debounce map to filter rapid duplicate events within a 15s window without loading any SQLite/Room dependencies into the resident Main process.
+  - Connected `NotificationHistoryActivity.kt` to call `NotificationHistoryBuffer.ingestPending(context, dao)` on screen composition, seamlessly draining the durable buffer and inserting/updating entries into Room (`NotificationHistoryDao`) on-demand when the UI activity is opened.
+  - Updated "Clear All" action in `NotificationHistoryActivity` to clear both the Room table and any pending entries in `NotificationHistoryBuffer`.
+  - Created comprehensive unit test suite `NotificationHistoryBufferTest.kt` verifying buffer appending, debouncing, draining, and DAO ingestion.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` passed all 34 unit tests including `NotificationHistoryBufferTest`).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. Existing Notification History behavior, filtering, and export are fully preserved without resident Main Room overhead.
+
+* Timestamp: 2026-09-18T14:39:40-07:00
+* One-line summary: Completed architectural audit of Home Grid and Sidebar grid app/link loading and icon caching without code changes.
+* Exact files touched:
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Audited `SidebarAppsManager.kt`, `HybridGridPageView.kt`, `AppsPageView.kt`, `SidebarView.kt`, `SidebarEditActivity.kt`, `AddElementActivity.kt`, `HybridGridEditActivity.kt`, and `IconCacheManager.kt`.
+  - Analyzed resident memory footprint: discovered `SidebarAppsManager` registers an active `BroadcastReceiver` for package changes and queries all installed activities via `LauncherApps.getActivityList()` on init/ensureLoaded, keeping `allInstalledApps` in memory in the resident Main process.
+  - Analyzed item storage model: identified that grid items are stored as raw ID strings (`app:packageName`, `link:uuid:{...}`) in SharedPreferences (`FloatingReaderPrefs`), without persistent labels or pre-compressed icons attached to the element payload.
+  - Analyzed icon lifecycle: discovered icons are loaded on-the-fly when pages open via `IconCacheManager` and `pm.getApplicationIcon()`, cached in multiple `LruCache` instances in Main memory.
+  - Prepared design roadmap for persistent element data model without modifying any application code.
+* How it was verified: local audit only; no application code files altered.
+* Any deviation from what was requested, and why: None (strictly audit only).
+* Any known issue or follow-up needed: Ready for user review before implementing persistent element data model.
+
+* Timestamp: 2026-09-19T13:36:30-07:00
+* One-line summary: Implemented persistent app/link element-data model, eradicated resident allInstalledApps & package BroadcastReceiver.
+* Exact files touched:
+  - `app/src/main/java/com/example/core/IconCacheManager.kt`
+  - `app/src/main/java/com/example/feature/sidebar/ElementMetadataStore.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarAppsManager.kt`
+  - `app/src/main/java/com/example/feature/settings/AppPickerActivity.kt`
+  - `app/src/main/java/com/example/feature/settings/AddElementActivity.kt`
+  - `app/src/main/java/com/example/feature/sidebar/AppsPageView.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Created `ElementMetadataStore.kt` (`data class ElementMetadata` with id, type, target, label, iconPath) persisting element data to SharedPreferences (`FloatingReaderPrefs`) with automatic canonical lookups and one-time legacy migration.
+  - Enhanced `IconCacheManager.kt` with `captureAndSavePackageIcon` and `captureAndSaveLinkIcon` methods, capturing icons once and compressing/downsampling them to compact WebP files on disk (`filesDir/icons_webp_cache`).
+  - Updated `SidebarItem.App` and `SidebarItem.Link` to include `iconPath` and `isLaunchable` fields with backwards-compatible constructors.
+  - Eradicated `packageReceiver` (`BroadcastReceiver` for package changes) and resident `allInstalledApps` caching from `SidebarAppsManager.kt`, replacing `allInstalledApps` with an empty read-only getter to drop resident Main memory footprint.
+  - Removed full-app scan (`loadAllAppsFromPackageManager`) from `ensureLoaded()` in `SidebarAppsManager.kt`, replacing runtime app resolution with direct `ElementMetadataStore` reads and targeted `PackageManager.getLaunchIntentForPackage()` checks for single elements.
+  - Updated `AppPickerActivity.kt` to query `LauncherApps` only during picker lifecycle in its own coroutine, capture the selected app's label and compact WebP icon via `ElementMetadataStore.saveAppElement` once upon selection, and terminate without creating a resident `SidebarAppsManager`.
+  - Updated `AddElementActivity.kt` to capture and persist link element metadata and WebP icon to disk via `ElementMetadataStore.saveLinkElement` upon link creation.
+  - Updated `AppsPageView.kt` to render `SidebarItem.Link` with cached disk icons from `manager.getIconBitmap`.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` passed all 34 unit tests).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. Existing grid/page behavior, UI appearance, and custom icon overrides are fully preserved.
+
+* Timestamp: 2026-09-24T20:34:00Z
+* One-line summary: Fixed notification BadForegroundServiceNotificationException crash by restoring 33 corrupted PNG assets, added active runtime drawable validation, and hardened AlarmManager recovery triggers.
+* Exact files touched:
+  - `tools/generate_speed_icons.py`
+  - `app/src/main/res/drawable-xhdpi/ic_stat_speed_25_k.png` (and 32 other corrupted speed icons)
+  - `app/src/main/java/com/example/core/HandleService.kt`
+  - `app/src/main/java/com/example/core/MainProcessRecovery.kt`
+  - `app/src/main/java/com/example/service/BootReceiver.kt`
+  - `app/src/test/java/com/example/core/MainProcessRecoveryTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Discovered root cause of BadForegroundServiceNotificationException: 33 pre-rendered speed icon assets (including `ic_stat_speed_25_k.png`) were corrupted with UTF-8 replacement characters (`\xEF\xBF\xBD`) instead of the PNG magic header (`\x89PNG\r\n\x1a\n`). While AAPT2 indexed them in `resources.arsc` under ID `0x7f0601fe`, SystemUI failed to decode them into Drawables, throwing BadForegroundServiceNotificationException.
+  - Identified why `resolveSafeIconResId()` previously failed: `resources.getResourceName(candidateResId)` only queried the symbol table and never verified that the underlying resource could be decoded into a Drawable.
+  - Enhanced `tools/generate_speed_icons.py` with `is_valid_png()` check verifying the 8-byte PNG header, and regenerated all 33 corrupted icon files so that all 1,421 PNG assets on disk are genuine 96x96 PNG images.
+  - Updated `isValidDrawableResource()` in `HandleService.kt` to actively test decoding using `ContextCompat.getDrawable(this, resId)` backed by a concurrent cache (`validatedIconCache`), preventing any undecodable resource from ever being passed to `setSmallIcon()`.
+  - Added safe fallback substitution logging in `HandleService.buildNotification()` if an unusable icon candidate is ever resolved.
+  - Enhanced `MainProcessRecovery.kt` to use `setExactAndAllowWhileIdle()` / `setAndAllowWhileIdle()` on Android 6.0+ / 12+ instead of inexact `set()`, ensuring the recovery alarm fires even under background battery optimizations.
+  - Added comprehensive diagnostic lifecycle logs across `HandleService.kt`, `MainProcessRecovery.kt`, and `BootReceiver.kt` to distinguish sticky restarts, alarm triggers, receiver dispatches, and startup states.
+  - Added unit tests in `MainProcessRecoveryTest.kt` verifying `SpeedIconProvider` resolution and validating the 8-byte PNG signatures across all 1,421 assets.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit test suites).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. All 1,421 pre-rendered speed icons, sampling, TrafficStats, and Handle behaviors are fully preserved.
+
+* Timestamp: 2026-09-24T21:09:00Z
+* One-line summary: Slightly widened Sidebar from 198dp to 220dp and enabled wrap_content by default across SidebarWindow, ViewPager frame, and updateWindowForPage.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarWindow.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Adjusted default 3-column / baseline sidebar width from 198dp to 220dp in `SidebarView.kt` and `SidebarWindow.kt` (with <=2 cols scaled from 140dp to 155dp, and >=4 cols scaled from 240dp to 265dp) for a modest, comfortable increase while preserving the existing rounded shape, edge handling, and handle relationship.
+  - Eliminated hardcoded `MATCH_PARENT` height in `SidebarWindow.kt`, setting initial window height to `WindowManager.LayoutParams.WRAP_CONTENT` and synchronizing layout parameters from `SidebarView.sidebarLayoutParams`.
+  - Updated `onCreateViewHolder` in `SidebarView.kt` so the child page container FrameLayout uses `WRAP_CONTENT` height instead of `MATCH_PARENT` when wrap-content is active.
+  - Refactored `updateWindowForPage` in `SidebarView.kt` so that default wrap-content pages set `WRAP_CONTENT` for both `viewPager.layoutParams` and `layoutParams.height`, allowing pages (apps, hybrid grid, widgets grid, tools) to hug their content naturally rather than stretching to a fixed 280dp box.
+  - Preserved element sizes, item spacing, scrolling, and widget measurement behavior.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. Ready for combined on-device testing.
+
+* Timestamp: 2026-09-24T21:44:00Z
+* One-line summary: Resolved ViewPager2 IllegalStateException crash by restoring MATCH_PARENT for page ViewHolder roots and implementing wrap-content at Sidebar/window measurement level.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Reverted child frame in `SidebarView.SidebarPageViewHolder.onCreateViewHolder` to strictly use `ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)`, satisfying ViewPager2's internal contract (`Pages must fill the whole ViewPager2 (use match_parent)`) and resolving the `IllegalStateException` crash upon sidebar swipe-open.
+  - Implemented wrap-content behavior cleanly at the window and ViewPager2 measurement level:
+    - Added `pageHeights: MutableMap<String, Int>` cache tracking actual measured content heights per page.
+    - Implemented `queryChildPageHeight(actualPosition)` querying `getCurrentHeightPx()` directly from active child page views (`AppsPageView`, `HybridGridPageView`, `WidgetsGridPageView`, `WidgetPageView`).
+    - Updated `updateWindowForPage` to set `viewPager.layoutParams.height` to the measured content height (or compact initial height) and `layoutParams.height` to `headerHeight + contentHeight`, allowing ViewPager2 to wrap content cleanly while all direct child pages maintain `MATCH_PARENT`.
+    - Maintained dynamic height updates via `handleChildHeightChange`, bounding heights to 85% of screen height (`maxAllowedHeight`) with safe internal vertical scrolling for tall content.
+    - Preserved custom fixed-height page configurations, stick alignments (top/center/bottom), lazy page loading, infinite loop navigation, and widget measurements.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit test suites).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+* Timestamp: 2026-09-25T07:20:00Z
+* One-line summary: Added Internet Speed Monitor Settings navigation in SettingsActivity and fixed Sidebar IME interaction to prevent soft keyboard input or dismissal from closing the Sidebar.
+* Exact files touched:
+  - `app/src/main/java/com/example/SettingsActivity.kt`
+  - `app/src/main/java/com/example/feature/settings/NetSpeedSettingsScreen.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarWindow.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
+  - `app/src/test/java/com/example/feature/sidebar/SidebarImeInteractionTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Inspected reference implementation in `Vian-Sidebar-main/app/src/main/java/com/example/feature/settings/NetSpeedSettingsScreen.kt` and adapted `NetSpeedSettingsScreen.kt` to ensure preference synchronization binds `net_speed_enabled` (matching `HandleService.KEY_NET_SPEED_ENABLED`) in tandem with `netspeed_enabled` and `speed_indicator_enabled` via `OverlaySyncManager`.
+  - Added "Internet Speed Monitor" as a dedicated configuration item in `SettingsActivity.kt` under `MainSettingsScreen` and mapped route `netspeed` (and alias `speed`) to `NetSpeedSettingsScreen(onBack = { navigateBack() })`.
+  - Preserved the existing Main-process NetSpeed runtime, TrafficStats polling, pre-rendered speed icons, and notification mechanism without moving anything to Heavy or creating duplicate runtimes.
+  - Inspected Sidebar overlay and IME interaction. Identified root cause of Sidebar closing when keyboard opened: `FLAG_WATCH_OUTSIDE_TOUCH` dispatched `ACTION_OUTSIDE` to `SidebarView.onTouchEvent` on every soft keyboard key tap, which unconditionally triggered `onClose()`. Furthermore, `setOnKeyListener` and `dispatchKeyEvent` closed the Sidebar immediately upon `KEYCODE_BACK`, even when the back press was intended to dismiss the keyboard.
+  - Configured `SidebarWindow` and `SidebarView` layout parameters with `FLAG_NOT_TOUCH_MODAL or FLAG_WATCH_OUTSIDE_TOUCH or FLAG_HARDWARE_ACCELERATED` without `FLAG_NOT_FOCUSABLE`, and added `softInputMode = SOFT_INPUT_ADJUST_RESIZE`.
+  - Implemented comprehensive keyboard state detection in `SidebarView` via `isKeyboardActive()` tracking focused `EditText` views, `WindowInsets.Type.ime()`, and display frame insets via `OnGlobalLayoutListener`.
+  - Updated `onTouchEvent` to ignore `ACTION_OUTSIDE` while `isKeyboardActive()` is true and during the 500ms post-dismissal transition window, allowing normal keyboard typing without closing the Sidebar.
+  - Updated `dispatchKeyEvent` and `setOnKeyListener` to intercept `KEYCODE_BACK` while the keyboard is open, invoking `hideKeyboard()` to dismiss the IME while keeping the Sidebar open.
+  - Implemented dynamic vertical offset compensation in `SidebarView` so bottom-anchored sidebars shift up above the keyboard (`layoutParams.y = keypadHeight`) when the IME appears and restore smoothly upon dismissal.
+  - Added unit test suite `SidebarImeInteractionTest.kt` covering window flags, IME mode, outside touch filtering, and back key keyboard-first dismissal.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 35 unit test suites).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. Ready for on-device manual verification.
+
+* Timestamp: 2026-09-25T13:48:00Z
+* One-line summary: Connected Internet Speed Monitor toggle to live NetSpeed state with handles standby notification and configured Sidebar overlay flags to keep underlying IME keyboard open when opening Sidebar.
+* Exact files touched:
+  - `app/src/main/java/com/example/core/HandleService.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarWindow.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
+  - `app/src/test/java/com/example/feature/sidebar/SidebarImeInteractionTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Traced the configuration and enable/disable flow in `HandleService.kt`. Resolved the issue where turning OFF the monitor continued displaying speed icon "0" with "Down: -- Up: --":
+    - Initialized `isSpeedMonitorEnabled` in `onCreate` checking `KEY_NET_SPEED_ENABLED`, `netspeed_enabled`, and `speed_indicator_enabled`.
+    - If `isSpeedMonitorEnabled` is false on service start, created the initial foreground notification with the resident handles notification ("Handles Active", `ic_view_sidebar`), instead of a speed notification.
+    - Updated `setupNetSpeedManager()`: when `isSpeedMonitorEnabled` is false, stopped `NetSpeedManager`, nulled the instance, and updated the foreground service notification to "Handles Active" with `ic_view_sidebar`, stopping all speed polling and removing the status bar speed icon.
+    - When `isSpeedMonitorEnabled` is true, started `NetSpeedManager` which resumes polling `TrafficStats` and updates the notification with the live speed icon.
+    - Preserved existing Main-process runtime, TrafficStats polling, SpeedIconProvider, dynamic icons, icon assets, notification-icon crash fix, and MainProcessRecovery.
+    - Verified `NetSpeedSettingsScreen.kt` does not contain Diagnostics, Data Units, or Usage Units controls.
+  - Resolved Sidebar / IME behavior when opening the Sidebar while the keyboard is already open:
+    - Root cause: `SidebarWindow` and `SidebarView` lacked `FLAG_NOT_FOCUSABLE` upon creation, causing Android WindowManager to shift window focus to the overlay window upon handle swipe, which caused the underlying application to lose window focus and dismissed the soft keyboard.
+    - Added `FLAG_NOT_FOCUSABLE` to the initial flags of `SidebarWindow` and `SidebarView` alongside `FLAG_NOT_TOUCH_MODAL`, `FLAG_WATCH_OUTSIDE_TOUCH`, and `FLAG_HARDWARE_ACCELERATED`.
+    - Configured `softInputMode` to `SOFT_INPUT_STATE_UNCHANGED or SOFT_INPUT_ADJUST_NOTHING` so the soft keyboard state is unchanged and the Sidebar window is not resized.
+    - Removed vertical shifting (`layoutParams.y = keypadHeight`) from `SidebarView`, ensuring the Sidebar opens in its normal position, normal width, and normal height without moving vertically above the keyboard or resizing.
+    - In `setupKeyboardHandling()`, preserved dynamic focus acquisition: when an internal `EditText` inside the Sidebar is focused, `FLAG_NOT_FOCUSABLE` is cleared; when focus leaves or `hideKeyboard()` is called, `FLAG_NOT_FOCUSABLE` is restored.
+    - Updated `SidebarImeInteractionTest.kt` to validate the window flags, `softInputMode`, outside touch filtering, and back key behavior.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 35 unit test suites).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. Ready for on-device verification.
+
+* Timestamp: 2026-09-26T08:45:00Z
+* One-line summary: Completed Phase 12.10 Capability Architecture & Heavy Module Foundation across Main and :heavy processes with comprehensive unit testing.
+* Exact files touched:
+  - `app/src/main/java/com/example/core/capability/CapabilityContract.kt`
+  - `app/src/main/java/com/example/core/capability/CapabilityTypes.kt`
+  - `app/src/main/java/com/example/core/capability/CapabilityManager.kt`
+  - `app/src/main/java/com/example/core/capability/HeavyCapabilityRouter.kt`
+  - `app/src/main/java/com/example/feature/element/CommonElementRuntimeContract.kt`
+  - `app/src/main/java/com/example/feature/element/ElementCapabilityExtensions.kt`
+  - `app/src/main/java/com/example/feature/heavy/module/HeavyModuleContract.kt`
+  - `app/src/main/java/com/example/feature/heavy/module/HeavyModuleTypes.kt`
+  - `app/src/main/java/com/example/feature/heavy/module/HeavyModuleManager.kt`
+  - `app/src/main/java/com/example/core/ipc/HeavyProcessHost.kt`
+  - `app/src/main/java/com/example/feature/floating/HeavyFloatingHostService.kt`
+  - `app/src/test/java/com/example/core/capability/CapabilityManagerTest.kt`
+  - `app/src/test/java/com/example/feature/heavy/module/HeavyModuleManagerTest.kt`
+  - `blueprint/BLUEPRINT.md`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Implemented Phase 12.10 Capability Architecture establishing strict multi-process isolation between Main (`com.example`) and Heavy (`:heavy`):
+    - Main Process Capability System (`CapabilityContract.kt`, `CapabilityTypes.kt`, `CapabilityManager.kt`):
+      - Created lightweight `CapabilitySession`, `CapabilityContract`, `LocalCapabilityModule`, and descriptors with typed routing (`LOCAL_MAIN` vs `REMOTE_HEAVY`).
+      - Implemented thread-safe `CapabilityManager` with lazy registration, reference-counted session lifecycle (`mount`, `use`, `unmount`, `releaseAll`), and auto-discard on zero active sessions.
+      - Integrated `HeavyCapabilityRouter` bridging capability execution across existing Binder IPC to `:heavy` without pulling heavy UI/engine classes into Main.
+      - Extended `CommonElementRuntimeContract` with `mountCapability` / `unmountCapabilities` helpers for safe, scoped capability access by placed Elements.
+    - Heavy Process Module System (`HeavyModuleContract.kt`, `HeavyModuleTypes.kt`, `HeavyModuleManager.kt`):
+      - Created `HeavyModuleContract`, `HeavyModuleSession`, execution requests, and result models.
+      - Implemented `HeavyModuleManager` resident strictly in `:heavy`, featuring reference-counted session mounting, safe concurrent execution, and automatic module disposal (`onDispose`) when active session count reaches 0.
+      - Wired IPC module command routing (`isModuleCommand`) in `HeavyProcessHost.kt` (`START_OPERATION` for mount, `CUSTOM` for use, `STOP_OPERATION` for unmount) with typed `IpcResult` marshalling.
+      - Integrated disposable lifecycle checking in `HeavyFloatingHostService.kt` (`checkDisposableTeardown` checks active mini-apps + active heavy module sessions, calling `stopSelf()` when idle).
+    - Unit Testing & Verification:
+      - Added 8 unit tests in `CapabilityManagerTest.kt` covering local lifecycle, remote routing, process recovery, dead process handling, and Element integration.
+      - Added 12 unit tests in `HeavyModuleManagerTest.kt` covering lazy registration, multi-session reference counting, unmount teardown, error handling, and IPC command translation.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 37 unit test suites with 0 failures).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: Ready for next architectural phase (Phase 13 Floating Window Mini-Apps).
+
+* Timestamp: 2026-09-26T19:45:00Z
+* One-line summary: Completed Phase 12.11 Real Heavy Call Recorder Engine & Multi-Process Architecture with full unit test coverage and compilation verification.
+* Exact files touched:
+  - `app/src/main/java/com/example/core/ipc/CallIpcContract.kt`
+  - `app/src/main/java/com/example/core/CallRecorderManager.kt`
+  - `app/src/main/java/com/example/feature/call/HeavyCallRecorderEngine.kt`
+  - `app/src/main/java/com/example/feature/call/HeavyCallHostExtension.kt`
+  - `app/src/main/java/com/example/core/ipc/HeavyProcessHost.kt`
+  - `app/src/main/java/com/example/feature/floating/HeavyFloatingHostService.kt`
+  - `app/src/test/java/com/example/core/ipc/CallSensorIpcTest.kt`
+  - `app/src/test/java/com/example/feature/call/HeavyCallRecorderEngineTest.kt`
+  - `blueprint/BLUEPRINT.md`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Implemented the real Heavy Call Recorder engine and verified strict 2-process architecture:
+    - Main Process (`com.example`):
+      - Resident lightweight `CallRecorderManager` and `CallStateReceiver` listening to phone state changes.
+      - Maintains minimal state: `currentCallState`, `isRecordingExpected`, `isHeavyRecordingActive`, `activeSessionId`, `activeRecordingPath`. Zero audio buffers, 0 MediaRecorder instances, 0 recording DBs.
+      - Enforces idempotent call-state transitions preventing duplicate recording sessions on repeated telephony/receiver callbacks.
+      - Handles dead `:heavy` Binder events without crash loops and re-synchronizes active call recording sessions when Heavy reconnects.
+    - Heavy Process (`:heavy`):
+      - Real `HeavyCallRecorderEngine` managing `MediaRecorder` lifecycle, audio format (`MPEG_4`/`THREE_GPP`), audio sources with fallback (`VOICE_RECOGNITION` -> `MIC`), and storage resolution (SAF DocumentFile trees or private `.Records/CALL_*.m4a`).
+      - Connects to `RealHeavyCallHostExtension` so that IPC commands (`CALL_STATE_CHANGED`, `REQUEST_CALL_RECORDER` for START/STOP/STATUS) execute actual audio recording sessions instead of mock acknowledgments.
+      - Dispatches asynchronous `HeavyEvent` updates (`STATE_UPDATED`, `OPERATION_FINISHED`, `ERROR_REPORTED`) across Binder to Main.
+      - Coordinates with `HeavyFloatingHostService.checkDisposableTeardown()` to ensure service does not stop while an active call recording is ongoing.
+    - Verification & Tests:
+      - Fixed event `sourceId` mappings and `IpcErrorCode.COMMAND_FAILED` typing across IPC contract and engine.
+      - Added and executed unit test suites `CallSensorIpcTest` and `HeavyCallRecorderEngineTest` covering contract serialization, state transitions, duplicate callback filtering, heavy process death resilience, reconnect resynchronization, and engine lifecycle delegation.
+      - Executed `gradle :app:testDebugUnitTest` (all 92 unit tests passing).
+      - Executed `compile_applet` (build succeeded cleanly).
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 37 test suites / 92 tests with 0 failures).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None. Ready for on-device verification.
+
+* Timestamp: 2026-09-27T01:08:00Z
+* One-line summary: Completed Elements system structural separation and modular element integration with full unit testing.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/sidebar/SidebarItem.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarAppsManager.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarEditNavigator.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/HybridGridPageView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarPageFactory.kt`
+  - `app/src/main/java/com/example/feature/element/ElementViewRenderer.kt`
+  - `app/src/main/java/com/example/feature/element/ElementActionDispatcher.kt`
+  - `app/src/main/java/com/example/feature/element/ElementActionRegistry.kt`
+  - `app/src/test/java/com/example/feature/element/ElementSystemTest.kt`
+  - `blueprint/BLUEPRINT.md`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Executed minimal structural split on `SidebarView.kt` by extracting page edit navigation routing to `SidebarEditNavigator.kt`, leaving `SidebarView` strictly as high-level coordinator.
+  - Decoupled `SidebarItem` sealed models and all system/quicktile/volume/display/screen capture action lists from `SidebarAppsManager.kt` into dedicated `SidebarItem.kt`.
+  - Reused and modularized `ElementViewRenderer.kt` to handle tile layout binding, dynamic icon resolution, context menu popups ("App Info", "Remove", "Change Icon", "Reset Icon"), and modal popups (Folders, Popup Widgets).
+  - Enhanced `ElementActionDispatcher.kt` and `ElementActionRegistry.kt` with modular prefix routing (`app:`, `system:`, `display:`, `volume:`, `quicktile:`, `media:`, `settings_shortcut:`, `folder:`, `widget:`, `link:`) and full system action handling.
+  - Streamlined `HybridGridPageView.kt` by delegating element view rendering, popups, and context menus to `ElementViewRenderer.kt`, removing duplicated code and enforcing container isolation.
+  - Fixed parameter names in `SidebarPageFactory.kt` (`onCloseSidebar`, `onAppSelected`).
+  - Added unit test suite `ElementSystemTest.kt` covering element models, action lists, registry prefix resolution, and edit navigation.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 38 unit test suites / 96 tests with 0 failures).
+* Any deviation from what was requested, and why: None.
+
+## 2026-09-28 — Folder Element Reliability Fix & Child Elements Persistence
+* Timestamp: 2026-09-28T19:40:00Z
+* One-line summary: Fixed Folder element child persistence across save, reopen, activity-result flows, and reload.
+* Exact files touched:
+  - `gradle/libs.versions.toml`
+  - `app/build.gradle.kts`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Validated and audited full folder lifecycle flow across `SidebarEditActivity`, `HybridGridEditActivity`, `HybridGridPageView`, `AppsPageView`, and `SidebarAppsManager`.
+  - Confirmed child element addition to folder's `items` collection within `SidebarEditActivity`.
+  - Confirmed `setResult(RESULT_OK)` passes `UPDATED_FOLDER` (with complete child items JSON) and `FOLDER_UUID` back to parent activities (`HybridGridEditActivity` and `SidebarEditActivity`).
+  - Confirmed parent page in both `HybridGridEditActivity` and `SidebarEditActivity` replaces the exact matching folder index in the page model and persists it to SharedPreferences via `saveHybridItems` / `saveIds`.
+  - Confirmed multi-process preference synchronization via `OverlaySyncManager.syncString` and `UPDATE_GRID` broadcast keeps Main and Heavy processes consistent without state overwrite.
+  - Verified concise logging tags (`FolderElement`) for folder UUID being edited, child count before editing, child count after adding/removing, folder replacement in parent page, and final saved child count.
+  - Added unit test dependency `org.json:json` to test classpath in `libs.versions.toml` and `app/build.gradle.kts` to enable proper `JSONObject`/`JSONArray` runtime testing in local JVM tests.
+  - Verified all 103 unit tests pass cleanly, including the full `FolderElementLifecycleTest` suite (7 tests verifying creation, single element addition, multiple element additions, child removal, child reordering, Apps page persistence, and non-folder position preservation).
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 39 test suites / 103 tests with 0 failures).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+### Entry: 2026-09-29T19:54:00Z
+* Timestamp: 2026-09-29T19:54:00Z
+* One-line summary: Implemented modular Accessibility Architecture with on-demand lifecycle, dedicated action modules, clean scanner boundaries, and strict state discrimination preventing erroneous Accessibility Settings redirects.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/AccessibilityActionContract.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/AccessibilityActionRegistry.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/GlobalNavigationActionModule.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/ScreenshotActionModule.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/AutoScrollActionModule.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/CursorActionModule.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/LongScreenshotActionModule.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/ScannerCapabilityContract.kt`
+  - `app/src/main/java/com/example/feature/system_hub/accessibility/ScannerCapabilityModules.kt`
+  - `app/src/main/java/com/example/feature/system_hub/VianSideAccessibilityService.kt`
+  - `app/src/main/java/com/example/feature/system_hub/AutoScrollManager.kt`
+  - `app/src/main/java/com/example/feature/system_hub/CursorManager.kt`
+  - `app/src/main/java/com/example/feature/system_hub/LongScreenshotManager.kt`
+  - `app/src/main/java/com/example/feature/element/ElementActionDispatcher.kt`
+  - `app/src/main/java/com/example/feature/sidebar/HybridGridPageView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/AppsPageView.kt`
+  - `app/src/test/java/com/example/feature/system_hub/accessibility/ModularAccessibilityActionTest.kt`
+  - `blueprint/BLUEPRINT.md`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Preserved modular accessibility architecture: eliminated monolithic action handling and established `AccessibilityActionRegistry` for coordinating independent `AccessibilityActionModule` instances.
+  - Enforced module lifecycle: modules load lazily on-demand when requested and unload immediately when finished (or on toggle-off for continuous overlays like auto-scroll and cursor).
+  - Implemented typed `AccessibilityActionResult` distinguishing `Success`, `Unavailable`, `Failed`, and `ServiceUnavailable`.
+  - Updated UI dispatching (`ElementActionDispatcher`, `AppsPageView`, `HybridGridPageView`) to route system actions through `handleSystemAction`, ensuring that Android Accessibility Settings is launched ONLY when `VianSideAccessibilityService` is actually null/disconnected.
+  - Built out complete modular action handlers for `back`, `home`, `recents`, `notifications`, `quick_settings`, `lock_screen`, `splitscreen`, `screenshot`, `auto_scroll`, `cursor`, and `long_screenshot`.
+  - Created clean `ScannerCapabilityContract` boundary for optional heavy scanner/OCR capabilities (`qr_scan`, `barcode_scanner`, `redact_screenshot`) without bundling ML models or initializing ML resources in Main process.
+  - Added required diagnostic logging format reporting requested action ID, selected module/handler, module load, execution result, module unload, and failure reason.
+  - Added comprehensive test suite `ModularAccessibilityActionTest` (8 tests) verifying service unavailable redirect, global navigation actions execution, screenshot execution, toggle lifecycle, scanner capability unavailable reporting without settings redirect, unregistered action handling, action failure handling without redirect, and diagnostic logging format.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 112 unit tests across 40 test suites with 0 failures).
+* Any deviation from what was requested, and why: None.
+### Entry: 2026-09-29T21:55:00Z
+* Timestamp: 2026-09-29T21:55:00Z
+* One-line summary: Resolved Accessibility-dependent and recording element issues across Audio Record, Call Recorder, Cursor fake-touch, Redact Screenshot, Secure Screen/Camera Scanners, and Settings reuse.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/system_hub/RecordingActionHelper.kt`
+  - `app/src/main/java/com/example/feature/system_hub/AudioRecordFloatingPanel.kt`
+  - `app/src/main/java/com/example/feature/system_hub/AudioRecordPermissionActivity.kt`
+  - `app/src/main/java/com/example/core/CallRecorderManager.kt`
+  - `app/src/main/java/com/example/feature/system_hub/CursorManager.kt`
+  - `app/src/main/java/com/example/feature/system_hub/RedactScreenshotActivity.kt`
+  - `app/src/main/java/com/example/feature/system_hub/SecureScreenScannerActivity.kt`
+  - `app/src/main/java/com/example/feature/system_hub/SecureCameraScannerActivity.kt`
+  - `app/src/main/java/com/example/feature/element/ElementActionDispatcher.kt`
+  - `app/src/main/java/com/example/feature/settings/CallRecorderSettingsScreen.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarItem.kt`
+  - `app/src/test/java/com/example/feature/system_hub/AccessibilityAndRecordingElementsTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Audio Record Element: Enforced pre-check for RECORD_AUDIO; if missing, ElementActionDispatcher and RecordingActionHelper launch AudioRecordPermissionActivity to request runtime permission safely without attempting MediaRecorder. AudioRecordFloatingPanel releases all resources (MediaRecorder, ParcelFileDescriptor, and timers) upon stop.
+  - Call Recorder Startup Crash: Guarded startListening in CallRecorderManager with isEnabled check, READ_PHONE_STATE permission check, and caught SecurityException during telephony callback/listener registration, transitioning cleanly to ListenerStatus (DISABLED, PERMISSION_MISSING, UNAVAILABLE) without crashing resident HandleService.
+  - Cursor Fake Touch: Implemented real dispatchGesture touch sequence in CursorManager at cursor position with display coordinate conversion, down/up duration, short interval between double-clicks, and distinguished logging ("tap detected -> gesture dispatched -> gesture accepted/completed"). Added buildGestureSafely to prevent null assertions.
+  - Redact Screenshot: Redesigned redact_screenshot as non-OCR visual image redaction flow using Accessibility screenshot capture, temporary app-private PNG URI, blackout and blur rectangle drawing in RedactScreenshotActivity (:heavy), MediaStore/cache export, and immediate temporary source cleanup in onDestroy.
+  - Secure Screen Scanner: Built screen capture and drag-to-crop selection flow in SecureScreenScannerActivity using roundToInt crop math; scanner capabilities execute on selected crop only without requiring OCR engine pre-installation.
+  - Secure Camera Scanner: Built camera capture and crop UI in SecureCameraScannerActivity, loading scanner modules on-demand without initialization during Sidebar startup.
+  - Settings Recording Reuse: Established RecordingActionHelper unifying audio record toggle, call recorder settings, and recordings browser across Sidebar elements and CallRecorderSettingsScreen.
+  - Focused Test Suite: Added AccessibilityAndRecordingElementsTest covering all 11 test cases (microphone permission check/trampoline, call recorder listener guarding, cursor gesture dispatch and double-click sequence, non-OCR redact screenshot, screen/camera scanner cropping, missing scanner resilience, and unified recording action).
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all 124 unit tests across 41 test suites with 0 failures).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+### Entry: 2026-10-01T12:24:00Z
+* Timestamp: 2026-10-01T12:24:00Z
+* One-line summary: Resolved Cursor double-tap click touch conflict, made full-screen trackpad the default, and ensured single taps remain inert.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/system_hub/CursorManager.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Default Trackpad Mode: Set `isGlassShield = true` so full-screen transparent trackpad mode is the default on launch, while retaining small visible trackpad mode toggleable via control bar.
+  - Inert Single Tap: Changed `onSingleTapConfirmed` on the trackpad to log and perform no action, keeping single tap completely inert.
+  - Release-Gated Double Tap: In `onDoubleTap`, recorded `isDoubleTapPending = true` on the second physical down-touch without injecting synthetic clicks. In `onDoubleTapEvent`, detected physical `ACTION_UP` release of the second tap and scheduled single click injection via a 16ms delay (1 frame) so the physical finger is completely lifted from the screen before synthetic injection begins.
+  - Anti-Drift Guard: Suppressed `onScroll` cursor movement during pending double-tap to prevent accidental pointer jitter.
+  - Overlay Non-Touchable Protection: Implemented `setTrackpadTouchable(touchable: Boolean)` applying `FLAG_NOT_TOUCHABLE` to `trackpadView` immediately before `dispatchGestureToService()`, and restoring touchability in `onCompleted`, `onCancelled`, and a 350ms safety watchdog. This prevents `trackpadView` from swallowing or intercepting the synthetic click gesture.
+  - Single Click Execution: Updated `handleDoubleTap` and double-tap event pipeline to execute exactly one click (`performClick`) at current cursor coordinates.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests including `testCursorClickDispatchReportsRealGestureSuccessAndFailure` and `testDoubleClickPerformsTwoActualFakeTouchGestures`).
+
+### Entry: 2026-10-01T12:42:00Z
+* Timestamp: 2026-10-01T12:42:00Z
+* One-line summary: Implemented multi-shape selection (Rectangle, Square, Circle) and tap-to-start selection with Share, QR Code, and OCR actions in Secure Screen Scanner and Secure Camera Scanner.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/system_hub/ScannerSelectionHelper.kt`
+  - `app/src/main/java/com/example/feature/system_hub/SecureScreenScannerActivity.kt`
+  - `app/src/main/java/com/example/feature/system_hub/SecureCameraScannerActivity.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Multi-Shape Selection: Extended `ScannerSelectionHelper` to support `SelectionShape.RECTANGLE`, `SelectionShape.SQUARE`, and `SelectionShape.CIRCLE`. Added boundary calculation with screen edge clamping that preserves anchor coordinates. In circular selection, pixel areas outside the circle are masked transparent via `PorterDuff.Mode.SRC_IN`.
+  - Tap-To-Start Selection: Updated gesture detection in both `SecureScreenScannerActivity` and `SecureCameraScannerActivity` so the first tap places an anchor marker, and the second tap or drag completes the region selection. Dragging directly without prior tap continues to work seamlessly.
+  - Visual Overlays: Rendered shape-specific previews on Canvas (rectangular cutout and dimming for Rectangle/Square; EvenOdd path cutout and green circular boundary for Circle; bullseye anchor indicator during pending second tap).
+  - Post-Selection Action Bar: Added bottom action bar in both scanner activities containing "Share" (creates cropped bitmap and shares via FileProvider intent), "QR Code" (displays "QR Code scanning coming soon" Toast without recognition), and "OCR" (displays "OCR coming soon" Toast without recognition).
+  - Maintained Architecture: Retained heavy-process (`:heavy`) isolation and `ScannerCapabilityBridge` boundary without introducing any external ML Kit or ZXing dependencies.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests with 0 failures).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+
+### Entry: 2026-10-01T12:59:00Z
+* Timestamp: 2026-10-01T12:59:00Z
+* One-line summary: Added Keep Screen On and full-range Screen Orientation elements to the Utility section and ActionPicker.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/sidebar/SidebarItem.kt`
+  - `app/src/main/java/com/example/feature/system_hub/DisplayHandler.kt`
+  - `app/src/main/java/com/example/feature/element/ElementActionRegistry.kt`
+  - `app/src/test/java/com/example/feature/element/ElementSystemTest.kt`
+  - `receipts/RECEIPTS_095.md`
+* What was actually done:
+  - Audited Add Element Utility Section: Identified existing 7 utility elements (`arrangement_checker`, `camera_measure`, `force_stop_running_apps`, `auto_scroll`, `blue_light_filter`, `log_keeper`, `cursor`) as active and working; identified `keep_screen_on` as missing, and `screen_orientation` as missing from Utility and incomplete in Display.
+  - Added Keep Screen On: Added `SidebarItem.DisplayAction("keep_screen_on", "Keep Screen On", ...)` to `ALL_UTILITIES_ACTIONS`. Implemented in `DisplayHandler` using overlay `FLAG_KEEP_SCREEN_ON` and `WakeLock` with state broadcasting and Toasts.
+  - Added Screen Orientation: Added `SidebarItem.DisplayAction("screen_orientation", "Screen Orientation", ...)` to `ALL_UTILITIES_ACTIONS`. Upgraded `DisplayHandler` to cycle through Auto-Rotate, Portrait (`ROTATION_0`), and Landscape (`ROTATION_90`) via `Settings.System.ACCELEROMETER_ROTATION` and `USER_ROTATION`.
+  - Action Registry: Registered `display:keep_screen_on` and `display:screen_orientation` in `ElementActionRegistry`.
+  - Testing: Extended `ElementSystemTest` asserting presence in `ALL_UTILITIES_ACTIONS`, registration, and resolution.
+* How it was verified: local build only (`compile_applet` passed cleanly; `gradle :app:testDebugUnitTest` executed and passed all unit tests with 0 failures).
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed: None.
+

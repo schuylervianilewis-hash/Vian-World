@@ -1,0 +1,740 @@
+package com.example.core.ipc
+
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import com.example.core.LogKeeper
+import java.util.concurrent.CopyOnWriteArrayList
+
+/**
+ * Lifecycle states of the connection from Main to Heavy process.
+ */
+enum class ConnectionState {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    DEAD
+}
+
+/**
+ * Listener interface for Main ↔ Heavy connection lifecycle and incoming callback notifications.
+ */
+interface HeavyConnectionListener {
+    fun onConnected() {}
+    fun onDisconnected() {}
+    fun onHeavyProcessDied() {}
+    fun onHeavyEvent(event: HeavyEvent) {}
+    fun onMainActionRequested(request: MainCommandRequest): IpcResult = IpcResult.success()
+}
+
+/**
+ * HeavyProcessConnectionManager: Resident connection and lifecycle manager in the Main process (com.example).
+ *
+ * Guarantees:
+ * 1. Main remains the sole authoritative source of truth for runtime hierarchy and state.
+ * 2. Connects on-demand to the Heavy process (:heavy) via Android Binder.
+ * 3. Monitors Heavy process death via IBinder.DeathRecipient without crashing Main.
+ * 4. Safe no-op and graceful failure when Heavy is unavailable.
+ * 5. Clean disconnect and unbind when idle.
+ */
+class HeavyProcessConnectionManager internal constructor(
+    private val context: Context? = null
+) {
+
+    private val lock = Any()
+    private val listeners = CopyOnWriteArrayList<HeavyConnectionListener>()
+
+    @Volatile
+    var state: ConnectionState = ConnectionState.DISCONNECTED
+        private set
+
+    val isConnected: Boolean
+        get() = state == ConnectionState.CONNECTED
+
+    @Volatile
+    private var remoteProxy: IHeavyHostContract? = null
+
+    @Volatile
+    private var remoteBinder: IBinder? = null
+
+    @Volatile
+    private var isServiceBound = false
+
+    private val pendingCommands = java.util.concurrent.ConcurrentLinkedQueue<HeavyCommand>()
+    private val activeConsumers = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private var latestSnapshot: MainStateSnapshot? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun safeLog(tag: String, msg: String) {
+        context?.let { LogKeeper.log(it, tag, msg) }
+    }
+
+    private fun safeLogCrash(tag: String, t: Throwable) {
+        context?.let { LogKeeper.logCrash(it, tag, t) }
+    }
+
+    private val callbackHandler = object : IMainCallbackHandler {
+        override fun onHeavyEvent(eventJson: String): String {
+            val event = try {
+                HeavyEvent.fromJson(eventJson)
+            } catch (e: Exception) {
+                return IpcResult.error(IpcErrorCode.MARSHAL_ERROR, "Failed to parse event: ${e.message}").toJson()
+            }
+            dispatchHeavyEvent(event)
+            return IpcResult.success().toJson()
+        }
+
+        override fun onRequestMainAction(requestJson: String): String {
+            val request = try {
+                MainCommandRequest.fromJson(requestJson)
+            } catch (e: Exception) {
+                return IpcResult.error(IpcErrorCode.MARSHAL_ERROR, "Failed to parse action request: ${e.message}").toJson()
+            }
+            val result = dispatchMainAction(request)
+            return result.toJson()
+        }
+    }
+
+    private val callbackBinder by lazy { MainCallbackBinder(callbackHandler) }
+
+    private val deathRecipient = IBinder.DeathRecipient {
+        synchronized(lock) {
+            safeLog("HeavyIPC", "BINDER_DIED DeathRecipient triggered: Binder connection to :heavy terminated")
+            context?.let { ctx ->
+                LogKeeper.logLifecycle(ctx, "HeavyProcess", "HEAVY_PROCESS_DIED", "DeathRecipient triggered: Binder connection to :heavy terminated")
+            }
+            state = ConnectionState.DEAD
+            remoteProxy = null
+            remoteBinder = null
+            isServiceBound = false
+        }
+        for (listener in listeners) {
+            try {
+                listener.onHeavyProcessDied()
+            } catch (e: Throwable) {
+                safeLogCrash("HeavyProcessConnectionManager", e)
+            }
+        }
+    }
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            synchronized(lock) {
+                if (service == null) {
+                    state = ConnectionState.DISCONNECTED
+                    safeLog("HeavyIPC", "DISCONNECTED service_binder_null")
+                    return
+                }
+                try {
+                    service.linkToDeath(deathRecipient, 0)
+                    remoteBinder = service
+                    val proxy = HeavyHostProxy(service)
+                    proxy.registerCallback(callbackBinder)
+                    remoteProxy = proxy
+                    state = ConnectionState.CONNECTED
+                    isServiceBound = true
+                    safeLog("HeavyIPC", "CONNECTED component=${name?.shortClassName} proxyReady=true activeConsumers=${activeConsumers.size}")
+
+                    // Re-sync cached snapshot if available
+                    latestSnapshot?.let { snapshot ->
+                        proxy.syncSnapshot(snapshot.toJson())
+                    }
+
+                    // Flush any pending commands queued during connection startup
+                    flushPendingCommands(proxy)
+                } catch (e: Throwable) {
+                    safeLogCrash("HeavyProcessConnectionManager", e)
+                    state = ConnectionState.DISCONNECTED
+                    safeLog("HeavyIPC", "IPC_FAILURE service connection setup failed: ${e.message}")
+                    return
+                }
+            }
+
+            for (listener in listeners) {
+                try {
+                    listener.onConnected()
+                } catch (e: Throwable) {
+                    safeLogCrash("HeavyProcessConnectionManager", e)
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            synchronized(lock) {
+                safeLog("HeavyIPC", "DISCONNECTED unexpected=true component=${name?.shortClassName}")
+                state = ConnectionState.DISCONNECTED
+                remoteProxy = null
+                remoteBinder = null
+                isServiceBound = false
+            }
+
+            for (listener in listeners) {
+                try {
+                    listener.onDisconnected()
+                } catch (e: Throwable) {
+                    safeLogCrash("HeavyProcessConnectionManager", e)
+                }
+            }
+        }
+    }
+
+    fun addListener(listener: HeavyConnectionListener) {
+        listeners.addIfAbsent(listener)
+    }
+
+    fun removeListener(listener: HeavyConnectionListener) {
+        listeners.remove(listener)
+    }
+
+    /**
+     * Binds asynchronously to HeavyFloatingHostService running in :heavy.
+     */
+    fun connect(autoCreate: Boolean = true, reason: String = "default"): Boolean {
+        safeLog("HeavyIPC", "CONNECT_REQUEST autoCreate=$autoCreate currentState=$state reason=$reason")
+        val ctx = context ?: run {
+            state = ConnectionState.DISCONNECTED
+            safeLog("HeavyIPC", "IPC_FAILURE connect failed: context is null")
+            return false
+        }
+        val pkgName = try { ctx.packageName } catch (_: Exception) { null }
+        if (pkgName.isNullOrBlank()) {
+            safeLog("HeavyIPC", "IPC_FAILURE connect aborted: Context package name is null or blank")
+            state = ConnectionState.DISCONNECTED
+            return false
+        }
+        synchronized(lock) {
+            if (state == ConnectionState.CONNECTED) {
+                safeLog("HeavyIPC", "CONNECT_REQUEST already connected")
+                return true
+            }
+            if (state == ConnectionState.CONNECTING) {
+                safeLog("HeavyIPC", "CONNECT_REQUEST already connecting")
+                return true
+            }
+
+            state = ConnectionState.CONNECTING
+            return try {
+                val intent = Intent(ctx, com.example.feature.floating.HeavyFloatingHostService::class.java)
+                val flags = if (autoCreate) Context.BIND_AUTO_CREATE else 0
+                safeLog("HeavyIPC", "BIND_REQUEST pkg=$pkgName flags=$flags")
+                val bound = ctx.bindService(intent, serviceConnection, flags)
+                if (!bound) {
+                    state = ConnectionState.DISCONNECTED
+                    safeLog("HeavyIPC", "IPC_FAILURE bindService returned false (Heavy unavailable)")
+                }
+                bound
+            } catch (e: Throwable) {
+                safeLog("HeavyIPC", "IPC_FAILURE bindService exception: ${e.message}")
+                state = ConnectionState.DISCONNECTED
+                false
+            }
+        }
+    }
+
+    /**
+     * Unbinds from Heavy process cleanly.
+     */
+    fun disconnect(reason: String = "requested") {
+        safeLog("HeavyIPC", "DISCONNECT_REQUEST reason=$reason activeConsumers=${activeConsumers.size}")
+        synchronized(lock) {
+            if (!isServiceBound && state == ConnectionState.DISCONNECTED) {
+                safeLog("HeavyIPC", "DISCONNECTED already disconnected")
+                return
+            }
+
+            try {
+                remoteBinder?.unlinkToDeath(deathRecipient, 0)
+            } catch (ignored: Exception) {}
+
+            try {
+                if (isServiceBound) {
+                    context?.unbindService(serviceConnection)
+                }
+            } catch (e: Throwable) {
+                safeLog("HeavyIPC", "IPC_FAILURE error unbinding service: ${e.message}")
+            }
+
+            remoteProxy = null
+            remoteBinder = null
+            isServiceBound = false
+            pendingCommands.clear()
+            state = ConnectionState.DISCONNECTED
+            safeLog("HeavyIPC", "DISCONNECTED remainingConsumers=${activeConsumers.size} reason=$reason")
+        }
+
+        for (listener in listeners) {
+            try {
+                listener.onDisconnected()
+            } catch (e: Throwable) {
+                safeLogCrash("HeavyProcessConnectionManager", e)
+            }
+        }
+    }
+
+    /**
+     * Registers an active consumer demanding the Heavy process.
+     * Triggers connect() on demand when the first consumer is acquired.
+     */
+    fun acquireConsumer(consumerTag: String, reason: String = "demand") {
+        val count = synchronized(lock) {
+            activeConsumers.add(consumerTag)
+            activeConsumers.size
+        }
+        safeLog("HeavyIPC", "CONSUMER_ACQUIRE id=$consumerTag count=$count reason=$reason")
+        connect(autoCreate = true, reason = "acquireConsumer:$consumerTag")
+    }
+
+    /**
+     * Unregisters an active consumer.
+     * When no active consumers remain, automatically unbinds and disconnects.
+     */
+    fun releaseConsumer(consumerTag: String, reason: String = "release") {
+        val remaining = synchronized(lock) {
+            activeConsumers.remove(consumerTag)
+            activeConsumers.size
+        }
+        safeLog("HeavyIPC", "CONSUMER_RELEASE id=$consumerTag count=$remaining reason=$reason")
+        if (remaining == 0) {
+            disconnect(reason = "no_consumers_left")
+        }
+    }
+
+    fun getActiveConsumerCount(): Int = synchronized(lock) { activeConsumers.size }
+    fun getActiveConsumers(): Set<String> = synchronized(lock) { activeConsumers.toSet() }
+
+    /**
+     * Forces a clean disconnect and reconnect sequence.
+     */
+    fun reconnect(): Boolean {
+        disconnect(reason = "reconnect")
+        return connect(autoCreate = true, reason = "reconnect")
+    }
+
+    /**
+     * Sends an immutable HeavyCommand across the Binder boundary.
+     * Guarantees safe failure if Heavy is unavailable or dead.
+     */
+    fun sendCommand(command: HeavyCommand, autoConnect: Boolean = true): IpcResult {
+        val proxy: IHeavyHostContract?
+        synchronized(lock) {
+            if (state != ConnectionState.CONNECTED) {
+                if (autoConnect && state != ConnectionState.DEAD) {
+                    if (state != ConnectionState.CONNECTING) {
+                        // Attempt the bind, but retain the command even when binding cannot
+                        // start yet. A later successful connection will flush this queue.
+                        connect(autoCreate = true, reason = "sendCommand:${command.type}")
+                    }
+
+                    // Binding may fail temporarily (or context may be unavailable in tests).
+                    // Keep commands queued while Heavy is not connected, unless its process
+                    // is known to be dead. If connection completed synchronously, send below.
+                    if (state != ConnectionState.CONNECTED) {
+                        val alreadyQueued = pendingCommands.any {
+                            it.commandId == command.commandId ||
+                            (it.type == command.type && it.targetId == command.targetId && command.type == HeavyCommandType.START_OPERATION)
+                        }
+                        if (!alreadyQueued && pendingCommands.size < 20) {
+                            pendingCommands.offer(command)
+                        }
+                        safeLog("HeavyIPC", "COMMAND_QUEUED cmdId=${command.commandId} type=${command.type} target=${command.targetId} state=$state pendingCount=${pendingCommands.size} alreadyQueued=$alreadyQueued")
+                        return IpcResult.success("Queued for delivery upon connection")
+                    }
+                }
+
+                if (state != ConnectionState.CONNECTED) {
+                    safeLog("HeavyIPC", "IPC_FAILURE cmdId=${command.commandId} type=${command.type} target=${command.targetId} error=Heavy process is not connected (state=$state)")
+                    return IpcResult.error(
+                        IpcErrorCode.HEAVY_UNAVAILABLE,
+                        "Heavy process is not connected (state=$state)"
+                    )
+                }
+            }
+            proxy = remoteProxy
+        }
+
+        if (proxy == null) {
+            safeLog("HeavyIPC", "IPC_FAILURE cmdId=${command.commandId} type=${command.type} target=${command.targetId} error=Remote proxy is null")
+            return IpcResult.error(IpcErrorCode.HEAVY_UNAVAILABLE, "Remote proxy is null")
+        }
+
+        return try {
+            val responseJson = proxy.sendCommand(command.toJson())
+            val result = IpcResult.fromJson(responseJson)
+            if (result.errorCode == IpcErrorCode.DEAD_BINDER) {
+                handleDeadBinder()
+            }
+            if (!result.success) {
+                safeLog("HeavyIPC", "IPC_FAILURE cmdId=${command.commandId} type=${command.type} target=${command.targetId} error=${result.message}")
+            }
+            result
+        } catch (e: Throwable) {
+            safeLogCrash("HeavyProcessConnectionManager", e)
+            safeLog("HeavyIPC", "IPC_FAILURE cmdId=${command.commandId} type=${command.type} target=${command.targetId} error=${e.message}")
+            IpcResult.error(IpcErrorCode.UNKNOWN_ERROR, e.message ?: "sendCommand failed")
+        }
+    }
+
+    /**
+     * Suspending command execution that connects to Heavy if not already connected,
+     * awaiting connection for up to maxWaitMs before transmitting command.
+     */
+    suspend fun sendCommandSuspending(command: HeavyCommand, maxWaitMs: Long = 3000L): IpcResult {
+        if (state == ConnectionState.CONNECTED && remoteProxy != null) {
+            return sendCommand(command, autoConnect = false)
+        }
+
+        connect(autoCreate = true)
+
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < maxWaitMs) {
+            if (state == ConnectionState.CONNECTED && remoteProxy != null) {
+                return sendCommand(command, autoConnect = false)
+            }
+            if (state == ConnectionState.DEAD) {
+                return IpcResult.error(IpcErrorCode.DEAD_BINDER, "Heavy process died while awaiting connection")
+            }
+            kotlinx.coroutines.delay(50L)
+        }
+
+        return IpcResult.error(IpcErrorCode.TIMEOUT, "Timed out awaiting Heavy connection for command ${command.commandId}")
+    }
+
+    /**
+     * Syncs a minimal immutable snapshot of Main state to Heavy.
+     */
+    fun syncSnapshot(snapshot: MainStateSnapshot, autoConnect: Boolean = false): IpcResult {
+        latestSnapshot = snapshot
+        val proxy: IHeavyHostContract?
+        synchronized(lock) {
+            if (state != ConnectionState.CONNECTED) {
+                if (autoConnect) {
+                    connect(autoCreate = true)
+                }
+                return IpcResult.error(
+                    IpcErrorCode.HEAVY_UNAVAILABLE,
+                    "Heavy process is not connected; cached snapshot for later"
+                )
+            }
+            proxy = remoteProxy
+        }
+
+        if (proxy == null) {
+            return IpcResult.error(IpcErrorCode.HEAVY_UNAVAILABLE, "Remote proxy is null")
+        }
+
+        return try {
+            val responseJson = proxy.syncSnapshot(snapshot.toJson())
+            val result = IpcResult.fromJson(responseJson)
+            if (result.errorCode == IpcErrorCode.DEAD_BINDER) {
+                handleDeadBinder()
+            }
+            result
+        } catch (e: Throwable) {
+            safeLogCrash("HeavyProcessConnectionManager", e)
+            IpcResult.error(IpcErrorCode.UNKNOWN_ERROR, e.message ?: "syncSnapshot failed")
+        }
+    }
+
+    /**
+     * Fast health check pinging Heavy process.
+     */
+    fun ping(): Boolean {
+        val proxy = remoteProxy ?: return false
+        return try {
+            proxy.ping()
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Obtains a SurfacePackage from Heavy for embedding in a Main SurfaceView (API 30+).
+     */
+    fun createSurfacePackage(params: android.os.Bundle): android.os.Bundle? {
+        val proxy: IHeavyHostContract?
+        synchronized(lock) {
+            if (state != ConnectionState.CONNECTED) {
+                connect(autoCreate = true)
+                return null
+            }
+            proxy = remoteProxy
+        }
+        if (proxy == null) return null
+        return try {
+            proxy.createSurfacePackage(params)
+        } catch (e: Throwable) {
+            safeLogCrash("HeavyProcessConnectionManager", e)
+            null
+        }
+    }
+
+    /**
+     * Notifies Heavy to update dimensions of an existing SurfaceControlViewHost without recreation.
+     */
+    fun relayoutSurfaceHost(pageId: String, width: Int, height: Int): Boolean {
+        val proxy = synchronized(lock) { remoteProxy } ?: return false
+        return try {
+            proxy.relayoutSurfaceHost(pageId, width, height)
+        } catch (e: Throwable) {
+            safeLogCrash("HeavyProcessConnectionManager", e)
+            false
+        }
+    }
+
+    /**
+     * Releases an active SurfaceControlViewHost in Heavy when page is unmounted.
+     */
+    fun releaseSurfaceHost(pageId: String): Boolean {
+        val proxy = synchronized(lock) { remoteProxy } ?: return false
+        return try {
+            proxy.releaseSurfaceHost(pageId)
+        } catch (e: Throwable) {
+            safeLogCrash("HeavyProcessConnectionManager", e)
+            false
+        }
+    }
+
+    private fun handleDeadBinder() {
+        synchronized(lock) {
+            state = ConnectionState.DEAD
+            remoteProxy = null
+            remoteBinder = null
+            isServiceBound = false
+            pendingCommands.clear()
+        }
+        for (listener in listeners) {
+            try {
+                listener.onHeavyProcessDied()
+            } catch (ignored: Exception) {}
+        }
+    }
+
+    private fun flushPendingCommands(proxy: IHeavyHostContract) {
+        while (pendingCommands.isNotEmpty()) {
+            val pendingCmd = pendingCommands.poll() ?: break
+            try {
+                val resJson = proxy.sendCommand(pendingCmd.toJson())
+                safeLog("HeavyProcessConnectionManager", "Delivered queued command ${pendingCmd.commandId}: $resJson")
+            } catch (e: Throwable) {
+                safeLogCrash("HeavyProcessConnectionManager", e)
+            }
+        }
+    }
+
+    private fun dispatchHeavyEvent(event: HeavyEvent) {
+        for (listener in listeners) {
+            try {
+                listener.onHeavyEvent(event)
+            } catch (e: Throwable) {
+                safeLogCrash("HeavyProcessConnectionManager", e)
+            }
+        }
+    }
+
+    private fun dispatchMainAction(request: MainCommandRequest): IpcResult {
+        if (request.action == MainActionType.CUSTOM && request.targetId == "NOTIFICATION_ACTION") {
+            val ctx = context ?: return IpcResult.error(IpcErrorCode.HEAVY_UNAVAILABLE, "Context is null")
+            val subAction = request.parameters["subAction"]
+            when (subAction) {
+                "GET_ACTIVE" -> {
+                    val listener = com.example.service.AppNotificationListener.instance
+                    val sbns = listener?.activeNotifications ?: emptyArray()
+                    val prefs = ctx.getSharedPreferences("NotificationPrefs", Context.MODE_PRIVATE)
+                    val sidebarHidden = prefs.getStringSet("sidebar_hidden_packages", emptySet()) ?: emptySet()
+                    val filtered = sbns.filter {
+                        it.packageName != ctx.packageName && !sidebarHidden.contains(it.packageName)
+                    }.sortedByDescending { it.postTime }
+                    val jsonArr = org.json.JSONArray()
+                    filtered.forEach { sbn ->
+                        jsonArr.put(com.example.feature.notification.NotificationItem.fromStatusBarNotification(sbn).toJson())
+                    }
+                    return IpcResult.success(data = mapOf("notifications" to jsonArr.toString()))
+                }
+                "CLEAR_ALL" -> {
+                    mainHandler.post {
+                        com.example.service.AppNotificationListener.instance?.cancelAllNotifications()
+                    }
+                    return IpcResult.success()
+                }
+                "DISMISS" -> {
+                    val key = request.parameters["key"]
+                    val pkg = request.parameters["package"]
+                    val tag = request.parameters["tag"]
+                    val id = request.parameters["id"]?.toIntOrNull()
+                    mainHandler.post {
+                        val listener = com.example.service.AppNotificationListener.instance
+                        if (key != null) {
+                            listener?.cancelNotification(key)
+                        } else if (pkg != null && id != null) {
+                            listener?.cancelNotification(pkg, tag, id)
+                        }
+                    }
+                    return IpcResult.success()
+                }
+                "OPEN" -> {
+                    val key = request.parameters["key"]
+                    val pkg = request.parameters["package"]
+                    mainHandler.post {
+                        val listener = com.example.service.AppNotificationListener.instance
+                        val sbn = listener?.activeNotifications?.find {
+                            (it.key ?: "${it.packageName}_${it.id}_${it.tag ?: ""}") == key
+                        }
+                        try {
+                            if (sbn?.notification?.contentIntent != null) {
+                                sbn.notification.contentIntent.send()
+                            } else if (pkg != null) {
+                                val launchIntent = ctx.packageManager.getLaunchIntentForPackage(pkg)
+                                if (launchIntent != null) {
+                                    launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    ctx.startActivity(launchIntent)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            if (pkg != null) {
+                                val launchIntent = ctx.packageManager.getLaunchIntentForPackage(pkg)
+                                if (launchIntent != null) {
+                                    launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    ctx.startActivity(launchIntent)
+                                }
+                            }
+                        }
+                        com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).closeSidebar()
+                    }
+                    return IpcResult.success()
+                }
+                "TRIGGER_ACTION" -> {
+                    val key = request.parameters["key"]
+                    val actionIdx = request.parameters["actionIndex"]?.toIntOrNull() ?: 0
+                    val replyText = request.parameters["replyText"]
+                    mainHandler.post {
+                        val listener = com.example.service.AppNotificationListener.instance
+                        val sbn = listener?.activeNotifications?.find {
+                            (it.key ?: "${it.packageName}_${it.id}_${it.tag ?: ""}") == key
+                        }
+                        val action = sbn?.notification?.actions?.getOrNull(actionIdx)
+                        if (action != null) {
+                            try {
+                                if (!replyText.isNullOrBlank() && !action.remoteInputs.isNullOrEmpty()) {
+                                    val replyIntent = android.content.Intent()
+                                    val bundle = android.os.Bundle()
+                                    for (ri in action.remoteInputs) {
+                                        bundle.putCharSequence(ri.resultKey, replyText)
+                                    }
+                                    android.app.RemoteInput.addResultsToIntent(action.remoteInputs, replyIntent, bundle)
+                                    action.actionIntent.send(ctx, 0, replyIntent)
+                                } else {
+                                    action.actionIntent.send()
+                                }
+                            } catch (e: Exception) {
+                                com.example.core.LogKeeper.writeLog("Notification", "Action send failed: ${e.message}")
+                            }
+                        }
+                    }
+                    return IpcResult.success()
+                }
+            }
+        }
+
+        var finalResult = IpcResult.success()
+        for (listener in listeners) {
+            try {
+                val res = listener.onMainActionRequested(request)
+                if (!res.success) finalResult = res
+            } catch (e: Throwable) {
+                safeLogCrash("HeavyProcessConnectionManager", e)
+                return IpcResult.error(IpcErrorCode.UNKNOWN_ERROR, e.message ?: "Handler failed")
+            }
+        }
+
+        context?.let { ctx ->
+            mainHandler.post {
+                try {
+                    when (request.action) {
+                        MainActionType.CLOSE_WINDOW -> {
+                            safeLog("HeavyProcessConnectionManager", "Executing CLOSE_WINDOW from Heavy")
+                            com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).closeSidebar()
+                        }
+                        MainActionType.SET_DIMMED -> {
+                            val dimmed = request.parameters["dimmed"]?.toBoolean() ?: false
+                            safeLog("HeavyProcessConnectionManager", "Executing SET_DIMMED($dimmed) from Heavy")
+                            com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).setSidebarDimmed(dimmed)
+                        }
+                        MainActionType.TRIGGER_ACTION -> {
+                            val actionName = request.targetId ?: request.parameters["action"] ?: ""
+                            val containerId = request.parameters["containerId"] ?: "sidebar"
+                            safeLog("HeavyProcessConnectionManager", "Executing TRIGGER_ACTION '$actionName' from Heavy (container=$containerId)")
+                            if (actionName.isNotEmpty()) {
+                                com.example.feature.element.ElementActionDispatcher.handleSystemAction(ctx, actionName, containerId)
+                            }
+                        }
+                        MainActionType.OPEN_CONTAINER -> {
+                            val targetId = request.targetId ?: request.parameters["containerId"]
+                            if (!targetId.isNullOrEmpty()) {
+                                safeLog("HeavyProcessConnectionManager", "Executing OPEN_CONTAINER '$targetId' from Heavy")
+                                com.example.feature.sidebar.SidebarManager.getInstance(ctx).openContainerById(targetId)
+                            }
+                        }
+                        MainActionType.CUSTOM -> {
+                            if (request.targetId == "NAVIGATE_PAGE") {
+                                val delta = request.parameters["delta"]?.toIntOrNull() ?: 0
+                                safeLog("HeavyProcessConnectionManager", "Executing NAVIGATE_PAGE delta=$delta from Heavy")
+                                com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).navigatePage(delta)
+                            }
+                        }
+                        else -> {
+                            // Handled by listeners or unhandled
+                        }
+                    }
+                } catch (e: Throwable) {
+                    safeLogCrash("HeavyProcessConnectionManager", e)
+                }
+            }
+        }
+        return finalResult
+    }
+
+    // Testing / internal hooks
+    internal fun dispatchMainActionForTesting(request: MainCommandRequest): IpcResult = dispatchMainAction(request)
+    internal fun setMockProxyForTesting(proxy: IHeavyHostContract?, testState: ConnectionState = ConnectionState.CONNECTED) {
+        synchronized(lock) {
+            remoteProxy = proxy
+            state = testState
+        }
+        if (testState == ConnectionState.CONNECTED && proxy != null) {
+            flushPendingCommands(proxy)
+        }
+    }
+
+    internal fun getPendingCommandCountForTesting(): Int = pendingCommands.size
+
+    internal fun triggerDeathRecipientForTesting() {
+        deathRecipient.binderDied()
+    }
+
+    companion object {
+        @Volatile
+        private var instance: HeavyProcessConnectionManager? = null
+
+        fun getInstance(context: Context): HeavyProcessConnectionManager {
+            return instance ?: synchronized(this) {
+                instance ?: HeavyProcessConnectionManager(context.applicationContext).also { instance = it }
+            }
+        }
+
+        fun resetForTesting() {
+            synchronized(this) {
+                instance?.let {
+                    it.pendingCommands.clear()
+                    it.activeConsumers.clear()
+                    it.listeners.clear()
+                }
+                instance = null
+            }
+        }
+    }
+}
