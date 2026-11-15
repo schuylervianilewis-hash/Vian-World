@@ -34,6 +34,7 @@ import com.example.feature.settings.NetSpeedSettingsScreen
 import com.example.feature.settings.PermissionManagerScreen
 import com.example.feature.settings.ScreenCapSettingsScreen
 import com.example.feature.settings.handle.HandleSettingsScreen
+import eu.faircode.netguard.ShieldControl
 
 /**
  * SettingsActivity: Dedicated Settings management activity running in the Heavy process (:heavy).
@@ -116,6 +117,11 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onBack = { navigateBack() }
             )
         }
+        currentRoute == "shield" -> {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            context.startActivity(ShieldControl.createOpenShieldIntent(context))
+            androidx.compose.runtime.LaunchedEffect(Unit) { navigateBack() }
+        }
         currentRoute == "permissions" -> {
             PermissionManagerScreen(
                 onContinue = { navigateBack() },
@@ -139,6 +145,7 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onNavigateToCallRecorder = { navigateTo("call_recorder") },
                 onNavigateToScreenCap = { navigateTo("screencap") },
                 onNavigateToPermissions = { navigateTo("permissions") },
+                onNavigateToShield = { navigateTo("shield") },
                 onBack = onFinish
             )
         }
@@ -153,6 +160,7 @@ fun MainSettingsScreen(
     onNavigateToCallRecorder: () -> Unit,
     onNavigateToScreenCap: () -> Unit,
     onNavigateToPermissions: () -> Unit,
+    onNavigateToShield: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -217,11 +225,21 @@ fun MainSettingsScreen(
 
             item {
                 ListItem(
-                    headlineContent = { Text("Vian Permissions Manager") },
-                    supportingContent = { Text("Review and manage necessary system permissions") },
+                    headlineContent = { Text("Shield") },
+                    supportingContent = { Text("Open Firewall protection, app rules, and connection controls") },
+                    modifier = Modifier
+                        .clickable { onNavigateToShield() }
+                        .testTag("settings_item_shield")
+                )
+                HorizontalDivider()
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Vian Permission") },
+                    supportingContent = { Text("Complete Sidebar setup and review required system permissions") },
                     modifier = Modifier
                         .clickable { onNavigateToPermissions() }
-                        .testTag("settings_item_permissions")
+                        .testTag("settings_item_vian_permission")
                 )
                 HorizontalDivider()
             }
@@ -251,21 +269,6 @@ fun MainSettingsScreen(
                             )
                         }
                         .testTag("settings_item_launcher")
-                )
-                HorizontalDivider()
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text("Sidebar Setup") },
-                    supportingContent = { Text("Reopen the initial Sidebar setup and permission flow") },
-                    modifier = Modifier
-                        .clickable {
-                            context.startActivity(
-                                Intent(context, MainActivity::class.java)
-                                    .putExtra(MainActivity.EXTRA_FORCE_WELCOME, true)
-                            )
-                        }
-                        .testTag("settings_item_sidebar_setup")
                 )
                 HorizontalDivider()
             }
