@@ -73,11 +73,7 @@ public class WidgetAdmin extends ReceiverAutostart {
                     || INTENT_OFF.equals(intent.getAction())
                     || INTENT_PAUSE.equals(intent.getAction())) {
                 boolean enabled = INTENT_ON.equals(intent.getAction());
-                prefs.edit().putBoolean("enabled", enabled).apply();
-                if (enabled)
-                    ServiceSinkhole.start("widget", context, true);
-                else
-                    ServiceSinkhole.stop("widget", context, false);
+                ShieldControl.setEnabled(context, enabled, "widget");
 
                 // Auto enable
                 int auto = Integer.parseInt(prefs.getString("pause", "10"));

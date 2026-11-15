@@ -44,7 +44,7 @@ public class WidgetMain extends AppWidgetProvider {
 
     private static void update(int[] appWidgetIds, AppWidgetManager appWidgetManager, Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        boolean enabled = prefs.getBoolean("enabled", false);
+        boolean enabled = ShieldControl.isEnabled(context);
 
         try {
             try {

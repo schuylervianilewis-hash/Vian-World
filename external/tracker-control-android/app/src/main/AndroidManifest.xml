@@ -107,6 +107,9 @@
                     android:pathPrefix="/"
                     android:scheme="https" />
             </intent-filter-->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -116,9 +119,6 @@
             android:label="@string/menu_settings"
             android:theme="@style/AppThemeRed.NoActionBar"
             android:parentActivityName="eu.faircode.netguard.ActivityMain">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
-            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -293,7 +293,7 @@
             android:name="eu.faircode.netguard.ServiceTileMain"
             android:exported="true"
             android:icon="@drawable/ic_rocket_white"
-            android:label="@string/app_name"
+            android:label="Shield"
             tools:targetApi="n"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
@@ -327,7 +327,7 @@
         <receiver
             android:name="eu.faircode.netguard.WidgetMain"
             android:exported="true"
-            android:label="@string/app_name">
+            android:label="Shield">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

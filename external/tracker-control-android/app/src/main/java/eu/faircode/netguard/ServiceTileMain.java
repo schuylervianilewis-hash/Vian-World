@@ -40,6 +40,7 @@ import net.kollnig.missioncontrol.R;
 public class ServiceTileMain extends TileService implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG = "TrackerControl.TileMain";
 
+    @Override
     public void onStartListening() {
         Log.i(TAG, "Start listening");
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -55,7 +56,7 @@ public class ServiceTileMain extends TileService implements SharedPreferences.On
 
     private void update() {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean enabled = prefs.getBoolean("enabled", false);
+        boolean enabled = ShieldControl.isEnabled(this);
         Tile tile = getQsTile();
         if (tile != null) {
             tile.setState(enabled ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
@@ -64,29 +65,18 @@ public class ServiceTileMain extends TileService implements SharedPreferences.On
         }
     }
 
+    @Override
     public void onStopListening() {
         Log.i(TAG, "Stop listening");
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         prefs.unregisterOnSharedPreferenceChangeListener(this);
     }
 
+    @Override
     public void onClick() {
         Log.i(TAG, "Click");
 
-        // Cancel set alarm
-        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        Intent intent = new Intent(WidgetAdmin.INTENT_ON);
-        intent.setPackage(getPackageName());
-        PendingIntent pi = PendingIntentCompat.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
-        am.cancel(pi);
-
-        // Check state
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean enabled = !prefs.getBoolean("enabled", false);
-        prefs.edit().putBoolean("enabled", enabled).apply();
-        if (enabled)
-            ServiceSinkhole.start("tile", this, true);
-        else
-            ServiceSinkhole.stop("tile", this, false);
+        boolean enabled = !ShieldControl.isEnabled(this);
+        ShieldControl.setEnabled(this, enabled, "tile");
     }
 }

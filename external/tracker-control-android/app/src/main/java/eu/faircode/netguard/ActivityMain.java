@@ -164,6 +164,7 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
     public static final String EXTRA_SEARCH = "Search";
     public static final String EXTRA_RELATED = "Related";
     public static final String EXTRA_APPROVE = "Approve";
+    public static final String EXTRA_OPEN_SHIELD = "OpenShield";
     public static final String EXTRA_LOGCAT = "Logcat";
     public static final String EXTRA_CONNECTED = "Connected";
     public static final String EXTRA_METERED = "Metered";
@@ -500,6 +501,7 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
             if (initialTab == 0)
                 initialTab = R.id.nav_timeline;
         }
+        if (shouldOpenShield(getIntent())) initialTab = R.id.nav_firewall;
         bottomNav.setSelectedItemId(initialTab);
         selectTab(initialTab);
 
@@ -642,6 +644,18 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
         else
             updateSearch(intent.getStringExtra(EXTRA_SEARCH));
         checkExtras(intent);
+        if (shouldOpenShield(intent) && bottomNav != null) {
+            if (bottomNav.getSelectedItemId() != R.id.nav_firewall)
+                bottomNav.setSelectedItemId(R.id.nav_firewall);
+            else if (currentTab != R.id.nav_firewall) selectTab(R.id.nav_firewall);
+            intent.removeExtra(EXTRA_OPEN_SHIELD);
+            if ("android.service.quicksettings.action.QS_TILE_PREFERENCES".equals(intent.getAction())) intent.setAction(null);
+        }
+    }
+
+    private static boolean shouldOpenShield(Intent intent) {
+        return intent != null && (intent.getBooleanExtra(EXTRA_OPEN_SHIELD, false)
+                || "android.service.quicksettings.action.QS_TILE_PREFERENCES".equals(intent.getAction()));
     }
 
     @Override

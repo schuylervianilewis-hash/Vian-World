@@ -363,8 +363,8 @@ public class ServiceSinkhole extends VpnService {
     private volatile SharedPreferences cachedMinimalOnlyPrefs;
     private volatile boolean cachedManageSystem;
 
-    private static final int NOTIFY_ENFORCING = 1;
-    private static final int NOTIFY_WAITING = 2;
+    private static final int NOTIFY_ENFORCING = ShieldNotificationFactory.NOTIFICATION_ID;
+    private static final int NOTIFY_WAITING = ShieldNotificationFactory.NOTIFICATION_ID;
     private static final int NOTIFY_DISABLED = 3;
     private static final int NOTIFY_AUTOSTART = 5;
     private static final int NOTIFY_ERROR = 6;
@@ -760,7 +760,7 @@ public class ServiceSinkhole extends VpnService {
                         !commandHandler.hasMessages(Command.reload.ordinal()) &&
                         !prefs.getBoolean("enabled", false) &&
                         !prefs.getBoolean("show_stats", false))
-                    stopForeground(true);
+                    stopForegroundForCurrentState();
             } catch (Throwable ex) {
                 if (wireGuardStartupRetry)
                     cancelWireGuardStartupRecovery(true);
@@ -800,7 +800,7 @@ public class ServiceSinkhole extends VpnService {
             if (vpn == null) {
                 if (state != State.none) {
                     Log.d(TAG, "Stop foreground state=" + state.toString());
-                    stopForeground(true);
+                    stopForegroundForCurrentState();
                 }
                 startForeground(NOTIFY_ENFORCING, getEnforcingNotification(-1, -1, -1));
                 state = State.enforcing;
@@ -845,7 +845,7 @@ public class ServiceSinkhole extends VpnService {
             if (state != State.enforcing) {
                 if (state != State.none) {
                     Log.d(TAG, "Stop foreground state=" + state.toString());
-                    stopForeground(true);
+                    stopForegroundForCurrentState();
                 }
                 startForeground(NOTIFY_ENFORCING, getEnforcingNotification(-1, -1, -1));
                 state = State.enforcing;
@@ -948,7 +948,7 @@ public class ServiceSinkhole extends VpnService {
                 last_blocked = -1;
                 last_hosts = -1;
 
-                stopForeground(true);
+                stopForegroundForCurrentState();
 
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this);
                 if (prefs.getBoolean("show_stats", false)) {
@@ -959,7 +959,7 @@ public class ServiceSinkhole extends VpnService {
                     state = State.none;
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        stopForeground(true);
+                        stopForegroundForCurrentState();
                     } else {
                         stopSelf();
                     }
@@ -1351,7 +1351,7 @@ public class ServiceSinkhole extends VpnService {
             this.removeMessages(MSG_STATS_UPDATE);
             if (state == State.stats) {
                 Log.d(TAG, "Stop foreground state=" + state.toString());
-                stopForeground(true);
+                stopForegroundForCurrentState();
                 state = State.none;
             } else
                 NotificationManagerCompat.from(ServiceSinkhole.this).cancel(NOTIFY_TRAFFIC);
@@ -1573,7 +1573,7 @@ public class ServiceSinkhole extends VpnService {
             if (state == State.none || state == State.waiting) {
                 if (state != State.none) {
                     Log.d(TAG, "Stop foreground state=" + state.toString());
-                    stopForeground(true);
+                    stopForegroundForCurrentState();
                 }
                 startForeground(NOTIFY_TRAFFIC, builder.build());
                 state = State.stats;
@@ -4447,73 +4447,22 @@ public class ServiceSinkhole extends VpnService {
         cm.unregisterNetworkCallback((ConnectivityManager.NetworkCallback) networkCallback);
     }
 
-    private Notification getEnforcingNotification(int allowed, int blocked, int hosts) {
-        Intent main = new Intent(this, ActivityMain.class);
-        PendingIntent pi = PendingIntentCompat.getActivity(this, 0, main, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        Intent i = new Intent(INTENT_PAUSE);
-        i.setPackage(this.getPackageName());
-        PendingIntent pauseIntent = PendingIntentCompat.getBroadcast(this, 0, i, PendingIntent.FLAG_UPDATE_CURRENT);
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this);
-        int pause = getIntPref(prefs, "pause", 10);
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "foreground");
-        builder.setSmallIcon(R.drawable.ic_rocket_white)
-                .setContentIntent(pi)
-                .setColor(getResources().getColor(R.color.colorTrackerControl))
-                .setOngoing(true)
-                .setAutoCancel(false)
-                .addAction(R.drawable.ic_pause_white_24dp, getResources().getQuantityString(
-                        R.plurals.pause, pause, pause), pauseIntent);
-
+    private void stopForegroundForCurrentState() {
+        boolean preserveShared = state != State.stats
+                && ShieldNotificationFactory.isHandleServiceActive(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            builder.setContentTitle(getString(R.string.msg_started));
+            stopForeground(preserveShared ? STOP_FOREGROUND_DETACH : STOP_FOREGROUND_REMOVE);
         else
-            builder.setContentTitle(getString(R.string.app_name))
-                    .setContentText(getString(R.string.msg_started));
+            stopForeground(!preserveShared);
+    }
 
-        builder.setCategory(NotificationCompat.CATEGORY_STATUS)
-                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-                .setPriority(NotificationCompat.PRIORITY_MIN);
-
-        if (allowed >= 0)
-            last_allowed = allowed;
-        else
-            allowed = last_allowed;
-        if (blocked >= 0)
-            last_blocked = blocked;
-        else
-            blocked = last_blocked;
-        if (hosts >= 0)
-            last_hosts = hosts;
-        else
-            hosts = last_hosts;
-
-        if (allowed >= 0 || blocked >= 0 || hosts >= 0) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                /*
-                 * if (Util.isPlayStoreInstall(this))
-                 * builder.setContentText(getString(R.string.msg_packages, allowed, blocked));
-                 * else
-                 * builder.setContentText(getString(R.string.msg_hosts, allowed, blocked,
-                 * hosts));
-                 */
-                return builder.build();
-            } else {
-                NotificationCompat.BigTextStyle notification = new NotificationCompat.BigTextStyle(builder);
-                notification.bigText(getString(R.string.msg_started));
-                /*
-                 * if (Util.isPlayStoreInstall(this))
-                 * notification.setSummaryText(getString(R.string.msg_packages, allowed,
-                 * blocked));
-                 * else
-                 * notification.setSummaryText(getString(R.string.msg_hosts, allowed, blocked,
-                 * hosts));
-                 */
-                return notification.build();
-            }
-        } else
-            return builder.build();
+    private Notification getEnforcingNotification(int allowed, int blocked, int hosts) {
+        if (allowed >= 0) last_allowed = allowed;
+        if (blocked >= 0) last_blocked = blocked;
+        if (hosts >= 0) last_hosts = hosts;
+        return ShieldNotificationFactory.buildCurrentNotification(
+                this, R.drawable.ic_rocket_white,
+                "Shield protection active", "Internet protection is running");
     }
 
     private void updateEnforcingNotification(int allowed, int total) {
@@ -4525,23 +4474,9 @@ public class ServiceSinkhole extends VpnService {
     }
 
     private Notification getWaitingNotification() {
-        Intent main = new Intent(this, ActivityMain.class);
-        PendingIntent pi = PendingIntentCompat.getActivity(this, 0, main, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "foreground");
-        builder.setSmallIcon(R.drawable.ic_rocket_white)
-                .setContentIntent(pi)
-                .setColor(getResources().getColor(R.color.colorTrackerControl))
-                .setOngoing(true)
-                .setAutoCancel(false);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            builder.setContentTitle(getString(R.string.msg_waiting));
-        else
-            builder.setContentTitle(getString(R.string.app_name))
-                    .setContentText(getString(R.string.msg_waiting));
-
-        return builder.build();
+        return ShieldNotificationFactory.buildCurrentNotification(
+                this, R.drawable.ic_rocket_white,
+                "Shield waiting", "Waiting for the VPN connection");
     }
 
     private void showDisabledNotification() {

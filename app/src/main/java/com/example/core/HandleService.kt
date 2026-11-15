@@ -17,9 +17,11 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
 import com.example.MainActivity
 import com.example.R
 import com.example.feature.sidebar.SidebarManager
+import eu.faircode.netguard.ShieldNotificationFactory
 
 /**
  * HandleService: Persistent resident foreground service in the Main process (com.example).
@@ -90,8 +92,8 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     companion object {
-        const val CHANNEL_ID = "vian_core_service_channel"
-        const val NOTIFICATION_ID = 1001
+        const val CHANNEL_ID = ShieldNotificationFactory.CHANNEL_ID
+        const val NOTIFICATION_ID = ShieldNotificationFactory.NOTIFICATION_ID
         const val KEY_NET_SPEED_ENABLED = "net_speed_enabled"
         const val ACTION_RELOAD_HANDLES = "com.example.action.RELOAD_HANDLES"
 
@@ -429,52 +431,17 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         titleText: String,
         contentText: String
     ): Notification {
-        val launchIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val safeIcon = resolveSafeIconResId(iconResId)
         if (safeIcon != iconResId) {
-            LogKeeper.logError(
-                this,
-                "HandleService",
-                "Unsafe/unusable icon candidate detected (resId=$iconResId); substituted safe fallback icon (resId=$safeIcon)"
-            )
+            LogKeeper.logError(this, "HandleService",
+                "Unsafe/unusable icon candidate detected (resId=$iconResId); substituted safe fallback icon (resId=$safeIcon)")
         }
-
-        return Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(safeIcon)
-            .setContentTitle(titleText)
-            .setContentText(contentText)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .build()
+        return ShieldNotificationFactory.buildSidebarNotification(
+            this, safeIcon, titleText, contentText, isSpeedMonitorEnabled)
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "VianSide Core Monitor",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Keeps edge gesture handles and internet speed monitor active."
-                setShowBadge(false)
-                enableVibration(false)
-                enableLights(false)
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
+        ShieldNotificationFactory.createNotificationChannel(this)
     }
 
     private fun handleSyncPrefIntent(intent: Intent) {
@@ -610,6 +577,19 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     override fun onDestroy() {
         super.onDestroy()
         LogKeeper.logLifecycle(this, "HandleService", "DESTROYED")
+        val shieldPrefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val shieldEnabled = shieldPrefs.getBoolean("enabled", false)
+        val showStats = shieldPrefs.getBoolean("show_stats", false)
+        ShieldNotificationFactory.setHandleServiceActive(this, false)
+        if (shieldEnabled || showStats) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_DETACH)
+            else stopForeground(false)
+            notificationManager.notify(NOTIFICATION_ID,
+                ShieldNotificationFactory.buildShieldOnlyNotification(this, shieldEnabled))
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE)
+            else stopForeground(true)
+        }
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         try {
             unregisterReceiver(screenStateReceiver)
