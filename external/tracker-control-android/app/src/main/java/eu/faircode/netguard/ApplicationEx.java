@@ -130,33 +130,7 @@ public class ApplicationEx extends Application {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
         Log.i(TAG, "Create version=" + Util.getSelfVersionName(this) + "/" + Util.getSelfVersionCode(this));
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            createNotificationChannels();
-
-        SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
-        migratePreferences(prefs);
-        // An install that enabled the daily blocklist update under an older version
-        // still has it enqueued with that version's constraints, and the preference
-        // listener only runs when the user changes the setting. Guarded because this
-        // is the startup path: a WorkManager that cannot initialise should cost the
-        // reconcile, not the app.
-        try {
-            HostsDownloadWorker.reconcileAutoUpdate(this, prefs);
-        } catch (Throwable ex) {
-            Log.w(TAG, "Could not reconcile the hosts auto-update: " + ex);
-        }
-        // A VPN the system killed leaves nothing in the app to notice, so the
-        // check lives outside the service. Guarded like the reconcile above:
-        // this is the startup path.
-        try {
-            VpnRestartWorker.schedule(this);
-        } catch (Throwable ex) {
-            Log.w(TAG, "Could not schedule the VPN restart monitor: " + ex);
-        }
-        BlockingMode.enforcePlayStoreMode(this);
-
-        // Keep VPN exclusions aligned with the selected blocking mode on startup.
-        BlockingMode.syncAutoExclusions(this);
+        initializeHostRuntime(this);
 
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override
@@ -229,6 +203,32 @@ public class ApplicationEx extends Application {
         });
     }
 
+    /**
+     * Initializes Firewall-owned runtime dependencies when embedded in the
+     * Vian World host Application. Deliberately excludes ACRA and activity
+     * lifecycle setup: those belong to the standalone ApplicationEx only.
+     */
+    public static synchronized void initializeHostRuntime(Context context) {
+        Context app = context.getApplicationContext();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            createNotificationChannels(app);
+
+        SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(app);
+        migratePreferences(prefs);
+        try {
+            HostsDownloadWorker.reconcileAutoUpdate(app, prefs);
+        } catch (Throwable ex) {
+            Log.w(TAG, "Could not reconcile the hosts auto-update: " + ex);
+        }
+        try {
+            VpnRestartWorker.schedule(app);
+        } catch (Throwable ex) {
+            Log.w(TAG, "Could not schedule the VPN restart monitor: " + ex);
+        }
+        BlockingMode.enforcePlayStoreMode(app);
+        BlockingMode.syncAutoExclusions(app);
+    }
+
     static void migratePreferences(SharedPreferences prefs) {
         if (prefs.contains("mullvad_previous_privkey") ||
                 prefs.contains("mullvad_previous_address") ||
@@ -288,21 +288,21 @@ public class ApplicationEx extends Application {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private void createNotificationChannels() {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+    private static void createNotificationChannels(Context context) {
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
-        NotificationChannel foreground = new NotificationChannel("foreground", getString(R.string.channel_foreground),
+        NotificationChannel foreground = new NotificationChannel("foreground", context.getString(R.string.channel_foreground),
                 NotificationManager.IMPORTANCE_MIN);
         foreground.setSound(null, Notification.AUDIO_ATTRIBUTES_DEFAULT);
         nm.createNotificationChannel(foreground);
 
-        NotificationChannel notify = new NotificationChannel("notify", getString(R.string.channel_notify),
+        NotificationChannel notify = new NotificationChannel("notify", context.getString(R.string.channel_notify),
                 NotificationManager.IMPORTANCE_DEFAULT);
         notify.setSound(null, Notification.AUDIO_ATTRIBUTES_DEFAULT);
         notify.setBypassDnd(true);
         nm.createNotificationChannel(notify);
 
-        NotificationChannel access = new NotificationChannel("access", getString(R.string.channel_access),
+        NotificationChannel access = new NotificationChannel("access", context.getString(R.string.channel_access),
                 NotificationManager.IMPORTANCE_DEFAULT);
         access.setSound(null, Notification.AUDIO_ATTRIBUTES_DEFAULT);
         access.setBypassDnd(true);
