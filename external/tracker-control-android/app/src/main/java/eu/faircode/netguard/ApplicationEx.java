@@ -210,11 +210,20 @@ public class ApplicationEx extends Application {
      */
     public static synchronized void initializeHostRuntime(Context context) {
         Context app = context.getApplicationContext();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            createNotificationChannels(app);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                createNotificationChannels(app);
+            } catch (Throwable ex) {
+                Log.e(TAG, "Could not create Firewall notification channels", ex);
+            }
+        }
 
         SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(app);
-        migratePreferences(prefs);
+        try {
+            migratePreferences(prefs);
+        } catch (Throwable ex) {
+            Log.e(TAG, "Could not migrate Firewall preferences", ex);
+        }
         try {
             HostsDownloadWorker.reconcileAutoUpdate(app, prefs);
         } catch (Throwable ex) {
@@ -225,8 +234,12 @@ public class ApplicationEx extends Application {
         } catch (Throwable ex) {
             Log.w(TAG, "Could not schedule the VPN restart monitor: " + ex);
         }
-        BlockingMode.enforcePlayStoreMode(app);
-        BlockingMode.syncAutoExclusions(app);
+        try {
+            BlockingMode.enforcePlayStoreMode(app);
+            BlockingMode.syncAutoExclusions(app);
+        } catch (Throwable ex) {
+            Log.e(TAG, "Could not synchronize Firewall blocking-mode runtime state", ex);
+        }
     }
 
     static void migratePreferences(SharedPreferences prefs) {
