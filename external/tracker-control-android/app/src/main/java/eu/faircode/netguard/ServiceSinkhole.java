@@ -4425,14 +4425,17 @@ public class ServiceSinkhole extends VpnService {
             }
 
             if (wgStateListenerRegistered) {
-                net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.removeStateListener(wgStateListener);
+                cleanupResource("WireGuard state listener",
+                        () -> net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.removeStateListener(wgStateListener));
                 wgStateListenerRegistered = false;
             }
 
             if (networkMonitorRegistered) {
-                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-                if (cm != null)
-                    cm.unregisterNetworkCallback(networkMonitorCallback);
+                cleanupResource("network monitor callback", () -> {
+                    ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                    if (cm != null)
+                        cm.unregisterNetworkCallback(networkMonitorCallback);
+                });
                 networkMonitorRegistered = false;
             }
 
@@ -4461,8 +4464,13 @@ public class ServiceSinkhole extends VpnService {
             // are idempotent, and both must precede jni_done() below.
             try {
                 net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.stop(
-                        () -> { jni_wireguard_stop(); return kotlin.Unit.INSTANCE; });
-                jni_wireguard_required(false);
+                        () -> {
+                            if (nativeInitialized)
+                                jni_wireguard_stop();
+                            return kotlin.Unit.INSTANCE;
+                        });
+                if (nativeInitialized)
+                    jni_wireguard_required(false);
                 net.kollnig.missioncontrol.dns.DnsProxyServer.getInstance(ServiceSinkhole.this).stop();
             } catch (Throwable ex) {
                 Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
