@@ -283,7 +283,7 @@
             tools:ignore="ExportedService">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="TrackerControl is a firewall app using the Android VPN service to filter traffic on the device. A foreground service is required to process internet traffic in real-time to be able to allow and block traffic as configured by the user of the app. There is no other way to do this, and other foreground service types are either too limited or not appropriate."  />
+                android:value="Downloads and installs user-configured hosts and blocklist data when the external DOWNLOAD_HOSTS_FILE command is requested. This service does not process VPN traffic." />
             <intent-filter>
                 <action android:name="net.kollnig.missioncontrol.DOWNLOAD_HOSTS_FILE" />
             </intent-filter>
