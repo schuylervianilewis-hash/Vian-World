@@ -40,6 +40,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -68,14 +71,16 @@ public class ServiceExternal extends IntentService {
                 File tmp = new File(getFilesDir(), "hosts.tmp");
                 File hosts = new File(getFilesDir(), "hosts.txt");
 
-                InputStream in = null;
-                OutputStream out = null;
                 URLConnection connection = null;
                 try {
+                    if (hosts_url == null || hosts_url.trim().isEmpty())
+                        throw new IOException("No hosts URL is configured");
                     URL url = new URL(hosts_url);
                     if (!"https".equalsIgnoreCase(url.getProtocol()))
                         throw new IOException("Only HTTPS hosts URLs are supported");
                     connection = url.openConnection();
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(15000);
                     connection.connect();
 
                     if (connection instanceof HttpURLConnection) {
@@ -86,53 +91,50 @@ public class ServiceExternal extends IntentService {
 
                     int contentLength = connection.getContentLength();
                     Log.i(TAG, "Content length=" + contentLength);
-                    in = connection.getInputStream();
-                    out = new FileOutputStream(tmp);
-
                     long size = 0;
-                    byte buffer[] = new byte[4096];
-                    int bytes;
-                    while ((bytes = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, bytes);
-                        size += bytes;
+                    try (InputStream in = connection.getInputStream();
+                         OutputStream out = new FileOutputStream(tmp)) {
+                        byte[] buffer = new byte[4096];
+                        int bytes;
+                        while ((bytes = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, bytes);
+                            size += bytes;
+                        }
+                        out.flush();
                     }
 
                     Log.i(TAG, "Downloaded size=" + size);
-
-                    if (hosts.exists())
-                        hosts.delete();
-                    tmp.renameTo(hosts);
+                    replaceHostsFile(tmp, hosts);
 
                     String last = SimpleDateFormat.getDateTimeInstance().format(new Date().getTime());
                     prefs.edit().putString("hosts_last_download", last).apply();
-
                     ServiceSinkhole.reload("hosts file download", this, false);
 
                 } catch (Throwable ex) {
                     Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-
-                    if (tmp.exists())
-                        tmp.delete();
+                    if (tmp.exists() && !tmp.delete())
+                        Log.w(TAG, "Could not delete incomplete hosts temporary file");
                 } finally {
-                    try {
-                        if (out != null)
-                            out.close();
-                    } catch (IOException ex) {
-                        Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-                    }
-                    try {
-                        if (in != null)
-                            in.close();
-                    } catch (IOException ex) {
-                        Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-                    }
-
                     if (connection instanceof HttpURLConnection)
                         ((HttpURLConnection) connection).disconnect();
                 }
             }
         } finally {
             stopForeground(true);
+        }
+    }
+
+    /**
+     * Replace the active hosts file only after a complete download exists.
+     * Prefer an atomic same-directory replacement; retain a non-atomic
+     * replacement fallback for filesystems that do not support ATOMIC_MOVE.
+     */
+    static void replaceHostsFile(File temporary, File target) throws IOException {
+        try {
+            Files.move(temporary.toPath(), target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
