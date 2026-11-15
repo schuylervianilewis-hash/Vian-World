@@ -33,6 +33,7 @@ public final class ShieldNotificationFactory {
     private static final String KEY_ICON = "small_icon";
     private static final String KEY_TITLE = "title";
     private static final String KEY_CONTENT = "content";
+    private static boolean processInitialized;
 
     private ShieldNotificationFactory() {}
 
@@ -76,8 +77,15 @@ public final class ShieldNotificationFactory {
                 enabled ? "Tap to open Shield and check protection status" : "Protection is off • Tap to open Shield", false);
     }
 
-    private static SharedPreferences state(Context context) {
-        return context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE);
+    private static synchronized SharedPreferences state(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE);
+        // The active-service flag is process-local state. Clear a stale value left
+        // behind if Android killed the process without calling Service.onDestroy().
+        if (!processInitialized) {
+            prefs.edit().putBoolean(KEY_HANDLE_ACTIVE, false).apply();
+            processInitialized = true;
+        }
+        return prefs;
     }
 
     private static Notification build(Context context, int icon, String title, String content, boolean speedEnabled) {
