@@ -95,14 +95,14 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
     ) {
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = if (isFirstLaunch) "Welcome to VianSide" else "Permissions Manager",
+            text = if (isFirstLaunch) "Welcome to VianSide" else "Vian Permission",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Please grant the necessary permissions for the PWAs and mini-apps.",
+            text = "Grant the permissions needed by Sidebar and the features you use. Display Over Other Apps is required to finish the initial Sidebar setup.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
