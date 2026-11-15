@@ -510,8 +510,8 @@ Your internet traffic is not being sent to a remote VPN server.</string>
     <!-- Dynamic content description for the per-category tracker-blocking switch -->
     <string name="toggle_block_category_description">Tracker blocking for category %1$s</string>
     <!-- Dynamic content description for the home-screen widget toggle (accessibility follow-up, issue #636) -->
-    <string name="widget_toggle_enable_description">Enable tracker blocking</string>
-    <string name="widget_toggle_disable_description">Disable tracker blocking</string>
+    <string name="widget_toggle_enable_description">Enable Shield protection</string>
+    <string name="widget_toggle_disable_description">Disable Shield protection</string>
     <string name="accessibility_stat_description">%1$s, %2$s</string>
     <string name="accessibility_tracker_blocking_enabled">Tracker blocking enabled</string>
     <string name="accessibility_tracker_blocking_disabled">Tracker blocking disabled</string>
