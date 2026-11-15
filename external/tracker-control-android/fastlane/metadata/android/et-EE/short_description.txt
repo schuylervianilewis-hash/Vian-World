@@ -1,1 +1,0 @@
-TrackerControl võimaldab jälgida+kontrollida rakenduste salajast andmekogumist.

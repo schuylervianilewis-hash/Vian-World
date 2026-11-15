@@ -1,8 +1,0 @@
-{
-  "name": "Viansidebhro",
-  "description": "Authentic multi-gesture sidebar with lightweight two-process architecture",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

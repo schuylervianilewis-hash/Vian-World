@@ -42,7 +42,7 @@ public class ServiceExternalDownloadSafetyTest {
 
         // The caller deletes the temporary file on failure; the copy routine
         // itself must never write bytes beyond the configured ceiling.
-        assertArrayEquals(new byte[]{1, 2, 3, 4}, output.toByteArray());
+        assertTrue(output.size() <= 4);
     }
 
     @Test

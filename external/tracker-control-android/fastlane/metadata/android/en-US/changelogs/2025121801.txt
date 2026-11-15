@@ -1,1 +1,0 @@
-- Fix bugs (toggle 'monitoring' and show 'countries')
