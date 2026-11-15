@@ -2260,6 +2260,11 @@ public class ServiceSinkhole extends VpnService {
             String wgError = net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.getLastError();
             Log.w(TAG, "WireGuard egress failed to start; blocking traffic: " + wgError);
             showWireGuardErrorNotification(wgError);
+            // The TUN remains fail-closed, but the generic "protection active"
+            // foreground message would be misleading while WG is unavailable.
+            startForeground(NOTIFY_ENFORCING,
+                    ShieldNotificationFactory.buildWireGuardUnavailableNotification(this, wgError));
+            state = State.enforcing;
             scheduleWireGuardStartupRecovery();
             return false;
         }
