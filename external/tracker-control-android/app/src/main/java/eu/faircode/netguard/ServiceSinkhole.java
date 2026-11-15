@@ -3962,6 +3962,7 @@ public class ServiceSinkhole extends VpnService {
         ifPackage.addAction(Intent.ACTION_PACKAGE_REPLACED);
         ifPackage.addDataScheme("package");
         ContextCompat.registerReceiver(this, packageChangedReceiver, ifPackage, ContextCompat.RECEIVER_NOT_EXPORTED);
+        registeredPackageChanged = true;
 
         // Apps on external or adopted storage being mounted or unmounted. These
         // broadcasts carry no data URI, so they need a filter without a scheme.
@@ -3969,7 +3970,6 @@ public class ServiceSinkhole extends VpnService {
         ifExternal.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_AVAILABLE);
         ifExternal.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_UNAVAILABLE);
         ContextCompat.registerReceiver(this, packageChangedReceiver, ifExternal, ContextCompat.RECEIVER_NOT_EXPORTED);
-        registeredPackageChanged = true;
 
         try {
             listenNetworkChanges();
@@ -4343,12 +4343,18 @@ public class ServiceSinkhole extends VpnService {
             destroying = true;
             Log.i(TAG, "Destroy");
 
-            // Flush any pending batched writes before shutdown
-            DatabaseHelper dh = DatabaseHelper.getInstance(ServiceSinkhole.this);
-            if (dh != null) {
-                dh.flushLogBatch();
-                dh.flushAccessBatch();
-                dh.flushUsageBatch();
+            // Flush only when startup completed far enough to use the database.
+            if (initialized) {
+                try {
+                    DatabaseHelper dh = DatabaseHelper.getInstance(ServiceSinkhole.this);
+                    if (dh != null) {
+                        dh.flushLogBatch();
+                        dh.flushAccessBatch();
+                        dh.flushUsageBatch();
+                    }
+                } catch (Throwable ex) {
+                    Log.w(TAG, "Could not flush database batches during teardown", ex);
+                }
             }
 
             // Cancel any debounced network-change reload so it doesn't fire post-teardown
@@ -4378,39 +4384,43 @@ public class ServiceSinkhole extends VpnService {
 
             // Registered in command loop
             if (registeredInteractiveState) {
-                unregisterReceiver(interactiveStateReceiver);
+                cleanupResource("interactive-state receiver", () -> unregisterReceiver(interactiveStateReceiver));
                 registeredInteractiveState = false;
             }
             if (callStateListener != null) {
-                TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-                tm.listen(callStateListener, PhoneStateListener.LISTEN_NONE);
+                PhoneStateListener listener = callStateListener;
+                cleanupResource("phone-state listener", () -> {
+                    TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+                    if (tm != null)
+                        tm.listen(listener, PhoneStateListener.LISTEN_NONE);
+                });
                 callStateListener = null;
             }
 
             // Register in onCreate
             if (registeredUser) {
-                unregisterReceiver(userReceiver);
+                cleanupResource("user receiver", () -> unregisterReceiver(userReceiver));
                 registeredUser = false;
             }
             if (registeredIdleState) {
-                unregisterReceiver(idleStateReceiver);
+                cleanupResource("idle-state receiver", () -> unregisterReceiver(idleStateReceiver));
                 registeredIdleState = false;
             }
             if (registeredApState) {
-                unregisterReceiver(apStateReceiver);
+                cleanupResource("Wi-Fi AP receiver", () -> unregisterReceiver(apStateReceiver));
                 registeredApState = false;
             }
             if (registeredPackageChanged) {
-                unregisterReceiver(packageChangedReceiver);
+                cleanupResource("package-change receiver", () -> unregisterReceiver(packageChangedReceiver));
                 registeredPackageChanged = false;
             }
 
             if (networkCallback != null) {
-                unlistenNetworkChanges();
+                cleanupResource("network callback", this::unlistenNetworkChanges);
                 networkCallback = null;
             }
             if (registeredConnectivityChanged) {
-                unregisterReceiver(connectivityChangedReceiver);
+                cleanupResource("connectivity receiver", () -> unregisterReceiver(connectivityChangedReceiver));
                 registeredConnectivityChanged = false;
             }
 
@@ -4473,9 +4483,18 @@ public class ServiceSinkhole extends VpnService {
         super.onDestroy();
     }
 
+    private void cleanupResource(String name, Runnable cleanup) {
+        try {
+            cleanup.run();
+        } catch (Throwable ex) {
+            Log.w(TAG, "Failed to release " + name, ex);
+        }
+    }
+
     private void unlistenNetworkChanges() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        cm.unregisterNetworkCallback((ConnectivityManager.NetworkCallback) networkCallback);
+        if (cm != null)
+            cm.unregisterNetworkCallback((ConnectivityManager.NetworkCallback) networkCallback);
     }
 
     private void stopForegroundForCurrentState() {
