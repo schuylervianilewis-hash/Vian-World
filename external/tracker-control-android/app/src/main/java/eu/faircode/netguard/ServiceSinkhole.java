@@ -797,6 +797,13 @@ public class ServiceSinkhole extends VpnService {
             // Expired pauses must be resolved before the first rule snapshot is
             // built; the service command handler already runs off the UI thread.
             PausedApps.sweep(ServiceSinkhole.this);
+            if (VpnRestartPolicy.shouldClearCleanStopForStartAttempt(
+                    PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this).getBoolean("enabled", false),
+                    vpn == null)) {
+                // The previous deliberate stop no longer describes this new
+                // attempt. Clear it before establish(), not only after success.
+                markStoppedCleanly(false);
+            }
             if (vpn == null) {
                 if (state != State.none) {
                     Log.d(TAG, "Stop foreground state=" + state.toString());
