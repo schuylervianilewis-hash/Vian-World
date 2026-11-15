@@ -235,7 +235,7 @@ fun MainSettingsScreen(
                     supportingContent = { Text("Complete Sidebar setup and review required system permissions") },
                     modifier = Modifier
                         .clickable { onNavigateToPermissions() }
-                        .testTag("settings_item_vian_permission")
+                        .testTag("settings_item_permissions")
                 )
                 HorizontalDivider()
             }
