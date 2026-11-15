@@ -78,6 +78,7 @@ class SettingsActivity : ComponentActivity() {
 
 @Composable
 fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
+    val context = LocalContext.current
     val backStack = remember {
         val stack = mutableStateListOf("main")
         if (initialRoute != "main") {
@@ -117,11 +118,6 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onBack = { navigateBack() }
             )
         }
-        currentRoute == "shield" -> {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            context.startActivity(ShieldControl.createOpenShieldIntent(context))
-            androidx.compose.runtime.LaunchedEffect(Unit) { navigateBack() }
-        }
         currentRoute == "permissions" -> {
             PermissionManagerScreen(
                 onContinue = { navigateBack() },
@@ -145,7 +141,7 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onNavigateToCallRecorder = { navigateTo("call_recorder") },
                 onNavigateToScreenCap = { navigateTo("screencap") },
                 onNavigateToPermissions = { navigateTo("permissions") },
-                onNavigateToShield = { navigateTo("shield") },
+                onNavigateToShield = { context.startActivity(ShieldControl.createOpenShieldIntent(context)) },
                 onBack = onFinish
             )
         }
