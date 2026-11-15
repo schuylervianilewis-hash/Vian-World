@@ -11,7 +11,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
 
+@RunWith(RobolectricTestRunner.class)
 public class ServiceExternalDownloadSafetyTest {
     @Test
     public void boundedCopyAcceptsAFileExactlyAtTheLimit() throws Exception {
