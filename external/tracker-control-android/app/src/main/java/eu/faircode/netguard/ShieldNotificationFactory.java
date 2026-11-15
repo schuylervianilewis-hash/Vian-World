@@ -26,7 +26,7 @@ import net.kollnig.missioncontrol.R;
 /** Shared notification presentation for Sidebar HandleService and the VPN foreground service. */
 public final class ShieldNotificationFactory {
     public static final int NOTIFICATION_ID = 1001;
-    public static final String CHANNEL_ID = "sidebar_shield_control";
+    public static final String CHANNEL_ID = "vian_core_service_channel";
     private static final String STATE_PREFS = "sidebar_shield_notification_state";
     private static final String KEY_HANDLE_ACTIVE = "handle_service_active";
     private static final String KEY_SPEED_ENABLED = "speed_monitor_enabled";
@@ -104,7 +104,7 @@ public final class ShieldNotificationFactory {
                 .setSmallIcon(icon > 0 ? icon : R.drawable.ic_rocket_white)
                 .setContentTitle(title).setContentText(content).setContentIntent(open)
                 .setOngoing(true).setAutoCancel(false).setOnlyAlertOnce(true).setShowWhen(false)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE).setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setStyle(new NotificationCompat.DecoratedCustomViewStyle())
                 .setCustomBigContentView(expanded);
@@ -132,6 +132,6 @@ public final class ShieldNotificationFactory {
         String raw = PreferenceManager.getDefaultSharedPreferences(context).getString("pause", "10");
         int minutes;
         try { minutes = Integer.parseInt(raw); } catch (Exception ignored) { minutes = 10; }
-        return "Pause all (" + minutes + "m)";
+        return minutes > 0 ? "Pause all (" + minutes + "m)" : "Pause all";
     }
 }
