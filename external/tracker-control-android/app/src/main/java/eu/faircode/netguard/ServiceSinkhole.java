@@ -163,6 +163,10 @@ public class ServiceSinkhole extends VpnService {
     private boolean registeredApState = false;
     private boolean registeredConnectivityChanged = false;
     private boolean registeredPackageChanged = false;
+    private boolean privateDnsPreferenceListenerRegistered = false;
+    private boolean wgStateListenerRegistered = false;
+    private boolean networkMonitorRegistered = false;
+    private boolean nativeInitialized = false;
 
     private final Runnable wgStateListener = () -> {
         String err = net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.getLastError();
@@ -231,6 +235,9 @@ public class ServiceSinkhole extends VpnService {
     private Map<Integer, Forward> mapForward = new HashMap<>();
     public static ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
 
+    private volatile HandlerThread commandThread;
+    private volatile HandlerThread logThread;
+    private volatile HandlerThread statsThread;
     private volatile Looper commandLooper;
     private volatile Looper logLooper;
     private volatile Looper statsLooper;
@@ -925,8 +932,13 @@ public class ServiceSinkhole extends VpnService {
                 // Final teardown — service is actually stopping (user toggled
                 // VPN off, OS is killing us, etc.) so WG should not survive.
                 net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.stop(
-                        () -> { jni_wireguard_stop(); return kotlin.Unit.INSTANCE; });
-                jni_wireguard_required(false);
+                        () -> {
+                            if (nativeInitialized)
+                                jni_wireguard_stop();
+                            return kotlin.Unit.INSTANCE;
+                        });
+                if (nativeInitialized)
+                    jni_wireguard_required(false);
                 // WgEgress clears its error as it tears the tunnel down, so the
                 // state listener already retracts this one; the call remains for
                 // the case it cannot see, a start that failed without ever
@@ -3900,6 +3912,7 @@ public class ServiceSinkhole extends VpnService {
 
         // Native init
         jni_context = jni_init(Build.VERSION.SDK_INT);
+        nativeInitialized = jni_context != 0;
         Log.i(TAG, "Created context=" + jni_context);
         boolean pcap = prefs.getBoolean("pcap", false);
         setPcap(pcap, this);
@@ -3907,26 +3920,27 @@ public class ServiceSinkhole extends VpnService {
         Util.setTheme(this);
         super.onCreate();
 
-        HandlerThread commandThread = new HandlerThread(getString(R.string.app_name) + " command",
+        commandThread = new HandlerThread(getString(R.string.app_name) + " command",
                 Process.THREAD_PRIORITY_FOREGROUND);
-        HandlerThread logThread = new HandlerThread(getString(R.string.app_name) + " log",
+        logThread = new HandlerThread(getString(R.string.app_name) + " log",
                 Process.THREAD_PRIORITY_BACKGROUND);
-        HandlerThread statsThread = new HandlerThread(getString(R.string.app_name) + " stats",
+        statsThread = new HandlerThread(getString(R.string.app_name) + " stats",
                 Process.THREAD_PRIORITY_BACKGROUND);
         commandThread.start();
-        logThread.start();
-        statsThread.start();
-
         commandLooper = commandThread.getLooper();
+        logThread.start();
         logLooper = logThread.getLooper();
+        statsThread.start();
         statsLooper = statsThread.getLooper();
 
         commandHandler = new CommandHandler(commandLooper);
         logHandler = new LogHandler(logLooper);
         statsHandler = new StatsHandler(statsLooper);
         prefs.registerOnSharedPreferenceChangeListener(privateDnsPreferenceListener);
+        privateDnsPreferenceListenerRegistered = true;
 
         net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.addStateListener(wgStateListener);
+        wgStateListenerRegistered = true;
 
         // Listen for user switches
         IntentFilter ifUser = new IntentFilter();
@@ -3975,6 +3989,7 @@ public class ServiceSinkhole extends VpnService {
                 new NetworkRequest.Builder()
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
                 networkMonitorCallback);
+        networkMonitorRegistered = true;
 
         // Setup house holding
         Intent alarmIntent = new Intent(this, ServiceSinkhole.class);
@@ -4344,22 +4359,26 @@ public class ServiceSinkhole extends VpnService {
             // Cancel any debounced network-change reload so it doesn't fire post-teardown
             networkReloadDebounceHandler.removeCallbacksAndMessages(NETWORK_RELOAD_TOKEN);
             privateDnsWarningExpiryHandler.removeCallbacks(privateDnsWarningExpiryRunnable);
-            PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this)
-                    .unregisterOnSharedPreferenceChangeListener(privateDnsPreferenceListener);
+            if (privateDnsPreferenceListenerRegistered) {
+                PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this)
+                        .unregisterOnSharedPreferenceChangeListener(privateDnsPreferenceListener);
+                privateDnsPreferenceListenerRegistered = false;
+            }
             cancelNativeRecovery(true);
             cancelWireGuardStartupRecovery(true);
             cancelVpnReplacementRecovery(true);
 
-            // onCreate can stopSelf() before creating the handler threads when
-            // startForeground is denied (Android 12+); there is nothing to quit
-            if (initialized) {
-                commandLooper.quit();
-                logLooper.quit();
-                statsLooper.quit();
-
+            // Each looper is assigned immediately after its thread starts, so
+            // partial onCreate failures can still release every thread acquired.
+            if (commandHandler != null)
                 for (Command command : Command.values())
                     commandHandler.removeMessages(command.ordinal());
-            }
+            if (commandLooper != null)
+                commandLooper.quitSafely();
+            if (logLooper != null)
+                logLooper.quitSafely();
+            if (statsLooper != null)
+                statsLooper.quitSafely();
             releaseLock(this);
 
             // Registered in command loop
@@ -4400,18 +4419,22 @@ public class ServiceSinkhole extends VpnService {
                 registeredConnectivityChanged = false;
             }
 
-            net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.removeStateListener(wgStateListener);
+            if (wgStateListenerRegistered) {
+                net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.removeStateListener(wgStateListener);
+                wgStateListenerRegistered = false;
+            }
 
-            // Registered at the end of onCreate, right after jni_init(); never
-            // registered (and jni_context never set) if onCreate bailed early.
-            if (initialized) {
+            if (networkMonitorRegistered) {
                 ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-                cm.unregisterNetworkCallback(networkMonitorCallback);
+                if (cm != null)
+                    cm.unregisterNetworkCallback(networkMonitorCallback);
+                networkMonitorRegistered = false;
             }
 
             try {
                 if (vpn != null) {
-                    stopNative(vpn);
+                    if (nativeInitialized)
+                        stopNative(vpn);
                     stopVPN(vpn);
                     vpn = null;
                     // Deliberately not marked as a clean stop: a service the
@@ -4440,11 +4463,12 @@ public class ServiceSinkhole extends VpnService {
                 Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
             }
 
-            if (initialized) {
+            if (nativeInitialized) {
                 Log.i(TAG, "Destroy context=" + jni_context);
                 synchronized (jni_lock) {
                     jni_done(jni_context);
                     jni_context = 0;
+                    nativeInitialized = false;
                 }
             }
         }
