@@ -26,6 +26,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
+import android.os.SystemClock;
 
 import androidx.core.app.NotificationCompat;
 import androidx.preference.PreferenceManager;
@@ -49,6 +50,9 @@ import java.util.Date;
 public class ServiceExternal extends IntentService {
     private static final String TAG = "TrackerControl.External";
     private static final String ACTION_DOWNLOAD_HOSTS_FILE = "net.kollnig.missioncontrol.DOWNLOAD_HOSTS_FILE";
+    static final long MAX_HOSTS_FILE_BYTES = 64L * 1024L * 1024L;
+    static final long MIN_DOWNLOAD_INTERVAL_MS = 60_000L;
+    private static final String PREF_LAST_DOWNLOAD_ATTEMPT_ELAPSED = "hosts_last_download_attempt_elapsed";
 
     // am startservice -a net.kollnig.missioncontrol.DOWNLOAD_HOSTS_FILE
 
@@ -73,6 +77,15 @@ public class ServiceExternal extends IntentService {
 
                 URLConnection connection = null;
                 try {
+                    long nowElapsed = SystemClock.elapsedRealtime();
+                    long lastAttemptElapsed = prefs.getLong(PREF_LAST_DOWNLOAD_ATTEMPT_ELAPSED, 0L);
+                    if (!isDownloadAllowed(nowElapsed, lastAttemptElapsed)) {
+                        Log.w(TAG, "Ignoring hosts download request received inside the rate-limit window");
+                        return;
+                    }
+                    if (!prefs.edit().putLong(PREF_LAST_DOWNLOAD_ATTEMPT_ELAPSED, nowElapsed).commit())
+                        throw new IOException("Could not persist hosts download rate limit");
+
                     if (hosts_url == null || hosts_url.trim().isEmpty())
                         throw new IOException("No hosts URL is configured");
                     URL url = new URL(hosts_url);
@@ -91,15 +104,13 @@ public class ServiceExternal extends IntentService {
 
                     int contentLength = connection.getContentLength();
                     Log.i(TAG, "Content length=" + contentLength);
-                    long size = 0;
+                    if (contentLength > MAX_HOSTS_FILE_BYTES)
+                        throw new IOException("Hosts file exceeds maximum size of " + MAX_HOSTS_FILE_BYTES + " bytes");
+
+                    long size;
                     try (InputStream in = connection.getInputStream();
                          OutputStream out = new FileOutputStream(tmp)) {
-                        byte[] buffer = new byte[4096];
-                        int bytes;
-                        while ((bytes = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, bytes);
-                            size += bytes;
-                        }
+                        size = copyBounded(in, out, MAX_HOSTS_FILE_BYTES);
                         out.flush();
                     }
 
@@ -122,6 +133,30 @@ public class ServiceExternal extends IntentService {
         } finally {
             stopForeground(true);
         }
+    }
+
+    static boolean isDownloadAllowed(long nowElapsedMs, long lastAttemptElapsedMs) {
+        // elapsedRealtime resets at reboot. A lower current value therefore
+        // means the persisted timestamp belongs to the previous boot.
+        return lastAttemptElapsedMs <= 0L
+                || nowElapsedMs < lastAttemptElapsedMs
+                || nowElapsedMs - lastAttemptElapsedMs >= MIN_DOWNLOAD_INTERVAL_MS;
+    }
+
+    static long copyBounded(InputStream input, OutputStream output, long maxBytes) throws IOException {
+        if (maxBytes < 0L)
+            throw new IllegalArgumentException("maxBytes must not be negative");
+
+        byte[] buffer = new byte[8192];
+        long size = 0L;
+        int bytes;
+        while ((bytes = input.read(buffer)) != -1) {
+            if (size > maxBytes - bytes)
+                throw new IOException("Hosts file exceeds maximum size of " + maxBytes + " bytes");
+            output.write(buffer, 0, bytes);
+            size += bytes;
+        }
+        return size;
     }
 
     /**

@@ -916,46 +916,53 @@ public class ServiceSinkhole extends VpnService {
         private void stop(boolean temporary) {
             cancelWireGuardStartupRecovery(true);
             if (vpn != null) {
-                stopNative(vpn);
-                stopVPN(vpn);
+                ParcelFileDescriptor activeVpn = vpn;
+
+                // Treat every resource release independently. A failure in the
+                // native tunnel must not prevent closing the Android TUN fd or
+                // clearing the Java-side state used by recovery.
+                cleanupResource("native VPN shutdown", () -> stopNative(activeVpn));
+                cleanupResource("VPN descriptor close", () -> stopVPN(activeVpn));
                 vpn = null;
                 vpnEstablished = false;
-                // A teardown the service performs itself, so it is not one
-                // VpnRestartWorker should undo, whether it is a switch-off or
-                // the pause for a phone call.
-                markStoppedCleanly(true);
+                cleanupResource("clean-stop state", () -> markStoppedCleanly(true));
+
                 // Final teardown — service is actually stopping (user toggled
                 // VPN off, OS is killing us, etc.) so WG should not survive.
-                net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.stop(
-                        () -> {
-                            if (nativeInitialized)
-                                jni_wireguard_stop();
-                            return kotlin.Unit.INSTANCE;
-                        });
-                if (nativeInitialized)
-                    jni_wireguard_required(false);
-                // WgEgress clears its error as it tears the tunnel down, so the
-                // state listener already retracts this one; the call remains for
-                // the case it cannot see, a start that failed without ever
-                // producing a tunnel, where stop() finds nothing to notify about.
-                clearWireGuardErrorNotification();
-                // The other three are config warnings nothing else retracts, and
-                // all describe a tunnel that is no longer running — but leave
-                // them on a temporary stop (a call, say): the VPN is coming
-                // straight back, and re-posting a cancelled notification alerts
-                // again, so the user would be buzzed on every call.
-                if (!temporary) {
-                    clearLocalNetworkNotification();
-                    clearPrivateDnsNotification();
-                }
-                unprepare();
+                cleanupResource("WireGuard shutdown", () ->
+                        net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.stop(
+                                () -> {
+                                    if (nativeInitialized)
+                                        jni_wireguard_stop();
+                                    return kotlin.Unit.INSTANCE;
+                                }));
+                cleanupResource("WireGuard required-state reset", () -> {
+                    if (nativeInitialized)
+                        jni_wireguard_required(false);
+                });
+                cleanupResource("WireGuard error notification",
+                        ServiceSinkhole.this::clearWireGuardErrorNotification);
 
-                // Stop DoH proxy
-                net.kollnig.missioncontrol.dns.DnsProxyServer.getInstance(ServiceSinkhole.this).stop();
+                // The other three are config warnings nothing else retracts,
+                // and all describe a tunnel that is no longer running — but
+                // leave them on a temporary stop (a call, say): the VPN is
+                // coming straight back, and re-posting a cancelled notification
+                // alerts again, so the user would be buzzed on every call.
+                if (!temporary) {
+                    cleanupResource("local-network notification",
+                            ServiceSinkhole.this::clearLocalNetworkNotification);
+                    cleanupResource("private-DNS notification",
+                            ServiceSinkhole.this::clearPrivateDnsNotification);
+                }
+
+                cleanupResource("VPN UID state reset", ServiceSinkhole.this::unprepare);
+                cleanupResource("DNS proxy shutdown", () ->
+                        net.kollnig.missioncontrol.dns.DnsProxyServer.getInstance(ServiceSinkhole.this).stop());
             }
-            if (!temporary) {
-                resetPrivateDnsBypassWarning();
-            }
+            if (!temporary)
+                cleanupResource("private-DNS warning reset",
+                        ServiceSinkhole.this::resetPrivateDnsBypassWarning);
+
             if (state == State.enforcing && !temporary) {
                 Log.d(TAG, "Stop foreground state=" + state.toString());
                 last_allowed = -1;
@@ -2307,7 +2314,9 @@ public class ServiceSinkhole extends VpnService {
         if (tunnelThread != null) {
             Log.i(TAG, "Stopping tunnel thread");
 
-            jni_stop(jni_context);
+            // Even if the JNI stop signal fails, continue joining and releasing
+            // the rest of the native session resources.
+            cleanupResource("native tunnel stop signal", () -> jni_stop(jni_context));
 
             Thread thread = tunnelThread;
             while (thread != null && thread.isAlive()) {
@@ -2324,26 +2333,19 @@ public class ServiceSinkhole extends VpnService {
             Log.i(TAG, "Stopped tunnel thread");
         }
 
-        // Clear the session list even when there was no thread to join. When
-        // jni_run() returns on a native error the tunnel thread nulls
-        // tunnelThread itself, so the recovery restart arrives here with
-        // nothing to stop — but the context still holds every session that run
-        // built up. jni_start() keeps ctx->ng_session, and the new epoll
-        // instance registers only the pipe and tun, so those UDP/ICMP sockets
-        // would never be polled again while still holding their descriptors.
-        // Nothing can race this: either the thread was joined above, or it has
-        // already exited.
-        synchronized (jni_lock) {
-            if (jni_context != 0)
-                jni_clear(jni_context);
-        }
+        // Clear sessions even when there was no thread to join. When jni_run()
+        // returns on a native error the thread nulls tunnelThread itself, so
+        // recovery still has to release sockets retained by the native context.
+        cleanupResource("native session cleanup", () -> {
+            synchronized (jni_lock) {
+                if (jni_context != 0)
+                    jni_clear(jni_context);
+            }
+        });
 
-        // NOTE: WireGuard is intentionally NOT torn down here. NetGuard's
-        // reload() does a "Native restart" (stopNative + startNative on the
-        // same PFD) for transient events like DHCP/connectivity changes —
-        // tearing down WG every time would cause a fresh handshake every
-        // few seconds. WgEgress.stop() is invoked from the actual stop()
-        // path below.
+        // WireGuard is intentionally NOT torn down here. reload() uses a native
+        // restart on the same PFD for transient network events; the actual stop
+        // path owns WireGuard teardown.
     }
 
     private void updateWireGuardInteractiveState(boolean interactive) {
@@ -4439,50 +4441,48 @@ public class ServiceSinkhole extends VpnService {
                 networkMonitorRegistered = false;
             }
 
-            try {
-                if (vpn != null) {
-                    if (nativeInitialized)
-                        stopNative(vpn);
-                    stopVPN(vpn);
-                    vpn = null;
-                    // Deliberately not marked as a clean stop: a service the
-                    // system takes down is exactly what the restart worker is
-                    // for, and a stop the service meant has already marked it.
-                    vpnEstablished = false;
-                    unprepare();
-                }
-            } catch (Throwable ex) {
-                Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
+            // Final VPN teardown. Each operation is isolated so a native
+            // shutdown error cannot skip closing the Android TUN descriptor,
+            // clearing service state, or releasing the other egress resources.
+            ParcelFileDescriptor activeVpn = vpn;
+            if (activeVpn != null) {
+                if (nativeInitialized)
+                    cleanupResource("native VPN shutdown", () -> stopNative(activeVpn));
+                cleanupResource("VPN descriptor close", () -> stopVPN(activeVpn));
             }
+            vpn = null;
+            // Deliberately not marked as a clean stop: a service the system
+            // takes down is exactly what the restart worker is for.
+            vpnEstablished = false;
+            cleanupResource("VPN UID state reset", this::unprepare);
 
-            // Final teardown of the egress side, mirroring CommandHandler.stop().
-            // Only that command path used to do this, so a destroy that did not
-            // come through it — a system revoke (onRevoke -> stopSelf), or
-            // stopService — left the Rust tunnel, its duplicated descriptors,
-            // the connectivity monitor and callbacks capturing this now-dead
-            // service alive until some later start replaced them. Both stops
-            // are idempotent, and both must precede jni_done() below.
-            try {
-                net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.stop(
-                        () -> {
-                            if (nativeInitialized)
-                                jni_wireguard_stop();
-                            return kotlin.Unit.INSTANCE;
-                        });
+            // Both egress services must be stopped independently and before
+            // jni_done(); a failure in WireGuard must not leave the DNS proxy
+            // running against a destroyed service.
+            cleanupResource("WireGuard shutdown", () ->
+                    net.kollnig.missioncontrol.wg.WgEgress.INSTANCE.stop(
+                            () -> {
+                                if (nativeInitialized)
+                                    jni_wireguard_stop();
+                                return kotlin.Unit.INSTANCE;
+                            }));
+            cleanupResource("WireGuard required-state reset", () -> {
                 if (nativeInitialized)
                     jni_wireguard_required(false);
-                net.kollnig.missioncontrol.dns.DnsProxyServer.getInstance(ServiceSinkhole.this).stop();
-            } catch (Throwable ex) {
-                Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-            }
+            });
+            cleanupResource("DNS proxy shutdown", () ->
+                    net.kollnig.missioncontrol.dns.DnsProxyServer.getInstance(ServiceSinkhole.this).stop());
 
             if (nativeInitialized) {
-                Log.i(TAG, "Destroy context=" + jni_context);
-                synchronized (jni_lock) {
-                    jni_done(jni_context);
-                    jni_context = 0;
-                    nativeInitialized = false;
-                }
+                long contextToDestroy = jni_context;
+                Log.i(TAG, "Destroy context=" + contextToDestroy);
+                cleanupResource("native context destruction", () -> {
+                    synchronized (jni_lock) {
+                        jni_done(contextToDestroy);
+                        jni_context = 0;
+                        nativeInitialized = false;
+                    }
+                });
             }
         }
 
@@ -4492,10 +4492,24 @@ public class ServiceSinkhole extends VpnService {
     }
 
     private void cleanupResource(String name, Runnable cleanup) {
-        try {
-            cleanup.run();
-        } catch (Throwable ex) {
-            Log.w(TAG, "Failed to release " + name, ex);
+        runCleanupSteps(new String[]{name}, new Runnable[]{cleanup});
+    }
+
+    /**
+     * Run independent teardown operations even when one release fails. Kept
+     * package-private so failure-injection tests exercise the same primitive
+     * used by the service lifecycle.
+     */
+    static void runCleanupSteps(String[] names, Runnable[] cleanups) {
+        if (names == null || cleanups == null || names.length != cleanups.length)
+            throw new IllegalArgumentException("Cleanup names and operations must match");
+
+        for (int i = 0; i < cleanups.length; i++) {
+            try {
+                cleanups[i].run();
+            } catch (Throwable ex) {
+                Log.w(TAG, "Failed to release " + names[i], ex);
+            }
         }
     }
 
