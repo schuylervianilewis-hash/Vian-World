@@ -1890,7 +1890,9 @@ public class ServiceSinkhole extends VpnService {
     private Builder getBuilder(List<Rule> listAllowed, List<Rule> listRule) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean ip6 = prefs.getBoolean("ip6", true);
-        boolean includeSystem = prefs.getBoolean("include_system_vpn", false);
+        boolean includeSystem = InternetPauseManager.shouldIncludeSystemApps(
+                prefs.getBoolean("include_system_vpn", false),
+                InternetPauseManager.isPauseEnforcementRequested(this));
 
         // Build VPN service
         Builder builder = new Builder();
@@ -2149,7 +2151,9 @@ public class ServiceSinkhole extends VpnService {
     private Builder getBlockingBuilder(List<Rule> listRule) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean ip6 = prefs.getBoolean("ip6", true);
-        boolean includeSystem = prefs.getBoolean("include_system_vpn", false);
+        boolean includeSystem = InternetPauseManager.shouldIncludeSystemApps(
+                prefs.getBoolean("include_system_vpn", false),
+                InternetPauseManager.isPauseEnforcementRequested(this));
 
         Builder builder = new Builder();
         builder.setSession(getString(R.string.app_name));
