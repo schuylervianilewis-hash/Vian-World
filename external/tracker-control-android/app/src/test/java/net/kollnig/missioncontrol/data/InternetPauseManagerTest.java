@@ -5,6 +5,10 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 
+import androidx.preference.PreferenceManager;
+
+import eu.faircode.netguard.ShieldControl;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -24,6 +28,7 @@ public class InternetPauseManagerTest {
         context = RuntimeEnvironment.getApplication();
         context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().clear().commit();
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit();
         InternetBlocklist.getInstance(context).clear();
     }
 
@@ -41,6 +46,63 @@ public class InternetPauseManagerTest {
     @Test
     public void vpnReadinessComesFromDefaultProcessProvider() {
         assertFalse(InternetPauseManager.isVpnReady(context));
+    }
+
+    @Test
+    public void pauseOffRestoresFirewallToDisabledWhenPauseStartedIt() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean("enabled", true).commit();
+        context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(InternetPauseManager.KEY_ACTIVE, true)
+                .putBoolean(InternetPauseManager.KEY_APPLIED, true)
+                .putBoolean(InternetPauseManager.KEY_PREPARED, true)
+                .putBoolean(InternetPauseManager.KEY_PREVIOUS_FIREWALL_ENABLED, false)
+                .commit();
+
+        assertTrue(InternetPauseManager.setPaused(context, false));
+
+        assertFalse(PreferenceManager.getDefaultSharedPreferences(context).getBoolean("enabled", true));
+        assertFalse(context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(InternetPauseManager.KEY_PREPARED, false));
+    }
+
+    @Test
+    public void pauseOffKeepsFirewallEnabledWhenItWasAlreadyEnabled() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean("enabled", true).commit();
+        context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(InternetPauseManager.KEY_ACTIVE, true)
+                .putBoolean(InternetPauseManager.KEY_APPLIED, true)
+                .putBoolean(InternetPauseManager.KEY_PREPARED, true)
+                .putBoolean(InternetPauseManager.KEY_PREVIOUS_FIREWALL_ENABLED, true)
+                .commit();
+
+        assertTrue(InternetPauseManager.setPaused(context, false));
+
+        assertTrue(PreferenceManager.getDefaultSharedPreferences(context).getBoolean("enabled", false));
+        assertFalse(context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(InternetPauseManager.KEY_PREPARED, false));
+    }
+
+    @Test
+    public void firewallCannotBeDisabledWhilePauseIsActive() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean("enabled", true).commit();
+        context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(InternetPauseManager.KEY_ACTIVE, true).commit();
+
+        ShieldControl.setEnabled(context, false, "test");
+
+        assertTrue(PreferenceManager.getDefaultSharedPreferences(context).getBoolean("enabled", false));
+    }
+
+    @Test
+    public void pausePreparationRestoreDecisionOnlyStopsFirewallItStarted() {
+        assertTrue(InternetPauseManager.shouldRestoreFirewallOff(true, false));
+        assertFalse(InternetPauseManager.shouldRestoreFirewallOff(true, true));
+        assertFalse(InternetPauseManager.shouldRestoreFirewallOff(false, false));
     }
 
     @Test

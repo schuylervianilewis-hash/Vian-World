@@ -15,6 +15,8 @@ import android.content.Intent;
 
 import androidx.preference.PreferenceManager;
 
+import net.kollnig.missioncontrol.data.InternetPauseManager;
+
 /** Shared Main-process entry point for all integrated Shield controls. */
 public final class ShieldControl {
     private ShieldControl() {}
@@ -26,6 +28,10 @@ public final class ShieldControl {
     public static void setEnabled(Context context, boolean enabled, String source) {
         Context app = context.getApplicationContext();
         ShieldDiagnostics.log("ShieldControl", "setEnabled requested enabled=" + enabled + " source=" + source);
+        if (!enabled && InternetPauseManager.isActive(app)) {
+            ShieldDiagnostics.log("ShieldControl", "Ignoring firewall disable while Internet Pause is active");
+            return;
+        }
         cancelResumeAlarm(app);
         PreferenceManager.getDefaultSharedPreferences(app).edit().putBoolean("enabled", enabled).apply();
         if (enabled) ServiceSinkhole.start(source, app, true);
