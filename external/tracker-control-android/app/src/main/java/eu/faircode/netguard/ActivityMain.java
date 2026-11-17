@@ -206,10 +206,16 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
         Log.i(TAG, "Create version=" + Util.getSelfVersionName(this) + "/" + Util.getSelfVersionCode(this));
         Util.logExtras(getIntent());
 
-        // Vian World owns the integrated permission/setup experience. Do not send
-        // Sidebar users through the standalone Tracker Control welcome flow.
+        // Keep standalone Tracker Control onboarding intact. Only a deliberate
+        // Sidebar Shield entry bypasses that separate welcome flow.
         SharedPreferences prefsOnboarding = PreferenceManager.getDefaultSharedPreferences(this);
-        markHostOnboardingComplete(prefsOnboarding);
+        if (!shouldOpenShield(getIntent()) &&
+                prefsOnboarding.getInt("onboarding_version", 0) < ActivityOnboarding.ONBOARDING_VERSION) {
+            super.onCreate(savedInstanceState);
+            startActivity(new Intent(this, ActivityOnboarding.class));
+            finish();
+            return;
+        }
         ShieldDiagnostics.log("Navigation", "ActivityMain onCreate; openShield=" + shouldOpenShield(getIntent()));
 
         // Check for Xposed
@@ -649,11 +655,6 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
             intent.removeExtra(EXTRA_OPEN_SHIELD);
             if ("android.service.quicksettings.action.QS_TILE_PREFERENCES".equals(intent.getAction())) intent.setAction(null);
         }
-    }
-
-    static void markHostOnboardingComplete(SharedPreferences prefs) {
-        if (prefs.getInt("onboarding_version", 0) < ActivityOnboarding.ONBOARDING_VERSION)
-            prefs.edit().putInt("onboarding_version", ActivityOnboarding.ONBOARDING_VERSION).apply();
     }
 
     private static boolean shouldOpenShield(Intent intent) {
