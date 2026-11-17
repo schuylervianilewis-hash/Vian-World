@@ -5207,6 +5207,13 @@ public class ServiceSinkhole extends VpnService {
     }
 
     public static void stop(String reason, Context context, boolean vpnonly) {
+        if (!InternetPauseManager.isInternalPauseSource(reason)
+                && !InternetPauseManager.isRecoveryStopSource(reason)
+                && InternetPauseManager.shouldBlockFirewallStop(
+                        InternetPauseManager.isActive(context), reason)) {
+            Log.w(TAG, "Ignoring VPN stop while Internet Pause is active; reason=" + reason);
+            return;
+        }
         Intent intent = new Intent(context, ServiceSinkhole.class);
         intent.putExtra(EXTRA_COMMAND, Command.stop);
         intent.putExtra(EXTRA_REASON, reason);

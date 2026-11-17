@@ -122,6 +122,17 @@ public class InternetPauseManagerTest {
     }
 
     @Test
+    public void externalFirewallStopsAreBlockedWhilePauseIsActive() {
+        assertTrue(InternetPauseManager.shouldBlockFirewallStop(true, "switch off"));
+        assertTrue(InternetPauseManager.shouldBlockFirewallStop(true, "background"));
+        assertTrue(InternetPauseManager.shouldBlockFirewallStop(true, "call state"));
+        assertTrue(InternetPauseManager.shouldBlockFirewallStop(true, null));
+        assertFalse(InternetPauseManager.shouldBlockFirewallStop(true, "internet_pause_restore"));
+        assertFalse(InternetPauseManager.shouldBlockFirewallStop(true, "native recovery exhausted"));
+        assertFalse(InternetPauseManager.shouldBlockFirewallStop(false, "switch off"));
+    }
+
+    @Test
     public void turningPauseOffClearsTemporaryBlocksEvenWhenVpnIsStopped() {
         context.getSharedPreferences(InternetPauseManager.PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(InternetPauseManager.KEY_ACTIVE, true)

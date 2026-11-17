@@ -43,6 +43,21 @@ public final class InternetPauseManager {
     private InternetPauseManager() {
     }
 
+    /** Internal stop requests are allowed to unwind the pause preparation itself. */
+    public static boolean isInternalPauseSource(String source) {
+        return source != null && source.startsWith("internet_pause");
+    }
+
+    /** A failed native recovery must be allowed to tear down the unusable VPN. */
+    public static boolean isRecoveryStopSource(String source) {
+        return "native recovery exhausted".equals(source);
+    }
+
+    /** Prevent user/background stop paths from dropping enforcement while paused. */
+    public static boolean shouldBlockFirewallStop(boolean pauseActive, String source) {
+        return pauseActive && !isInternalPauseSource(source) && !isRecoveryStopSource(source);
+    }
+
     /** Read desired/applied VPN state from the provider in the default process. */
     private static Bundle queryServiceState(Context context) {
         Context appContext = context.getApplicationContext();

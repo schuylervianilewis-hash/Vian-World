@@ -38,7 +38,7 @@ object InternetPauseTileBinder {
                 setColor(Color.parseColor(when {
                     applied -> "#332B1111"
                     active -> "#332B2411"
-                    else -> "#221FFFFFFF"
+                    else -> "#22FFFFFF"
                 }))
                 setStroke(
                     density.toInt().coerceAtLeast(1),

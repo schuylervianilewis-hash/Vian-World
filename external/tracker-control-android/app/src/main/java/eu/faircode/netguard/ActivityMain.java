@@ -91,6 +91,7 @@ import net.kollnig.missioncontrol.TimelineFragment;
 import net.kollnig.missioncontrol.details.FirewallFragment;
 import net.kollnig.missioncontrol.data.FirewallPolicyLogic;
 import net.kollnig.missioncontrol.data.InternetPermissionPolicy;
+import net.kollnig.missioncontrol.data.InternetPauseManager;
 import net.kollnig.missioncontrol.data.Tracker;
 import net.kollnig.missioncontrol.data.TrackerList;
 import net.kollnig.missioncontrol.vpn.VpnFragment;
@@ -328,6 +329,18 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
         swEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 Log.i(TAG, "Switch=" + isChecked);
+                if (!isChecked && InternetPauseManager.shouldBlockFirewallStop(
+                        InternetPauseManager.isActive(ActivityMain.this), "switch off")) {
+                    // Keep the original Shield switch and its stored state aligned with
+                    // the service-owned Internet Pause request.
+                    buttonView.setOnCheckedChangeListener(null);
+                    buttonView.setChecked(true);
+                    buttonView.setOnCheckedChangeListener(this);
+                    Toast.makeText(ActivityMain.this,
+                            "Turn off Internet Pause before disabling Shield",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
                 prefs.edit().putBoolean("enabled", isChecked).apply();
 
                 if (isChecked) {
