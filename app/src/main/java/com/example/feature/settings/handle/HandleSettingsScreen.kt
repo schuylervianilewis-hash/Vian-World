@@ -2,6 +2,8 @@ package com.example.feature.settings.handle
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.graphics.Color as AndroidColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -29,6 +31,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.example.core.HandleConfig
 import com.example.core.HandleGestures
 import com.example.core.HandleManager
@@ -180,6 +185,22 @@ private fun ReferenceHandleItem(
     onRefresh: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var pendingFirstHandleEnable by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner, pendingFirstHandleEnable) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && pendingFirstHandleEnable) {
+                pendingFirstHandleEnable = false
+                if (Settings.canDrawOverlays(context)) {
+                    handleManager.setHandleEnabled("handle_1", true)
+                    onRefresh()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var showMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -255,8 +276,25 @@ private fun ReferenceHandleItem(
                 Switch(
                     checked = handle.enabled,
                     onCheckedChange = { isChecked ->
-                        handleManager.setHandleEnabled(handle.id, isChecked)
-                        onRefresh()
+                        if (handle.id == "handle_1" && isChecked && !Settings.canDrawOverlays(context)) {
+                            pendingFirstHandleEnable = true
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                )
+                            } catch (_: Exception) {
+                                pendingFirstHandleEnable = false
+                            }
+                        } else {
+                            if (handle.id == "handle_1" && !isChecked) {
+                                pendingFirstHandleEnable = false
+                            }
+                            handleManager.setHandleEnabled(handle.id, isChecked)
+                            onRefresh()
+                        }
                     },
                     modifier = Modifier.testTag("handle_switch_${handle.id}")
                 )

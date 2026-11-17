@@ -27,6 +27,35 @@ object HandleGestures {
     )
 }
 
+/**
+ * Shared fallback rules for first-run feature defaults.
+ *
+ * Fresh installs remain disabled until Welcome records the permission-dependent choice.
+ * Existing installations that already completed setup retain the historical enabled
+ * defaults when no explicit preference was ever stored.
+ */
+object FeaturePreferenceDefaults {
+    fun handleEnabled(prefs: SharedPreferences, index: Int): Boolean {
+        val legacyDefault = index == 1 && prefs.getBoolean("setup_completed", false)
+        return prefs.getBoolean("handle_enabled_$index", legacyDefault)
+    }
+
+    fun firstHandleEnabled(prefs: SharedPreferences): Boolean =
+        handleEnabled(prefs, 1)
+
+    fun internetSpeedMonitorEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(
+            "net_speed_enabled",
+            prefs.getBoolean(
+                "netspeed_enabled",
+                prefs.getBoolean(
+                    "speed_indicator_enabled",
+                    prefs.getBoolean("setup_completed", false)
+                )
+            )
+        )
+}
+
 sealed class GestureTarget {
     data class Container(val containerId: String) : GestureTarget()
     data class Action(val actionKey: String) : GestureTarget()
@@ -272,7 +301,7 @@ class HandleManager(private val context: Context) {
         return HandleConfig(
             id = id,
             name = "Primary Handle",
-            enabled = true,
+            enabled = FeaturePreferenceDefaults.firstHandleEnabled(prefs),
             edge = HandleEdge.RIGHT,
             positionPercent = 0.5f,
             widthDp = 12,
@@ -305,7 +334,7 @@ class HandleManager(private val context: Context) {
             return null
         }
 
-        val enabled = prefs.getBoolean("handle_enabled_$index", index == 1)
+        val enabled = FeaturePreferenceDefaults.handleEnabled(prefs, index)
         val name = prefs.getString("handle_name_$index", "Handle $index") ?: "Handle $index"
         val edgeStr = prefs.getString("handle_edge_$index", "RIGHT") ?: "RIGHT"
         val edge = HandleEdge.fromString(edgeStr)

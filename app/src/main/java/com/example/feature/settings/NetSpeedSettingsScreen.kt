@@ -41,6 +41,7 @@ import android.Manifest
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.example.core.DailyDataUsageHelper
+import com.example.core.FeaturePreferenceDefaults
 import java.util.Locale
 
 data class AppUsageInfo(
@@ -56,14 +57,16 @@ fun NetSpeedSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("FloatingReaderPrefs", Context.MODE_PRIVATE) }
     
-    var speedIndicatorEnabled by remember { 
-        mutableStateOf(
-            prefs.getBoolean("net_speed_enabled", 
-                prefs.getBoolean("netspeed_enabled", 
-                    prefs.getBoolean("speed_indicator_enabled", true)
-                )
-            )
-        ) 
+    var speedIndicatorEnabled by remember {
+        mutableStateOf(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs))
+    }
+    var pendingSpeedEnable by remember { mutableStateOf(false) }
+
+    fun persistSpeedMonitorEnabled(enabled: Boolean) {
+        speedIndicatorEnabled = enabled
+        com.example.core.OverlaySyncManager.syncBoolean(context, "net_speed_enabled", enabled)
+        com.example.core.OverlaySyncManager.syncBoolean(context, "netspeed_enabled", enabled)
+        com.example.core.OverlaySyncManager.syncBoolean(context, "speed_indicator_enabled", enabled)
     }
 
     val networkStatsManager = remember { context.getSystemService(Context.NETWORK_STATS_SERVICE) as NetworkStatsManager }
@@ -75,7 +78,14 @@ fun NetSpeedSettingsScreen(onBack: () -> Unit) {
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ -> }
+    ) { granted ->
+        if (pendingSpeedEnable) {
+            pendingSpeedEnable = false
+            val permissionGranted = granted ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            persistSpeedMonitorEnabled(permissionGranted)
+        }
+    }
 
     var usageData by remember { mutableStateOf<List<AppUsageInfo>>(emptyList()) }
     var timePeriod by remember { mutableStateOf("Daily") } // Daily, Weekly, Monthly
@@ -220,19 +230,16 @@ fun NetSpeedSettingsScreen(onBack: () -> Unit) {
                         Switch(
                             checked = speedIndicatorEnabled,
                             onCheckedChange = { enabled ->
-                                speedIndicatorEnabled = enabled
-                                prefs.edit()
-                                    .putBoolean("net_speed_enabled", enabled)
-                                    .putBoolean("netspeed_enabled", enabled)
-                                    .putBoolean("speed_indicator_enabled", enabled)
-                                    .commit()
-                                com.example.core.OverlaySyncManager.syncBoolean(context, "net_speed_enabled", enabled)
-                                com.example.core.OverlaySyncManager.syncBoolean(context, "netspeed_enabled", enabled)
-                                com.example.core.OverlaySyncManager.syncBoolean(context, "speed_indicator_enabled", enabled)
-                                if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                        notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    }
+                                if (
+                                    enabled &&
+                                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    pendingSpeedEnable = true
+                                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    pendingSpeedEnable = false
+                                    persistSpeedMonitorEnabled(enabled)
                                 }
                             }
                         )

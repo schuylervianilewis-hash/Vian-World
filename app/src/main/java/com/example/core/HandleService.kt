@@ -39,7 +39,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    private var isSpeedMonitorEnabled = true
+    private var isSpeedMonitorEnabled = false
     private var isScreenOn = true
     private var serviceStartTime: Long = System.currentTimeMillis()
     private var isFirstSpeedCallback = true
@@ -166,10 +166,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         }
 
         // 1. Determine Net Speed Monitor state and build initial foreground notification
-        isSpeedMonitorEnabled = prefs.getBoolean(
-            KEY_NET_SPEED_ENABLED,
-            prefs.getBoolean("netspeed_enabled", prefs.getBoolean("speed_indicator_enabled", true))
-        )
+        isSpeedMonitorEnabled = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs)
         val initialTitle: String
         val initialIconResId: Int
         val initialContentText: String
@@ -576,7 +573,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 attachHandles()
             }
         } else if (key == KEY_NET_SPEED_ENABLED || key == "net_speed_enabled" || key == "netspeed_enabled" || key == "speed_indicator_enabled") {
-            isSpeedMonitorEnabled = prefs.getBoolean(KEY_NET_SPEED_ENABLED, prefs.getBoolean("netspeed_enabled", prefs.getBoolean("speed_indicator_enabled", true)))
+            isSpeedMonitorEnabled = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs)
             setupNetSpeedManager()
         } else if (key == CallRecorderManager.KEY_CALL_RECORDER_ENABLED ||
             key == CallRecorderManager.KEY_CALL_RECORDER_MANUAL_ENABLED) {

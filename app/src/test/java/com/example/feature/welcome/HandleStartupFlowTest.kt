@@ -3,6 +3,7 @@ package com.example.feature.welcome
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Color
+import com.example.core.FeaturePreferenceDefaults
 import com.example.core.HandleConfig
 import com.example.core.HandleGestures
 import com.example.core.HandleManager
@@ -30,6 +31,26 @@ class HandleStartupFlowTest {
     fun setup() {
         fakePrefs = InMemorySharedPreferences()
         fakeContext = FakeAppContext(fakePrefs)
+    }
+
+    @Test
+    fun testFeatureDefaultsAreOffBeforeSetupAndPreserveLegacyCompletedDefaults() {
+        assertFalse(FeaturePreferenceDefaults.firstHandleEnabled(fakePrefs))
+        assertFalse(FeaturePreferenceDefaults.handleEnabled(fakePrefs, 2))
+        assertFalse(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(fakePrefs))
+
+        // Existing installations that completed setup retain the historical defaults.
+        fakePrefs.edit().putBoolean("setup_completed", true).apply()
+        assertTrue(FeaturePreferenceDefaults.firstHandleEnabled(fakePrefs))
+        assertTrue(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(fakePrefs))
+
+        // Explicit saved preferences always override the compatibility fallback.
+        fakePrefs.edit()
+            .putBoolean("handle_enabled_1", false)
+            .putBoolean("net_speed_enabled", false)
+            .apply()
+        assertFalse(FeaturePreferenceDefaults.firstHandleEnabled(fakePrefs))
+        assertFalse(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(fakePrefs))
     }
 
     @Test

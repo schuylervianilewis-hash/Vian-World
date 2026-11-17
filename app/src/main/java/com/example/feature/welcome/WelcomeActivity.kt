@@ -1,16 +1,22 @@
 package com.example.feature.welcome
 
 import android.content.Context
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.core.content.ContextCompat
 import com.example.SettingsActivity
 import com.example.core.HandleManager
 import com.example.core.HandleService
+import com.example.core.OverlaySyncManager
 import com.example.feature.settings.PermissionManagerScreen
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -35,6 +41,22 @@ class WelcomeActivity : ComponentActivity() {
                         // permissions are skipped; individual features request them when enabled.
                         com.example.core.LogKeeper.log(this@WelcomeActivity, "WelcomeActivity", "User continued onboarding; completing setup")
                         val prefs = getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
+                        if (!prefs.getBoolean("setup_completed", false)) {
+                            // On first setup, each feature follows its own permission result.
+                            val overlayGranted = Settings.canDrawOverlays(this@WelcomeActivity)
+                            HandleManager.getInstance(this@WelcomeActivity)
+                                .setHandleEnabled("handle_1", overlayGranted)
+
+                            val notificationsGranted =
+                                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                                    ContextCompat.checkSelfPermission(
+                                        this@WelcomeActivity,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                            OverlaySyncManager.syncBoolean(this@WelcomeActivity, "net_speed_enabled", notificationsGranted)
+                            OverlaySyncManager.syncBoolean(this@WelcomeActivity, "netspeed_enabled", notificationsGranted)
+                            OverlaySyncManager.syncBoolean(this@WelcomeActivity, "speed_indicator_enabled", notificationsGranted)
+                        }
                         prefs.edit().putBoolean("setup_completed", true).commit()
                         HandleService.startIfConfigured(this@WelcomeActivity)
                         startActivity(Intent(this@WelcomeActivity, SettingsActivity::class.java))
