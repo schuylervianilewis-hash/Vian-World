@@ -17,6 +17,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
 import android.view.MenuItem;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.compose.ui.platform.ComposeView;
@@ -41,6 +42,7 @@ import net.kollnig.missioncontrol.data.AppProtectionState;
 import net.kollnig.missioncontrol.data.AppProtectionWriter;
 import net.kollnig.missioncontrol.data.BlockingMode;
 import net.kollnig.missioncontrol.data.InternetBlocklist;
+import net.kollnig.missioncontrol.data.InternetPauseManager;
 import net.kollnig.missioncontrol.data.PausedApps;
 import net.kollnig.missioncontrol.data.RemoteRoutingLogic;
 import net.kollnig.missioncontrol.data.Tracker;
@@ -111,11 +113,14 @@ public class ProtectionActivity extends AppCompatActivity {
                 new ProtectionScreenCallbacks() {
                     @Override
                     public void onPauseResume() {
-                        pauseOrResume();
+                        if (!blockPerAppPolicyEdit())
+                            pauseOrResume();
                     }
 
                     @Override
                     public void onStateSelected(AppProtectionState value) {
+                        if (blockPerAppPolicyEdit())
+                            return;
                         AppProtectionWriter.applyManual(ProtectionActivity.this,
                                 appPackageName, appUid, AppProtectionState.of(value));
                         updateProtectionState();
@@ -202,13 +207,15 @@ public class ProtectionActivity extends AppCompatActivity {
     private ProtectionScreenModel buildScreenModel() {
         AppProtectionState state = currentState();
         boolean paused = PausedApps.isPaused(this, appPackageName);
+        boolean pauseControlsLocked = InternetPauseManager.isActive(this);
         showingResume = paused;
         List<String> sharedPackages = PausedApps.getSharedUidPackages(this, appPackageName, appUid);
 
         PauseSection pause = null;
-        boolean pauseAvailable = paused || state == AppProtectionState.PROTECTED
+        boolean pauseAvailable = !pauseControlsLocked && (paused
+                || state == AppProtectionState.PROTECTED
                 || state == AppProtectionState.MINIMAL_ONLY
-                || state == AppProtectionState.TRACKERS_ALLOWED;
+                || state == AppProtectionState.TRACKERS_ALLOWED);
         if (pauseAvailable) {
             String status;
             String action;
@@ -230,9 +237,16 @@ public class ProtectionActivity extends AppCompatActivity {
             pause = new PauseSection(status, sharedUidText, action, lockdownText);
         }
 
-        List<StateOption> stateOptions = buildStateOptions(state, paused, sharedPackages);
+        List<StateOption> stateOptions = pauseControlsLocked
+                ? Collections.emptyList()
+                : buildStateOptions(state, paused, sharedPackages);
         BlockedState blocked = buildBlockedState(state);
-        return new ProtectionScreenModel(pause, blocked, stateOptions, buildRouteModel());
+        String controlsLockedMessage = pauseControlsLocked
+                ? getString(R.string.internet_pause_controls_locked) : null;
+        RouteModel route = pauseControlsLocked
+                ? new RouteModel.Unavailable(controlsLockedMessage)
+                : buildRouteModel();
+        return new ProtectionScreenModel(pause, blocked, stateOptions, route, controlsLockedMessage);
     }
 
     private List<StateOption> buildStateOptions(AppProtectionState state, boolean paused,
@@ -380,6 +394,8 @@ public class ProtectionActivity extends AppCompatActivity {
     }
 
     private void applyRoute(boolean wantsTunnel) {
+        if (blockPerAppPolicyEdit())
+            return;
         if (wantsTunnel == routesThroughTunnel())
             return;
 
@@ -428,7 +444,16 @@ public class ProtectionActivity extends AppCompatActivity {
         });
     }
 
+    private boolean blockPerAppPolicyEdit() {
+        if (!InternetPauseManager.isActive(this))
+            return false;
+        Toast.makeText(this, R.string.internet_pause_controls_locked, Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
     private void pauseOrResume() {
+        if (blockPerAppPolicyEdit())
+            return;
         // Act on what the button offered, not on a fresh read: the pause may have
         // expired between binding and this tap, and resuming an app that is no
         // longer paused is a no-op, while pausing one that just resumed is not.
@@ -458,6 +483,8 @@ public class ProtectionActivity extends AppCompatActivity {
     }
 
     private void pauseNow() {
+        if (blockPerAppPolicyEdit())
+            return;
         PausedApps.pause(this, appPackageName, appUid);
         updateProtectionState();
     }
