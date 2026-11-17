@@ -291,37 +291,42 @@ public class Rule {
         this.icon = info.applicationInfo.icon;
         this.version = info.versionName;
         this.firstInstallTime = info.firstInstallTime;
-        if (info.applicationInfo.uid == 0) {
+        // Rule.getRules adds synthetic daemon rows using package-name sentinels.
+        // Their UIDs are user-scoped on Android; classify by appId as well as
+        // the sentinel name so secondary Android users/work profiles do not
+        // accidentally turn those daemon rows into package-backed apps.
+        int appId = info.applicationInfo.uid % 100000;
+        if (info.applicationInfo.uid == 0 || "root".equals(info.packageName)) {
             this.name = context.getString(R.string.title_root);
             this.system = true;
             this.internet = true;
             this.enabled = true;
             this.pkg = false;
-        } else if (info.applicationInfo.uid == 1013) {
+        } else if (appId == 1013 || "android.media".equals(info.packageName)) {
             this.name = context.getString(R.string.title_mediaserver);
             this.system = true;
             this.internet = true;
             this.enabled = true;
             this.pkg = false;
-        } else if (info.applicationInfo.uid == 1020) {
+        } else if (appId == 1020 || "android.multicast".equals(info.packageName)) {
             this.name = "MulticastDNSResponder";
             this.system = true;
             this.internet = true;
             this.enabled = true;
             this.pkg = false;
-        } else if (info.applicationInfo.uid == 1021) {
+        } else if (appId == 1021 || "android.gps".equals(info.packageName)) {
             this.name = context.getString(R.string.title_gpsdaemon);
             this.system = true;
             this.internet = true;
             this.enabled = true;
             this.pkg = false;
-        } else if (info.applicationInfo.uid == 1051) {
+        } else if (appId == 1051 || "android.dns".equals(info.packageName)) {
             this.name = context.getString(R.string.title_dnsdaemon);
             this.system = true;
             this.internet = true;
             this.enabled = true;
             this.pkg = false;
-        } else if (info.applicationInfo.uid == 9999) {
+        } else if (appId == 9999 || "nobody".equals(info.packageName)) {
             this.name = context.getString(R.string.title_nobody);
             this.system = true;
             this.internet = true;
