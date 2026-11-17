@@ -39,6 +39,11 @@ public class InternetPauseManagerTest {
     }
 
     @Test
+    public void vpnReadinessComesFromDefaultProcessProvider() {
+        assertFalse(InternetPauseManager.isVpnReady(context));
+    }
+
+    @Test
     public void onlyEligibleUserPackageRulesAreIncluded() {
         assertTrue(InternetPauseManager.isEligibleUserRule(true, false, false));
         assertFalse(InternetPauseManager.isEligibleUserRule(false, false, false));

@@ -23,6 +23,11 @@ import eu.faircode.netguard.ServiceSinkhole;
 public final class InternetPauseManager {
     public static final String ACTION_STATE_CHANGED =
             "net.kollnig.missioncontrol.action.INTERNET_PAUSE_STATE_CHANGED";
+    static final String METHOD_GET_STATE = "get_internet_pause_state";
+    static final String METHOD_SET_PAUSED = "set_internet_pause";
+    static final String KEY_REQUESTED_PAUSED = "requested_paused";
+    static final String KEY_SUCCESS = "success";
+    static final String KEY_VPN_ESTABLISHED = "vpn_established";
     static final String PREFS_NAME = "internet_pause";
     static final String KEY_ACTIVE = "active";
     static final String KEY_APPLIED = "applied";
