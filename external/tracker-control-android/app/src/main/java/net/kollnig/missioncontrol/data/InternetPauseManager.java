@@ -308,26 +308,38 @@ public final class InternetPauseManager {
             return;
         }
 
+        // A UID shared with a non-package daemon or a critical platform
+        // identity must stay outside the pause overlay. UID enforcement is
+        // shared by every package in that UID, so protecting only one Rule
+        // would not be sufficient.
         Set<Integer> protectedUids = new HashSet<>();
         for (Rule rule : rules) {
             if (rule == null || rule.uid < 0)
                 continue;
-            if (!rule.pkg || rule.system || InternetPermissionPolicy.isProtectedIdentity(
+            if (!rule.pkg || InternetPermissionPolicy.isProtectedIdentity(
                     appContext, rule.packageName, rule.uid))
                 protectedUids.add(rule.uid);
         }
 
         Set<Integer> temporaryBlockedUids = new HashSet<>();
         for (Rule rule : rules) {
-            if (rule == null || !isEligibleUid(rule.uid, protectedUids))
+            if (rule == null || rule.uid < 0)
                 continue;
             boolean protectedIdentity = InternetPermissionPolicy.isProtectedIdentity(
                     appContext, rule.packageName, rule.uid);
+            if (!rule.pkg || !isEligibleUid(rule.uid, protectedUids) || protectedIdentity) {
+                // Critical identities and synthetic daemon rows are explicitly
+                // kept out of the pause VPN. This is a runtime Rule mutation;
+                // no permanent per-app preference is changed.
+                rule.apply = false;
+                continue;
+            }
             if (!isEligibleUserRule(rule.pkg, rule.system, protectedIdentity))
                 continue;
 
-            // This changes only the in-memory Rule object used to build the
-            // current VPN. The permanent "apply" preference is never written.
+            // Include ordinary preinstalled/system packages even when the
+            // user's normal "include system apps in VPN" setting is off. The
+            // temporary UID block is enforced before direct/WireGuard egress.
             rule.apply = true;
             temporaryBlockedUids.add(rule.uid);
         }
@@ -336,7 +348,23 @@ public final class InternetPauseManager {
 
     static boolean isEligibleUserRule(boolean packageRule, boolean systemRule,
             boolean protectedIdentity) {
-        return packageRule && !systemRule && !protectedIdentity;
+        // System classification is not an exclusion: package-backed system
+        // apps are blockable. Only non-package and protected identities are
+        // exempt. Keep the parameter to make the distinction explicit at call
+        // sites and preserve a focused pure-JVM test seam.
+        return packageRule && !protectedIdentity;
+    }
+
+    /** System packages must enter the TUN while pause is active, regardless of normal preference. */
+    public static boolean shouldIncludeSystemApps(boolean includeSystemPreference, boolean pauseActive) {
+        return includeSystemPreference || pauseActive;
+    }
+
+    /** Read pause state directly in the VPN service process without a provider round-trip. */
+    public static boolean isPauseEnforcementRequested(Context context) {
+        return context != null && context.getApplicationContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ACTIVE, false);
     }
 
     static boolean isEligibleUid(int uid, Set<Integer> protectedUids) {
