@@ -91,7 +91,7 @@ public class InternetBlocklistTest {
     @Test
     public void temporaryBlocksAreEffectiveButNeverPersistedAsPermanent() {
         InternetBlocklist blocklist = InternetBlocklist.getInstance(context);
-        blocklist.block(context, 1001);
+        blocklist.block(1001);
         blocklist.setTemporaryBlockedUids(Collections.singleton(1002));
 
         assertTrue(blocklist.blockedInternet(1001));

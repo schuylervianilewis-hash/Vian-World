@@ -75,11 +75,14 @@ public final class InternetPauseManager {
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             boolean wasActive = prefs.getBoolean(KEY_ACTIVE, false);
             boolean wasApplied = prefs.getBoolean(KEY_APPLIED, false);
-            if (wasActive == paused && (!paused || (wasApplied && ServiceSinkhole.isVpnEstablished()))) {
-                if (!paused)
-                    InternetBlocklist.getInstance(appContext).clearTemporaryBlockedUids();
+            if (wasActive == paused && !paused) {
+                InternetBlocklist.getInstance(appContext).clearTemporaryBlockedUids();
+                if (wasApplied)
+                    prefs.edit().putBoolean(KEY_APPLIED, false).commit();
                 return true;
             }
+            if (wasActive && paused && wasApplied && ServiceSinkhole.isVpnEstablished())
+                return true;
 
             if (!prefs.edit()
                     .putBoolean(KEY_ACTIVE, paused)
