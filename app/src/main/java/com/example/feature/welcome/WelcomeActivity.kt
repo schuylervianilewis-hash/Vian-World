@@ -1,10 +1,7 @@
 package com.example.feature.welcome
 
 import android.content.Context
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -12,8 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.core.content.ContextCompat
 import com.example.SettingsActivity
+import com.example.core.FeaturePermissionChecks
 import com.example.core.HandleManager
 import com.example.core.HandleService
 import com.example.core.OverlaySyncManager
@@ -48,11 +45,7 @@ class WelcomeActivity : ComponentActivity() {
                                 .setHandleEnabled("handle_1", overlayGranted)
 
                             val notificationsGranted =
-                                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                                    ContextCompat.checkSelfPermission(
-                                        this@WelcomeActivity,
-                                        Manifest.permission.POST_NOTIFICATIONS
-                                    ) == PackageManager.PERMISSION_GRANTED
+                                FeaturePermissionChecks.hasNotificationPermission(this@WelcomeActivity)
                             OverlaySyncManager.syncBoolean(this@WelcomeActivity, "net_speed_enabled", notificationsGranted)
                             OverlaySyncManager.syncBoolean(this@WelcomeActivity, "netspeed_enabled", notificationsGranted)
                             OverlaySyncManager.syncBoolean(this@WelcomeActivity, "speed_indicator_enabled", notificationsGranted)

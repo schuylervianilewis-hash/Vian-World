@@ -166,7 +166,8 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         }
 
         // 1. Determine Net Speed Monitor state and build initial foreground notification
-        isSpeedMonitorEnabled = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs)
+        isSpeedMonitorEnabled = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs) &&
+            FeaturePermissionChecks.hasNotificationPermission(this)
         val initialTitle: String
         val initialIconResId: Int
         val initialContentText: String
@@ -299,6 +300,9 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     private fun setupNetSpeedManager() {
+        if (isSpeedMonitorEnabled && !FeaturePermissionChecks.hasNotificationPermission(this)) {
+            isSpeedMonitorEnabled = false
+        }
         if (isSpeedMonitorEnabled) {
             if (netSpeedManager == null) {
                 netSpeedManager = NetSpeedManager { speedData ->
@@ -322,6 +326,13 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     private fun updateSpeedNotification(speedData: SpeedData) {
+        if (!FeaturePermissionChecks.hasNotificationPermission(this)) {
+            isSpeedMonitorEnabled = false
+            netSpeedManager?.stop()
+            netSpeedManager = null
+            LogKeeper.log(this, "HandleService", "Speed monitor stopped because notification permission is unavailable")
+            return
+        }
         try {
             val speedVal = speedData.downValue
             val speedUnit = speedData.downUnit
@@ -573,7 +584,8 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 attachHandles()
             }
         } else if (key == KEY_NET_SPEED_ENABLED || key == "net_speed_enabled" || key == "netspeed_enabled" || key == "speed_indicator_enabled") {
-            isSpeedMonitorEnabled = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs)
+            isSpeedMonitorEnabled = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs) &&
+                FeaturePermissionChecks.hasNotificationPermission(this)
             setupNetSpeedManager()
         } else if (key == CallRecorderManager.KEY_CALL_RECORDER_ENABLED ||
             key == CallRecorderManager.KEY_CALL_RECORDER_MANUAL_ENABLED) {

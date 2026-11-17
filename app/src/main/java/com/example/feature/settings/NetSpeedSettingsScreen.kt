@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,11 +37,13 @@ import androidx.compose.ui.unit.sp
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import android.Manifest
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.example.core.DailyDataUsageHelper
+import com.example.core.FeaturePermissionChecks
 import com.example.core.FeaturePreferenceDefaults
 import java.util.Locale
 
@@ -56,9 +59,13 @@ data class AppUsageInfo(
 fun NetSpeedSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("FloatingReaderPrefs", Context.MODE_PRIVATE) }
-    
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var speedIndicatorEnabled by remember {
-        mutableStateOf(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs))
+        mutableStateOf(
+            FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs) &&
+                FeaturePermissionChecks.hasNotificationPermission(context)
+        )
     }
     var pendingSpeedEnable by remember { mutableStateOf(false) }
 
@@ -81,10 +88,38 @@ fun NetSpeedSettingsScreen(onBack: () -> Unit) {
     ) { granted ->
         if (pendingSpeedEnable) {
             pendingSpeedEnable = false
-            val permissionGranted = granted ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            persistSpeedMonitorEnabled(
+                granted && FeaturePermissionChecks.hasNotificationPermission(context)
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val configured = FeaturePreferenceDefaults.internetSpeedMonitorEnabled(prefs)
+        val permissionGranted = FeaturePermissionChecks.hasNotificationPermission(context)
+        if (configured) {
+            // Reconcile a revoked permission, or restart the shared service after a
+            // permission was restored while the screen was not open.
             persistSpeedMonitorEnabled(permissionGranted)
         }
+    }
+
+    DisposableEffect(lifecycleOwner, pendingSpeedEnable, speedIndicatorEnabled) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val permissionGranted = FeaturePermissionChecks.hasNotificationPermission(context)
+                if (pendingSpeedEnable) {
+                    pendingSpeedEnable = false
+                    persistSpeedMonitorEnabled(permissionGranted)
+                } else if (speedIndicatorEnabled && !permissionGranted) {
+                    persistSpeedMonitorEnabled(false)
+                } else if (speedIndicatorEnabled && permissionGranted) {
+                    persistSpeedMonitorEnabled(true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     var usageData by remember { mutableStateOf<List<AppUsageInfo>>(emptyList()) }
@@ -230,16 +265,21 @@ fun NetSpeedSettingsScreen(onBack: () -> Unit) {
                         Switch(
                             checked = speedIndicatorEnabled,
                             onCheckedChange = { enabled ->
-                                if (
-                                    enabled &&
-                                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    pendingSpeedEnable = true
-                                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                } else {
+                                if (!enabled) {
                                     pendingSpeedEnable = false
-                                    persistSpeedMonitorEnabled(enabled)
+                                    persistSpeedMonitorEnabled(false)
+                                } else if (FeaturePermissionChecks.hasNotificationPermission(context)) {
+                                    pendingSpeedEnable = false
+                                    persistSpeedMonitorEnabled(true)
+                                } else {
+                                    pendingSpeedEnable = true
+                                    if (FeaturePermissionChecks.needsRuntimeNotificationPermission(context)) {
+                                        notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        context.startActivity(
+                                            FeaturePermissionChecks.createNotificationSettingsIntent(context)
+                                        )
+                                    }
                                 }
                             }
                         )

@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import com.example.core.FeaturePermissionChecks
 
 @Composable
 fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = true) {
@@ -55,13 +56,7 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
     }
 
     var hasPostNotification by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            } else {
-                true
-            }
-        )
+        mutableStateOf(FeaturePermissionChecks.hasNotificationPermission(context))
     }
 
     val requestPermissionLauncher = rememberLauncherForActivityResult(
@@ -71,9 +66,7 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
         hasCamera = permissions[Manifest.permission.CAMERA] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         hasAudio = permissions[Manifest.permission.RECORD_AUDIO] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         hasPhoneState = permissions[Manifest.permission.READ_PHONE_STATE] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            hasPostNotification = permissions[Manifest.permission.POST_NOTIFICATIONS] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        }
+        hasPostNotification = FeaturePermissionChecks.hasNotificationPermission(context)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -89,9 +82,7 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
                 hasAudio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
                 hasPhoneState = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
                 hasVpnAuthorization = VpnService.prepare(context) == null
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    hasPostNotification = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                }
+                hasPostNotification = FeaturePermissionChecks.hasNotificationPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -154,8 +145,10 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
             description = "Required to show the Internet Speed Monitor & foreground status.",
             isGranted = hasPostNotification,
             onClick = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (FeaturePermissionChecks.needsRuntimeNotificationPermission(context)) {
                     requestPermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                } else if (!FeaturePermissionChecks.hasNotificationPermission(context)) {
+                    context.startActivity(FeaturePermissionChecks.createNotificationSettingsIntent(context))
                 }
             }
         )
