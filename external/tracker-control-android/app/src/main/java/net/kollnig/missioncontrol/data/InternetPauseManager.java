@@ -294,9 +294,9 @@ public final class InternetPauseManager {
     }
 
     /**
-     * Overlay only eligible user-app rules in the service's fresh inventory.
-     * Bypassed apps are temporarily included in the TUN, then blocked by the
-     * temporary UID set before any direct/WireGuard forwarding occurs.
+     * Overlay package-backed app rules, including ordinary system apps, in the
+     * service's fresh inventory. Bypassed apps are temporarily included in the
+     * TUN, then blocked before any direct/WireGuard forwarding occurs.
      */
     public static void applyToRules(Context context, List<Rule> rules) {
         Context appContext = context.getApplicationContext();
@@ -334,7 +334,7 @@ public final class InternetPauseManager {
                 rule.apply = false;
                 continue;
             }
-            if (!isEligibleUserRule(rule.pkg, rule.system, protectedIdentity))
+            if (!isEligiblePackageRule(rule.pkg, rule.system, protectedIdentity))
                 continue;
 
             // Include ordinary preinstalled/system packages even when the
