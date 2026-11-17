@@ -106,11 +106,23 @@ public class InternetPauseManagerTest {
     }
 
     @Test
-    public void onlyEligibleUserPackageRulesAreIncluded() {
+    public void packageBackedSystemAppsAreEligibleButProtectedIdentitiesAreNot() {
         assertTrue(InternetPauseManager.isEligibleUserRule(true, false, false));
+        // Preinstalled/OEM system packages are package-backed and should be
+        // included in the pause overlay even when normal system routing is off.
+        assertTrue(InternetPauseManager.isEligibleUserRule(true, true, false));
         assertFalse(InternetPauseManager.isEligibleUserRule(false, false, false));
-        assertFalse(InternetPauseManager.isEligibleUserRule(true, true, false));
+        assertFalse(InternetPauseManager.isEligibleUserRule(false, true, false));
         assertFalse(InternetPauseManager.isEligibleUserRule(true, false, true));
+        assertFalse(InternetPauseManager.isEligibleUserRule(true, true, true));
+    }
+
+    @Test
+    public void systemPackagesAreRoutedOnlyForPauseOrWhenNormallyEnabled() {
+        assertFalse(InternetPauseManager.shouldIncludeSystemApps(false, false));
+        assertTrue(InternetPauseManager.shouldIncludeSystemApps(true, false));
+        assertTrue(InternetPauseManager.shouldIncludeSystemApps(false, true));
+        assertTrue(InternetPauseManager.shouldIncludeSystemApps(true, true));
     }
 
     @Test
