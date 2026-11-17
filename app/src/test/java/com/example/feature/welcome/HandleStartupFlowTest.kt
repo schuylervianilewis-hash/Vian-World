@@ -39,10 +39,15 @@ class HandleStartupFlowTest {
         assertFalse(FeaturePreferenceDefaults.handleEnabled(fakePrefs, 2))
         assertFalse(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(fakePrefs))
 
+        val freshFirstHandle = HandleManager(fakeContext).getAllHandles().first()
+        assertFalse("Fresh-install first Handle must start OFF", freshFirstHandle.enabled)
+
         // Existing installations that completed setup retain the historical defaults.
         fakePrefs.edit().putBoolean("setup_completed", true).apply()
         assertTrue(FeaturePreferenceDefaults.firstHandleEnabled(fakePrefs))
         assertTrue(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(fakePrefs))
+        val legacyFirstHandle = HandleManager(fakeContext).getAllHandles().first()
+        assertTrue("Legacy setup-completed first Handle keeps its previous default", legacyFirstHandle.enabled)
 
         // Explicit saved preferences always override the compatibility fallback.
         fakePrefs.edit()
@@ -51,6 +56,8 @@ class HandleStartupFlowTest {
             .apply()
         assertFalse(FeaturePreferenceDefaults.firstHandleEnabled(fakePrefs))
         assertFalse(FeaturePreferenceDefaults.internetSpeedMonitorEnabled(fakePrefs))
+        val explicitlyDisabledHandle = HandleManager(fakeContext).getAllHandles().first()
+        assertFalse("Explicitly disabled first Handle remains OFF", explicitlyDisabledHandle.enabled)
     }
 
     @Test
