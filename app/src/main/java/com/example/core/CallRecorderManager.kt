@@ -152,8 +152,12 @@ class CallRecorderManager internal constructor(
         return prefs?.getBoolean(KEY_CALL_RECORDER_ENABLED, false) ?: false
     }
 
+    /** Sensor is needed for either automatic recording or the manual in-call button. */
+    fun shouldListen(): Boolean =
+        isEnabled() || (prefs?.getBoolean(KEY_CALL_RECORDER_MANUAL_ENABLED, false) ?: false)
+
     fun startListening() {
-        if (!isEnabled()) {
+        if (!shouldListen()) {
             listenerStatus = ListenerStatus.DISABLED
             Log.d(TAG, "Call recorder is disabled, not starting listener")
             safeLog(TAG, "Call sensor disabled by preference; listener not registered")
@@ -470,6 +474,7 @@ class CallRecorderManager internal constructor(
     companion object {
         private const val TAG = "CallRecorderManager"
         const val KEY_CALL_RECORDER_ENABLED = "call_recorder_enabled"
+        const val KEY_CALL_RECORDER_MANUAL_ENABLED = "call_recorder_manual_enabled"
 
         @Volatile
         private var instance: CallRecorderManager? = null

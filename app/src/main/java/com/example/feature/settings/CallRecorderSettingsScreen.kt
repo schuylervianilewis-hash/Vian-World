@@ -66,10 +66,10 @@ fun CallRecorderSettingsScreen(onBack: () -> Unit) {
     val manualLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         if (results.all { it.value }) {
             manualEnabled = true
-            prefs.edit().putBoolean("call_recorder_manual_enabled", true).apply()
+            com.example.core.OverlaySyncManager.syncBoolean(context, "call_recorder_manual_enabled", true)
         } else {
             manualEnabled = false
-            prefs.edit().putBoolean("call_recorder_manual_enabled", false).apply()
+            com.example.core.OverlaySyncManager.syncBoolean(context, "call_recorder_manual_enabled", false)
         }
     }
 
@@ -130,7 +130,7 @@ fun CallRecorderSettingsScreen(onBack: () -> Unit) {
                                     manualLauncher.launch(permissions)
                                 } else {
                                     manualEnabled = false
-                                    prefs.edit().putBoolean("call_recorder_manual_enabled", false).apply()
+                                    com.example.core.OverlaySyncManager.syncBoolean(context, "call_recorder_manual_enabled", false)
                                 }
                             }
                         )

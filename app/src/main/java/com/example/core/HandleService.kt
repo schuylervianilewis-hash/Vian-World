@@ -244,11 +244,12 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
             attachHandles()
         }
         val callRecorder = CallRecorderManager.getInstance(this)
-        if (callRecorder.isEnabled()) {
+        if (callRecorder.shouldListen()) {
             callRecorder.startListening()
         }
         LogKeeper.logLifecycle(this, "CallSensor", "STARTUP_CHECK",
-            "enabled=" + callRecorder.isEnabled() + " status=" + callRecorder.listenerStatus + " listening=" + callRecorder.isListening)
+            "autoEnabled=" + callRecorder.isEnabled() + " sensorEnabled=" + callRecorder.shouldListen() +
+                " status=" + callRecorder.listenerStatus + " listening=" + callRecorder.isListening)
         SidebarManager.getInstance(this).registerReceiver(this)
         com.example.feature.element.ElementActionRegistry.getInstance(this).registerReceiver(this)
 
@@ -577,12 +578,11 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         } else if (key == KEY_NET_SPEED_ENABLED || key == "net_speed_enabled" || key == "netspeed_enabled" || key == "speed_indicator_enabled") {
             isSpeedMonitorEnabled = prefs.getBoolean(KEY_NET_SPEED_ENABLED, prefs.getBoolean("netspeed_enabled", prefs.getBoolean("speed_indicator_enabled", true)))
             setupNetSpeedManager()
-        } else if (key == CallRecorderManager.KEY_CALL_RECORDER_ENABLED) {
-            if (CallRecorderManager.getInstance(this).isEnabled()) {
-                CallRecorderManager.getInstance(this).startListening()
-            } else {
-                CallRecorderManager.getInstance(this).stopListening()
-            }
+        } else if (key == CallRecorderManager.KEY_CALL_RECORDER_ENABLED ||
+            key == CallRecorderManager.KEY_CALL_RECORDER_MANUAL_ENABLED) {
+            val callRecorder = CallRecorderManager.getInstance(this)
+            if (callRecorder.shouldListen()) callRecorder.startListening()
+            else callRecorder.stopListening()
         }
     }
 
