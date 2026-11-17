@@ -25,11 +25,13 @@ public final class ShieldControl {
 
     public static void setEnabled(Context context, boolean enabled, String source) {
         Context app = context.getApplicationContext();
+        ShieldDiagnostics.log("ShieldControl", "setEnabled requested enabled=" + enabled + " source=" + source);
         cancelResumeAlarm(app);
         PreferenceManager.getDefaultSharedPreferences(app).edit().putBoolean("enabled", enabled).apply();
         if (enabled) ServiceSinkhole.start(source, app, true);
         else ServiceSinkhole.stop(source, app, false);
         WidgetMain.updateWidgets(app);
+        ShieldDiagnostics.log("ShieldControl", "Firewall state request dispatched; enabled=" + enabled);
     }
 
     public static Intent createOpenShieldIntent(Context context) {

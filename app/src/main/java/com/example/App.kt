@@ -64,11 +64,14 @@ class App : FossifyApp() {
                 initializeLauncherTheme()
             }
             else -> {
-                // Firewall's ApplicationEx is not the host Application class.
-                // Restore its non-ACRA runtime setup only in the default/Main
-                // process; Settings (:heavy) and Home (:home) must not enqueue
-                // duplicate workers or own VPN startup state.
                 if (getProcessNameCompat() == packageName) {
+                    eu.faircode.netguard.ShieldDiagnostics.setSink { component, message, error ->
+                        val details = if (error == null) message
+                            else message + "\n" + android.util.Log.getStackTraceString(error)
+                        LogKeeper.log(this@App, "Firewall", "[$component] $details")
+                    }
+                    LogKeeper.log(this, "Firewall", "Host diagnostics bridge registered")
+                    // Firewall's ApplicationEx is not the host Application class.
                     eu.faircode.netguard.ApplicationEx.initializeHostRuntime(this)
                 }
             }

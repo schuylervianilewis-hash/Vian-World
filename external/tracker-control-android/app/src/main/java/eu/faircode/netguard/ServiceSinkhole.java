@@ -603,6 +603,7 @@ public class ServiceSinkhole extends VpnService {
                     intent.getBooleanExtra(EXTRA_WG_STARTUP_RETRY, false);
             Log.i(TAG, "Executing intent=" + intent + " command=" + cmd + " reason=" + reason +
                     " vpn=" + (vpn != null) + " user=" + (Process.myUid() / 100000));
+            ShieldDiagnostics.log("ServiceSinkhole", "Command=" + cmd + " reason=" + reason + " vpnPresent=" + (vpn != null));
 
             // Consume the dispatch marker before any preflight gate can return.
             // Otherwise a background-user or temporary-stop return strands the
@@ -766,6 +767,7 @@ public class ServiceSinkhole extends VpnService {
             } catch (Throwable ex) {
                 if (wireGuardStartupRetry)
                     cancelWireGuardStartupRecovery(true);
+                ShieldDiagnostics.error("ServiceSinkhole", "Command " + cmd + " failed", ex);
                 Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
 
                 if (cmd == Command.start || cmd == Command.reload) {
@@ -3884,9 +3886,12 @@ public class ServiceSinkhole extends VpnService {
     public void onCreate() {
         destroying = false;
         Log.i(TAG, "Create version=" + Util.getSelfVersionName(this) + "/" + Util.getSelfVersionCode(this));
+        ShieldDiagnostics.log("ServiceSinkhole", "onCreate; preparing VPN foreground notification");
         try {
             startForeground(NOTIFY_WAITING, getWaitingNotification());
+            ShieldDiagnostics.log("ServiceSinkhole", "VPN foreground notification accepted");
         } catch (Exception ex) {
+            ShieldDiagnostics.error("ServiceSinkhole", "Failed to start VPN foreground service", ex);
             Log.e(TAG, "Failed to start foreground service", ex);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     ex instanceof android.app.ForegroundServiceStartNotAllowedException) {
@@ -4204,6 +4209,7 @@ public class ServiceSinkhole extends VpnService {
             startForeground(NOTIFY_WAITING, getWaitingNotification());
 
         Log.i(TAG, "Received " + intent);
+        ShieldDiagnostics.log("ServiceSinkhole", "onStartCommand received; nullIntent=" + (intent == null));
         Util.logExtras(intent);
 
         // Check for set command
@@ -4344,6 +4350,7 @@ public class ServiceSinkhole extends VpnService {
         synchronized (this) {
             destroying = true;
             Log.i(TAG, "Destroy");
+            ShieldDiagnostics.log("ServiceSinkhole", "onDestroy; releasing VPN service resources");
 
             // Flush only when startup completed far enough to use the database.
             if (initialized) {
