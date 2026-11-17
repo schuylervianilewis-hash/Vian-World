@@ -346,7 +346,7 @@ public final class InternetPauseManager {
         blocklist.setTemporaryBlockedUids(temporaryBlockedUids);
     }
 
-    static boolean isEligibleUserRule(boolean packageRule, boolean systemRule,
+    static boolean isEligiblePackageRule(boolean packageRule, boolean systemRule,
             boolean protectedIdentity) {
         // System classification is not an exclusion: package-backed system
         // apps are blockable. Only non-package and protected identities are
