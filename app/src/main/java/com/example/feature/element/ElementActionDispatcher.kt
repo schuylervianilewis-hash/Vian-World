@@ -175,6 +175,13 @@ object ElementActionDispatcher {
             return true
         }
         return when (action) {
+            "internet_pause" -> {
+                val intent = Intent(context, com.example.feature.sidebar.InternetPauseToggleActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                true
+            }
             "force_stop_running_apps" -> {
                 if (LogKeeper.getProcessName(context).endsWith(":heavy")) {
                     LogKeeper.log(context, TAG, "Routing force_stop_running_apps from :heavy to Main via IPC")

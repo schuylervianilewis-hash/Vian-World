@@ -546,8 +546,13 @@ class HybridGridPageView(
                             val isForceStop = (parsed is SidebarItem.SystemAction && parsed.action == "force_stop_running_apps")
                             label.alpha = 1.0f
 
-                            appsManager.bindIcon(item.id, icon, prefs, scope) {
-                                appsManager.bindIcon(item.id, icon, prefs, scope) {}
+                            val isInternetPause = parsed is SidebarItem.SystemAction && parsed.action == "internet_pause"
+                            if (isInternetPause) {
+                                InternetPauseTileBinder.bind(context, elementView, icon)
+                            } else {
+                                appsManager.bindIcon(item.id, icon, prefs, scope) {
+                                    appsManager.bindIcon(item.id, icon, prefs, scope) {}
+                                }
                             }
                             
                             elementView.setOnClickListener {
@@ -647,7 +652,7 @@ class HybridGridPageView(
                                     }
                                     else -> {}
                                 }
-                                if (parsed !is SidebarItem.Folder && parsed !is SidebarItem.PopupWidget && parsed !is SidebarItem.VolumeAction && parsed !is SidebarItem.DisplayAction && parsed !is SidebarItem.QuickTile) {
+                                if (parsed !is SidebarItem.Folder && parsed !is SidebarItem.PopupWidget && parsed !is SidebarItem.VolumeAction && parsed !is SidebarItem.DisplayAction && parsed !is SidebarItem.QuickTile && !isInternetPause) {
                                     onClose?.invoke() ?: com.example.feature.sidebar.SidebarManager.getInstance(context).closeSidebar()
                                 }
                             }

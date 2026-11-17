@@ -27,6 +27,7 @@ import com.example.feature.sidebar.GridWidgetItem
 import com.example.feature.sidebar.SidebarActionMenuHelper
 import com.example.feature.sidebar.SidebarAppsManager
 import com.example.feature.sidebar.SidebarItem
+import com.example.feature.sidebar.InternetPauseTileBinder
 import com.example.utils.AppTrackerHelper
 import kotlinx.coroutines.CoroutineScope
 import java.io.File
@@ -76,8 +77,13 @@ class ElementViewRenderer(
 
         label.alpha = 1.0f
 
-        appsManager.bindIcon(item.id, icon, prefs, scope) {
-            appsManager.bindIcon(item.id, icon, prefs, scope) {}
+        val isInternetPause = parsed is SidebarItem.SystemAction && parsed.action == "internet_pause"
+        if (isInternetPause) {
+            InternetPauseTileBinder.bind(context, elementView, icon)
+        } else {
+            appsManager.bindIcon(item.id, icon, prefs, scope) {
+                appsManager.bindIcon(item.id, icon, prefs, scope) {}
+            }
         }
 
         elementView.setOnClickListener {
@@ -89,7 +95,7 @@ class ElementViewRenderer(
             )
             if (handled && parsed !is SidebarItem.Folder && parsed !is SidebarItem.PopupWidget &&
                 parsed !is SidebarItem.VolumeAction && parsed !is SidebarItem.DisplayAction &&
-                parsed !is SidebarItem.QuickTile) {
+                parsed !is SidebarItem.QuickTile && !isInternetPause) {
                 onClose?.invoke() ?: com.example.feature.sidebar.SidebarManager.getInstance(context).closeSidebar()
             }
         }

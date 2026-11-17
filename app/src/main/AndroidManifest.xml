@@ -88,6 +88,13 @@
             android:process=":heavy"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:label="Sidebar element" />
+        <activity
+            android:name=".feature.sidebar.InternetPauseToggleActivity"
+            android:exported="false"
+            android:process=":heavy"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:label="Internet Pause" />
 
         <activity
             android:name=".LogKeeperActivity"

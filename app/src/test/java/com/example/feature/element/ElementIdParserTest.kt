@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import com.example.core.FakeSharedPreferences
+import com.example.feature.sidebar.ALL_UTILITIES_ACTIONS
 import com.example.feature.sidebar.SidebarItem
 import org.junit.Assert.*
 import org.junit.Before
@@ -44,6 +45,20 @@ class ElementIdParserTest {
         val sysAction = item as SidebarItem.SystemAction
         assertEquals("screenshot", sysAction.action)
         assertEquals("Screenshot", sysAction.label)
+    }
+
+    @Test
+    fun internetPauseIsRegisteredInsideUtilitiesAndParsesAsAStableSystemAction() {
+        val utility = ALL_UTILITIES_ACTIONS
+            .filterIsInstance<SidebarItem.SystemAction>()
+            .firstOrNull { it.action == "internet_pause" }
+        assertNotNull("Internet Pause must be listed inside the existing Utilities page", utility)
+        assertEquals("Internet Pause", utility!!.label)
+
+        val parsed = ElementIdParser.parse(context, "system:internet_pause")
+        assertNotNull(parsed)
+        assertTrue(parsed is SidebarItem.SystemAction)
+        assertEquals("internet_pause", (parsed as SidebarItem.SystemAction).action)
     }
 
     @Test
