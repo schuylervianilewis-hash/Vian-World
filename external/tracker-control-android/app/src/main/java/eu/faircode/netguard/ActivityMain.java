@@ -688,8 +688,10 @@ public class ActivityMain extends SettingsHostActivity implements SharedPreferen
         }
 
         DatabaseHelper.getInstance(this).addAccessChangedListener(accessChangedListener);
-        if (adapter != null)
+        if (adapter != null) {
+            adapter.setInternetPauseActive(InternetPauseManager.isActive(this));
             adapter.notifyDataSetChanged();
+        }
 
         boolean canNotify = (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 (ContextCompat.checkSelfPermission(this,

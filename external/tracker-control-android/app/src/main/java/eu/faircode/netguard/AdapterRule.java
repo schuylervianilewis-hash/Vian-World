@@ -62,6 +62,7 @@ import net.kollnig.missioncontrol.R;
 import net.kollnig.missioncontrol.data.AppProtectionState;
 import net.kollnig.missioncontrol.data.BlockingMode;
 import net.kollnig.missioncontrol.data.InternetBlocklist;
+import net.kollnig.missioncontrol.data.InternetPauseManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -82,6 +83,7 @@ public class AdapterRule extends RecyclerView.Adapter<AdapterRule.ViewHolder> im
     private int colorGrayed;
     private boolean wifiActive = true;
     private boolean otherActive = true;
+    private boolean internetPauseActive;
     private boolean live = true;
     private final Context appContext;
     private List<Rule> listAll = new ArrayList<>();
@@ -228,6 +230,10 @@ public class AdapterRule extends RecyclerView.Adapter<AdapterRule.ViewHolder> im
         notifyDataSetChanged();
     }
 
+    public void setInternetPauseActive(boolean active) {
+        this.internetPauseActive = active;
+    }
+
     public boolean isLive() {
         return this.live;
     }
@@ -288,8 +294,21 @@ public class AdapterRule extends RecyclerView.Adapter<AdapterRule.ViewHolder> im
         // Show if Internet access blocked
         final ImageView iv = holder.ivIcon;
         setGreyscale(iv, rule.internet && active && blockedInternet);
-        updateToggleContentDescription(iv, context, rule, active, blockedInternet);
+        if (internetPauseActive) {
+            iv.setEnabled(false);
+            iv.setAlpha(0.38f);
+            iv.setContentDescription(context.getString(R.string.internet_pause_controls_locked));
+        } else {
+            iv.setEnabled(true);
+            iv.setAlpha(1f);
+            updateToggleContentDescription(iv, context, rule, active, blockedInternet);
+        }
         holder.ivIcon.setOnClickListener(view -> {
+            if (InternetPauseManager.isActive(context)) {
+                Toast.makeText(context, R.string.internet_pause_controls_locked,
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
             if (!rule.internet)
                 return;
 

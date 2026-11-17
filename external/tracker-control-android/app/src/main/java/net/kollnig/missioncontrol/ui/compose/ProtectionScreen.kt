@@ -121,7 +121,8 @@ data class ProtectionScreenModel(
     val pause: PauseSection?,
     val blocked: BlockedState,
     val stateOptions: List<StateOption>,
-    val route: RouteModel
+    val route: RouteModel,
+    val controlsLockedMessage: String? = null
 )
 
 /** Callbacks for actions whose implementation remains in ProtectionActivity. */
@@ -254,46 +255,55 @@ fun ProtectionScreenContent(
             }
         }
 
-        item(key = "state-heading") {
-            DetailsSectionHeading(
-                text = androidx.compose.ui.res.stringResource(R.string.app_state_heading)
-            )
-        }
-        model.stateOptions.filter { it.show }.forEach { option ->
-            item(key = "state:${option.value}") {
-                OptionRow(
-                    title = option.title,
-                    description = option.description,
-                    selected = option.selected,
-                    onClick = {
-                        if (!option.selected)
-                            callbacks.onStateSelected(option.value)
-                    }
+        if (model.controlsLockedMessage != null) {
+            item(key = "internet-pause-controls-locked") {
+                DetailsSectionHeading(
+                    text = androidx.compose.ui.res.stringResource(R.string.app_state_heading)
+                )
+                EmptyMessage(model.controlsLockedMessage)
+            }
+        } else {
+            item(key = "state-heading") {
+                DetailsSectionHeading(
+                    text = androidx.compose.ui.res.stringResource(R.string.app_state_heading)
                 )
             }
-        }
-
-        item(key = "route-heading") {
-            DetailsSectionHeading(
-                text = androidx.compose.ui.res.stringResource(R.string.protection_route_heading)
-            )
-        }
-        when (val route = model.route) {
-            is RouteModel.Unavailable -> item(key = "route-unavailable") {
-                EmptyMessage(route.message)
-            }
-
-            is RouteModel.Available -> route.options.forEach { option ->
-                item(key = "route:${option.tunnelled}") {
+            model.stateOptions.filter { it.show }.forEach { option ->
+                item(key = "state:${option.value}") {
                     OptionRow(
                         title = option.title,
                         description = option.description,
                         selected = option.selected,
                         onClick = {
                             if (!option.selected)
-                                callbacks.onRouteSelected(option.tunnelled)
+                                callbacks.onStateSelected(option.value)
                         }
                     )
+                }
+            }
+
+            item(key = "route-heading") {
+                DetailsSectionHeading(
+                    text = androidx.compose.ui.res.stringResource(R.string.protection_route_heading)
+                )
+            }
+            when (val route = model.route) {
+                is RouteModel.Unavailable -> item(key = "route-unavailable") {
+                    EmptyMessage(route.message)
+                }
+
+                is RouteModel.Available -> route.options.forEach { option ->
+                    item(key = "route:${option.tunnelled}") {
+                        OptionRow(
+                            title = option.title,
+                            description = option.description,
+                            selected = option.selected,
+                            onClick = {
+                                if (!option.selected)
+                                    callbacks.onRouteSelected(option.tunnelled)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -352,29 +362,36 @@ private fun ProtectionScreenInlineContent(
                 }
             }
         }
-        DetailsSectionHeading(
-            text = androidx.compose.ui.res.stringResource(R.string.app_state_heading)
-        )
-        model.stateOptions.filter { it.show }.forEach { option ->
-            OptionRow(
-                title = option.title,
-                description = option.description,
-                selected = option.selected,
-                onClick = { if (!option.selected) callbacks.onStateSelected(option.value) }
+        if (model.controlsLockedMessage != null) {
+            DetailsSectionHeading(
+                text = androidx.compose.ui.res.stringResource(R.string.app_state_heading)
             )
-        }
-        DetailsSectionHeading(
-            text = androidx.compose.ui.res.stringResource(R.string.protection_route_heading)
-        )
-        when (val route = model.route) {
-            is RouteModel.Unavailable -> EmptyMessage(route.message)
-            is RouteModel.Available -> route.options.forEach { option ->
+            EmptyMessage(model.controlsLockedMessage)
+        } else {
+            DetailsSectionHeading(
+                text = androidx.compose.ui.res.stringResource(R.string.app_state_heading)
+            )
+            model.stateOptions.filter { it.show }.forEach { option ->
                 OptionRow(
                     title = option.title,
                     description = option.description,
                     selected = option.selected,
-                    onClick = { if (!option.selected) callbacks.onRouteSelected(option.tunnelled) }
+                    onClick = { if (!option.selected) callbacks.onStateSelected(option.value) }
                 )
+            }
+            DetailsSectionHeading(
+                text = androidx.compose.ui.res.stringResource(R.string.protection_route_heading)
+            )
+            when (val route = model.route) {
+                is RouteModel.Unavailable -> EmptyMessage(route.message)
+                is RouteModel.Available -> route.options.forEach { option ->
+                    OptionRow(
+                        title = option.title,
+                        description = option.description,
+                        selected = option.selected,
+                        onClick = { if (!option.selected) callbacks.onRouteSelected(option.tunnelled) }
+                    )
+                }
             }
         }
         if (showFirewallPlaceholders) {

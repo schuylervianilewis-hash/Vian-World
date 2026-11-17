@@ -911,6 +911,7 @@ Sincerely,\n\n]]></string>
     <string name="firewall_sort_install_date">Install date (newest first)</string>
     <string name="firewall_excluded_note">Important: “Exclude from TrackerControl” removes this app from local monitoring and filtering. Direct is different: it keeps TrackerControl enforcement active but avoids remote WireGuard.</string>
     <string name="firewall_global_action_message">Apply this policy to all listed user apps? System apps and this app itself are left unchanged.</string>
+    <string name="internet_pause_controls_locked">Internet Pause is active. Per-app internet and routing controls are temporarily locked.</string>
     <string name="firewall_excluded_status">Excluded from TrackerControl</string>
 
 

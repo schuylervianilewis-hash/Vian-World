@@ -70,6 +70,7 @@ import net.kollnig.missioncontrol.data.BlockingMode;
 import net.kollnig.missioncontrol.data.FirewallPolicyLogic;
 import net.kollnig.missioncontrol.data.InternetBlocklist;
 import net.kollnig.missioncontrol.data.InternetPermissionPolicy;
+import net.kollnig.missioncontrol.data.InternetPauseManager;
 import net.kollnig.missioncontrol.data.PausedApps;
 import net.kollnig.missioncontrol.data.RemoteRoutingLogic;
 import net.kollnig.missioncontrol.data.Tracker;
@@ -118,7 +119,9 @@ public class FirewallFragment extends Fragment {
     private boolean blockedRecordingUnavailable;
     private boolean showingResume;
     private boolean remoteVpnAvailable;
+    private boolean internetPauseActive;
     private boolean destroyed;
+    private final List<MaterialButton> globalActionButtons = new ArrayList<>();
     private ProtectionScreenController protectionController;
 
     @Nullable
@@ -126,6 +129,8 @@ public class FirewallFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container,
             @Nullable Bundle savedInstanceState) {
         Context context = requireContext();
+        internetPauseActive = InternetPauseManager.isActive(context);
+        globalActionButtons.clear();
         sortMode = PreferenceManager.getDefaultSharedPreferences(context)
                 .getString(PREF_SORT, FirewallPolicyLogic.SORT_NAME);
 
@@ -219,6 +224,7 @@ public class FirewallFragment extends Fragment {
         recyclerView = null;
         listStatusView = null;
         adapter = null;
+        globalActionButtons.clear();
         super.onDestroyView();
     }
 
@@ -266,6 +272,8 @@ public class FirewallFragment extends Fragment {
     public void refresh() {
         if (!isAdded() || adapter == null)
             return;
+        internetPauseActive = InternetPauseManager.isActive(requireContext());
+        updateGlobalActionAvailability();
         final androidx.fragment.app.FragmentActivity activity = getActivity();
         if (activity == null)
             return;
@@ -414,13 +422,30 @@ public class FirewallFragment extends Fragment {
                 context.getString(R.string.firewall_all_accessibility));
         TooltipCompat.setTooltipText(button, context.getString(heading) + " " +
                 context.getString(R.string.firewall_all_accessibility));
+        button.setEnabled(!internetPauseActive);
+        globalActionButtons.add(button);
         button.setOnClickListener(view -> confirmGlobalAction(action));
         column.addView(button, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));
         return column;
     }
 
+    private void updateGlobalActionAvailability() {
+        for (MaterialButton button : globalActionButtons)
+            button.setEnabled(!internetPauseActive);
+    }
+
+    private boolean blockPerAppPolicyEdit() {
+        if (!isAdded() || !InternetPauseManager.isActive(requireContext()))
+            return false;
+        Toast.makeText(requireContext(), R.string.internet_pause_controls_locked,
+                Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
     private void confirmGlobalAction(String action) {
+        if (blockPerAppPolicyEdit())
+            return;
         if (ACTION_VPN.equals(action) && !remoteVpnAvailable) {
             Toast.makeText(requireContext(), R.string.app_route_unavailable_no_vpn,
                     Toast.LENGTH_LONG).show();
@@ -437,7 +462,7 @@ public class FirewallFragment extends Fragment {
     }
 
     private void applyGlobalAction(String action) {
-        if (!isAdded())
+        if (!isAdded() || blockPerAppPolicyEdit())
             return;
         List<Rule> targets = new ArrayList<>();
         for (Rule rule : allRules) {
@@ -483,6 +508,8 @@ public class FirewallFragment extends Fragment {
     }
 
     private void setPolicy(Rule rule, String action) {
+        if (blockPerAppPolicyEdit())
+            return;
         if (rule == null || !rule.pkg
                 || InternetPermissionPolicy.isProtectedIdentity(
                         requireContext(), rule.packageName, rule.uid))
@@ -553,6 +580,8 @@ public class FirewallFragment extends Fragment {
 
             @Override
             public void onStateSelected(AppProtectionState value) {
+                if (blockPerAppPolicyEdit())
+                    return;
                 AppProtectionState.Change change = AppProtectionState.of(value);
                 AppProtectionWriter.applyManual(requireContext(), rule.packageName,
                         rule.uid, change);
@@ -587,14 +616,16 @@ public class FirewallFragment extends Fragment {
     private ProtectionScreenModel buildScreenModel(Rule rule) {
         AppProtectionState state = currentState(rule);
         boolean paused = PausedApps.isPaused(requireContext(), rule.packageName);
+        boolean pauseControlsLocked = internetPauseActive;
         showingResume = paused;
         List<String> sharedPackages = PausedApps.getSharedUidPackages(
                 requireContext(), rule.packageName, rule.uid);
 
         PauseSection pause = null;
-        boolean pauseAvailable = paused || state == AppProtectionState.PROTECTED
+        boolean pauseAvailable = !pauseControlsLocked && (paused
+                || state == AppProtectionState.PROTECTED
                 || state == AppProtectionState.MINIMAL_ONLY
-                || state == AppProtectionState.TRACKERS_ALLOWED;
+                || state == AppProtectionState.TRACKERS_ALLOWED);
         if (pauseAvailable) {
             String status;
             String action;
@@ -616,9 +647,16 @@ public class FirewallFragment extends Fragment {
             pause = new PauseSection(status, sharedUidText, action, lockdownText);
         }
 
-        List<StateOption> stateOptions = buildStateOptions(rule, state, paused, sharedPackages);
+        List<StateOption> stateOptions = pauseControlsLocked
+                ? Collections.emptyList()
+                : buildStateOptions(rule, state, paused, sharedPackages);
         BlockedState blocked = buildBlockedState(rule, state);
-        return new ProtectionScreenModel(pause, blocked, stateOptions, buildRouteModel(rule));
+        String controlsLockedMessage = pauseControlsLocked
+                ? getString(R.string.internet_pause_controls_locked) : null;
+        RouteModel route = pauseControlsLocked
+                ? new RouteModel.Unavailable(controlsLockedMessage)
+                : buildRouteModel(rule);
+        return new ProtectionScreenModel(pause, blocked, stateOptions, route, controlsLockedMessage);
     }
 
     private List<StateOption> buildStateOptions(Rule rule, AppProtectionState state,
@@ -744,6 +782,8 @@ public class FirewallFragment extends Fragment {
     }
 
     private void applyRoute(Rule rule, boolean wantsTunnel) {
+        if (blockPerAppPolicyEdit())
+            return;
         if (wantsTunnel == routesThroughTunnel(rule))
             return;
         requireContext().getSharedPreferences(Rule.PREF_WG_ROUTE, Context.MODE_PRIVATE)
@@ -802,6 +842,8 @@ public class FirewallFragment extends Fragment {
     }
 
     private void pauseOrResume(Rule rule) {
+        if (blockPerAppPolicyEdit())
+            return;
         if (showingResume) {
             PausedApps.resume(requireContext(), rule.packageName, rule.uid);
             updateProtectionState();
@@ -1120,9 +1162,10 @@ public class FirewallFragment extends Fragment {
             boolean protectedEngineApp = InternetPermissionPolicy.isProtectedIdentity(
                     context, rule.packageName, rule.uid);
             boolean canManage = rule.pkg && !protectedEngineApp;
-            holder.block.setEnabled(canManage);
-            holder.vpn.setEnabled(canManage && remoteVpnAvailable);
-            holder.direct.setEnabled(canManage);
+            boolean canChangeNetwork = canManage && !internetPauseActive;
+            holder.block.setEnabled(canChangeNetwork);
+            holder.vpn.setEnabled(canChangeNetwork && remoteVpnAvailable);
+            holder.direct.setEnabled(canChangeNetwork);
             setQuickChoice(holder.block, blockSelected);
             setQuickChoice(holder.vpn, vpnSelected);
             setQuickChoice(holder.direct, directSelected);
@@ -1136,17 +1179,20 @@ public class FirewallFragment extends Fragment {
             holder.name.setEnabled(canManage);
             holder.icon.setOnClickListener(view -> toggleExpanded(rule));
             holder.name.setOnClickListener(view -> toggleExpanded(rule));
-            holder.block.setContentDescription(protectedEngineApp
-                    ? getString(R.string.firewall_self_app_note)
+            holder.block.setContentDescription(internetPauseActive
+                    ? getString(R.string.internet_pause_controls_locked)
+                    : protectedEngineApp ? getString(R.string.firewall_self_app_note)
                     : context.getString(R.string.firewall_action_for_app,
                             context.getString(R.string.firewall_block), rule.name));
-            holder.vpn.setContentDescription(protectedEngineApp
-                    ? getString(R.string.firewall_self_app_note)
+            holder.vpn.setContentDescription(internetPauseActive
+                    ? getString(R.string.internet_pause_controls_locked)
+                    : protectedEngineApp ? getString(R.string.firewall_self_app_note)
                     : !remoteVpnAvailable ? getString(R.string.app_route_unavailable_no_vpn)
                     : context.getString(R.string.firewall_action_for_app,
                             context.getString(R.string.firewall_vpn), rule.name));
-            holder.direct.setContentDescription(protectedEngineApp
-                    ? getString(R.string.firewall_self_app_note)
+            holder.direct.setContentDescription(internetPauseActive
+                    ? getString(R.string.internet_pause_controls_locked)
+                    : protectedEngineApp ? getString(R.string.firewall_self_app_note)
                     : context.getString(R.string.firewall_action_for_app,
                             context.getString(R.string.firewall_direct), rule.name));
             holder.header.setOnClickListener(null);
