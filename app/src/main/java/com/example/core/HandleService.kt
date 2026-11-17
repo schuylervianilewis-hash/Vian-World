@@ -109,7 +109,10 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                     tag,
                     "$prefix: autoStart=$autoStart, canDrawOverlays=$canOverlay"
                 )
-                if (autoStart && canOverlay) {
+                if (autoStart) {
+                    if (!canOverlay) {
+                        LogKeeper.log(context, tag, "Overlay permission missing; starting resident service for non-overlay features only")
+                    }
                     if (isHeavy) {
                         LogKeeper.log(context, tag, "Dispatching HandleService start to Main process")
                     } else {
@@ -150,6 +153,12 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
+        val activeChannel = notificationManager.getNotificationChannel(CHANNEL_ID)
+        LogKeeper.log(this, "HandleService",
+            "Notification diagnostics: appEnabled=" + notificationManager.areNotificationsEnabled() +
+                ", channelImportance=" + (activeChannel?.importance ?: -1) +
+                ", postPermission=" + (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED))
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         if (powerManager != null) {
@@ -238,6 +247,8 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         if (callRecorder.isEnabled()) {
             callRecorder.startListening()
         }
+        LogKeeper.logLifecycle(this, "CallSensor", "STARTUP_CHECK",
+            "enabled=" + callRecorder.isEnabled() + " status=" + callRecorder.listenerStatus + " listening=" + callRecorder.isListening)
         SidebarManager.getInstance(this).registerReceiver(this)
         com.example.feature.element.ElementActionRegistry.getInstance(this).registerReceiver(this)
 
@@ -299,6 +310,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 }
             }
             netSpeedManager?.start()
+            LogKeeper.logLifecycle(this, "NetSpeedManager", "STARTED", "enabled=true screenOn=" + isScreenOn)
         } else {
             netSpeedManager?.stop()
             netSpeedManager = null
@@ -307,6 +319,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
             val handlesIconResId = resolveSafeIconResId(R.drawable.ic_view_sidebar)
             val handlesNotification = buildNotification(handlesIconResId, handlesTitle, "Listening for edge gestures")
             notificationManager.notify(NOTIFICATION_ID, handlesNotification)
+            LogKeeper.logLifecycle(this, "NetSpeedManager", "STOPPED", "enabled=false; static Sidebar notification restored")
         }
     }
 

@@ -23,8 +23,8 @@ import com.example.service.BootReceiver
  * 5. Prevents restart loops: caps rapid consecutive crashes to [MAX_CONSECUTIVE_CRASHES] within
  *    [CRASH_WINDOW_MS], applying exponential backoff (2s, 5s, 10s).
  * 6. Resets crash counters only after the service runs stably for [STABLE_RUN_THRESHOLD_MS] (15s).
- * 7. Strictly respects user configuration: aborts recovery if auto_start_on_boot is false or
- *    if SYSTEM_ALERT_WINDOW (overlay permission) is not granted.
+ * 7. Strictly respects user configuration: aborts recovery if auto_start_on_boot is false.
+ *    Overlay permission gates handle attachment only; resident speed/call features remain recoverable.
  */
 object MainProcessRecovery {
     private const val TAG = "MainRecovery"
@@ -129,15 +129,12 @@ object MainProcessRecovery {
             // 2. Check configuration and permissions
             val handlePrefs = context.getSharedPreferences(HandleManager.PREFS_NAME, Context.MODE_PRIVATE)
             val autoStart = handlePrefs.getBoolean("auto_start_on_boot", true)
-            val hasOverlay = Settings.canDrawOverlays(context)
-
             if (!autoStart) {
                 LogKeeper.log(context, TAG, "Automatic recovery aborted: auto_start_on_boot is disabled.")
                 return
             }
-            if (!hasOverlay) {
-                LogKeeper.log(context, TAG, "Automatic recovery aborted: overlay permission (SYSTEM_ALERT_WINDOW) missing.")
-                return
+            if (!Settings.canDrawOverlays(context)) {
+                LogKeeper.log(context, TAG, "Overlay permission missing; recovering resident features while handles remain detached.")
             }
 
             // 3. Crash loop detection and backoff calculation
