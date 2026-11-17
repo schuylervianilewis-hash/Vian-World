@@ -28,6 +28,20 @@ public class InternetPermissionPolicyTest {
     }
 
     @Test
+    public void temporaryPauseDoesNotCountAsPermanentAutomaticPolicy() {
+        InternetBlocklist blocklist = InternetBlocklist.getInstance(null);
+        blocklist.unblock(19001);
+        blocklist.setTemporaryBlockedUids(java.util.Collections.singleton(19001));
+
+        assertTrue(blocklist.blockedInternet(19001));
+        assertFalse(blocklist.isPermanentlyBlockedInternet(19001));
+        assertTrue(InternetPermissionPolicy.shouldAutoBlock(false, false, false,
+                blocklist.isPermanentlyBlockedInternet(19001), false));
+
+        blocklist.clearTemporaryBlockedUids();
+    }
+
+    @Test
     public void criticalPlatformIdentitiesAreExempt() {
         assertTrue(InternetPermissionPolicy.isCriticalSystemPackage("android"));
         assertTrue(InternetPermissionPolicy.isCriticalSystemPackage("com.android.systemui"));

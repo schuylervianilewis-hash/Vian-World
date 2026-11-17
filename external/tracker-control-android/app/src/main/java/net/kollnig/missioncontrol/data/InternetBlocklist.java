@@ -33,6 +33,8 @@ import java.util.Set;
 public class InternetBlocklist extends UidKeyedStore<Boolean> {
     public static final String SHARED_PREFS_INTERNET_BLOCKLIST_APPS_KEY = "INTERNET_BLOCKLIST_APPS_KEY";
     private static InternetBlocklist instance;
+    // Runtime-only global pause overlay. Never included in saveSettings().
+    private final Set<Integer> temporaryBlockmap = new HashSet<>();
 
     private InternetBlocklist(Context c) {
         // Initialize Concurrent Set using values from shared preferences if possible.
@@ -88,12 +90,38 @@ public class InternetBlocklist extends UidKeyedStore<Boolean> {
     }
 
     /**
-     * Get set of apps' uids which shan't access internet
+     * Get set of apps' uids with a permanent per-app internet block.
+     * The temporary Internet Pause overlay is intentionally excluded.
      *
-     * @return Set of uids
+     * @return Set of permanently blocked uids
      */
     public Set<Integer> getBlocklist() {
         return blockmap.keySet();
+    }
+
+    /** Replace the runtime-only UID overlay used by Internet Pause. */
+    public synchronized void setTemporaryBlockedUids(Set<Integer> uids) {
+        temporaryBlockmap.clear();
+        if (uids != null)
+            for (Integer uid : uids)
+                if (uid != null && uid >= 0)
+                    temporaryBlockmap.add(uid);
+    }
+
+    /** Remove the runtime-only Internet Pause overlay. */
+    public synchronized void clearTemporaryBlockedUids() {
+        temporaryBlockmap.clear();
+    }
+
+    /** Check only the permanent per-app blocklist, excluding Internet Pause. */
+    public synchronized boolean isPermanentlyBlockedInternet(int uid) {
+        return blockmap.containsKey(uid);
+    }
+
+    @Override
+    public synchronized void clear() {
+        super.clear();
+        temporaryBlockmap.clear();
     }
 
     /**
@@ -182,6 +210,6 @@ public class InternetBlocklist extends UidKeyedStore<Boolean> {
      * @return If internet is blocked for given app
      */
     public synchronized boolean blockedInternet(int uid) {
-        return blockmap.containsKey(uid);
+        return blockmap.containsKey(uid) || temporaryBlockmap.contains(uid);
     }
 }

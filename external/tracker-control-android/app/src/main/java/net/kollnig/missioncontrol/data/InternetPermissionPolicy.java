@@ -117,7 +117,7 @@ public final class InternetPermissionPolicy {
                 boolean sameIdentity = !sharedUid
                         && entry.getValue().equals(packageIdentity(members.get(0)));
                 if (shouldReleaseAutomaticBlock(true, sharedUid, sameIdentity)) {
-                    if (blocklist.blockedInternet(uid)) {
+                    if (blocklist.isPermanentlyBlockedInternet(uid)) {
                         blocklist.unblock(uid);
                         blocklistChanged = true;
                     }
@@ -135,7 +135,7 @@ public final class InternetPermissionPolicy {
                         info.packageName, uid, info.firstInstallTime));
                 boolean exempt = isAutomaticDenyExempt(info, uid);
                 if (!shouldAutoBlock(false, declaresInternet(info), allowedByUser,
-                        blocklist.blockedInternet(uid), exempt))
+                        blocklist.isPermanentlyBlockedInternet(uid), exempt))
                     continue;
 
                 String identity = packageIdentity(info);
@@ -211,7 +211,7 @@ public final class InternetPermissionPolicy {
 
             if (wasAutomatic) {
                 InternetBlocklist blocklist = InternetBlocklist.getInstance(appContext);
-                if (blocklist.blockedInternet(uid)) {
+                if (blocklist.isPermanentlyBlockedInternet(uid)) {
                     blocklist.unblock(uid);
                     blocklist.saveSettings(appContext);
                 }

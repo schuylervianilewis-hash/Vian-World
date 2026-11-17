@@ -89,6 +89,7 @@ import net.kollnig.missioncontrol.data.BlockingModeLogic;
 import net.kollnig.missioncontrol.data.PausedApps;
 import net.kollnig.missioncontrol.data.InternetBlocklist;
 import net.kollnig.missioncontrol.data.InternetPermissionPolicy;
+import net.kollnig.missioncontrol.data.InternetPauseManager;
 import net.kollnig.missioncontrol.data.RemoteRoutingLogic;
 import net.kollnig.missioncontrol.data.Tracker;
 import net.kollnig.missioncontrol.data.TrackerBlocklist;
@@ -809,6 +810,7 @@ public class ServiceSinkhole extends VpnService {
                 markStoppedCleanly(false);
             }
             if (vpn == null) {
+                InternetPauseManager.markNotApplied(ServiceSinkhole.this);
                 if (state != State.none) {
                     Log.d(TAG, "Stop foreground state=" + state.toString());
                     stopForegroundForCurrentState();
@@ -821,6 +823,7 @@ public class ServiceSinkhole extends VpnService {
                 if (InternetPermissionPolicy.reconcile(ServiceSinkhole.this))
                     Log.i(TAG, "Applied automatic Internet-permission policy at VPN start");
                 List<Rule> listRule = Rule.getRules(true, ServiceSinkhole.this);
+                InternetPauseManager.applyToRules(ServiceSinkhole.this, listRule);
                 List<Rule> listAllowed = getAllowedRules(listRule);
 
                 last_builder = getBuilder(listAllowed, listRule);
@@ -830,6 +833,7 @@ public class ServiceSinkhole extends VpnService {
 
                 if (!startNative(vpn, listAllowed, listRule))
                     return;
+                InternetPauseManager.markApplied(ServiceSinkhole.this);
 
                 // Start DoH proxy if enabled and not superseded by WireGuard DNS.
                 updateDnsProxyState();
@@ -840,10 +844,12 @@ public class ServiceSinkhole extends VpnService {
         }
 
         private void reload(boolean interactive) {
+            InternetPauseManager.markNotApplied(ServiceSinkhole.this);
             // Reconcile package permissions before the service rebuilds its rules.
             if (InternetPermissionPolicy.reconcile(ServiceSinkhole.this))
                 Log.i(TAG, "Applied automatic Internet-permission policy during VPN reload");
             List<Rule> listRule = Rule.getRules(true, ServiceSinkhole.this);
+            InternetPauseManager.applyToRules(ServiceSinkhole.this, listRule);
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ServiceSinkhole.this);
 
@@ -907,6 +913,7 @@ public class ServiceSinkhole extends VpnService {
 
             if (!startNative(vpn, listAllowed, listRule))
                 return;
+            InternetPauseManager.markApplied(ServiceSinkhole.this);
 
             // Update DoH proxy state based on current settings.
             updateDnsProxyState();
@@ -917,6 +924,7 @@ public class ServiceSinkhole extends VpnService {
 
         private void stop(boolean temporary) {
             cancelWireGuardStartupRecovery(true);
+            InternetPauseManager.markNotApplied(ServiceSinkhole.this);
             if (vpn != null) {
                 ParcelFileDescriptor activeVpn = vpn;
 
@@ -2680,6 +2688,7 @@ public class ServiceSinkhole extends VpnService {
 
     // Called from native code
     private void nativeExit(int error, String reason) {
+        InternetPauseManager.markNotApplied(this);
         Log.w(TAG, "Native exit error=" + error + " reason=" + reason);
         if (reason != null) {
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -4310,6 +4319,7 @@ public class ServiceSinkhole extends VpnService {
         // worker leaves it alone. Coming back from one is the OS's job, through
         // the always-on designation it either kept or cleared above.
         vpnEstablished = false;
+        InternetPauseManager.markNotApplied(this);
         markStoppedCleanly(true);
 
         // Feedback: the tunnel really did drop, so inform the user (mirrors
@@ -4320,7 +4330,7 @@ public class ServiceSinkhole extends VpnService {
         super.onRevoke();
     }
 
-    static boolean isVpnEstablished() {
+    public static boolean isVpnEstablished() {
         return vpnEstablished;
     }
 
@@ -4349,6 +4359,7 @@ public class ServiceSinkhole extends VpnService {
     public void onDestroy() {
         synchronized (this) {
             destroying = true;
+            InternetPauseManager.markNotApplied(this);
             Log.i(TAG, "Destroy");
             ShieldDiagnostics.log("ServiceSinkhole", "onDestroy; releasing VPN service resources");
 

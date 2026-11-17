@@ -80,10 +80,36 @@ public class InternetBlocklistTest {
 
         blocklist.block(1001);
         blocklist.block(1002);
+        blocklist.setTemporaryBlockedUids(Collections.singleton(1003));
         blocklist.clear();
 
         assertFalse(blocklist.blockedInternet(1001));
+        assertFalse(blocklist.blockedInternet(1003));
         assertFalse(blocklist.blockedInternet(1002));
+    }
+
+    @Test
+    public void temporaryBlocksAreEffectiveButNeverPersistedAsPermanent() {
+        InternetBlocklist blocklist = InternetBlocklist.getInstance(context);
+        blocklist.block(context, 1001);
+        blocklist.setTemporaryBlockedUids(Collections.singleton(1002));
+
+        assertTrue(blocklist.blockedInternet(1001));
+        assertTrue(blocklist.isPermanentlyBlockedInternet(1001));
+        assertTrue(blocklist.blockedInternet(1002));
+        assertFalse(blocklist.isPermanentlyBlockedInternet(1002));
+
+        blocklist.saveSettings(context);
+        Set<String> saved = context.getSharedPreferences(
+                TrackerBlocklist.PREF_BLOCKLIST, Context.MODE_PRIVATE)
+                .getStringSet(InternetBlocklist.SHARED_PREFS_INTERNET_BLOCKLIST_APPS_KEY,
+                        Collections.emptySet());
+        assertTrue(saved.contains("1001"));
+        assertFalse(saved.contains("1002"));
+
+        blocklist.clearTemporaryBlockedUids();
+        assertFalse(blocklist.blockedInternet(1002));
+        assertTrue(blocklist.blockedInternet(1001));
     }
 
     @Test
