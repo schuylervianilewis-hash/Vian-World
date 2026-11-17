@@ -8,7 +8,9 @@ package net.kollnig.missioncontrol.data;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.net.VpnService;
+import android.os.Bundle;
 
 import java.util.HashSet;
 import java.util.List;
@@ -29,47 +31,82 @@ public final class InternetPauseManager {
     private InternetPauseManager() {
     }
 
-    /** Whether the user has requested the global pause, including recovery periods. */
+    /** Read desired/applied VPN state from the provider in the default process. */
+    private static Bundle queryServiceState(Context context) {
+        Context appContext = context.getApplicationContext();
+        Uri uri = Uri.parse("content://" + appContext.getPackageName() + ".internetpause.state");
+        try {
+            return appContext.getContentResolver().call(uri, METHOD_GET_STATE, null, null);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
     public static boolean isActive(Context context) {
-        return context.getApplicationContext()
-                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_ACTIVE, false);
+        Bundle state = queryServiceState(context);
+        return state != null && state.getBoolean(KEY_ACTIVE, false);
     }
 
-    /**
-     * True only after the running VPN service has successfully applied the
-     * temporary rule overlay. A persisted request alone is not enforcement.
-     */
     public static boolean isApplied(Context context) {
-        Context appContext = context.getApplicationContext();
-        SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_ACTIVE, false)
-                && prefs.getBoolean(KEY_APPLIED, false)
-                && ServiceSinkhole.isVpnEstablished();
+        Bundle state = queryServiceState(context);
+        return state != null && state.getBoolean(KEY_ACTIVE, false)
+                && state.getBoolean(KEY_APPLIED, false)
+                && state.getBoolean(KEY_VPN_ESTABLISHED, false);
     }
 
-    /** Requested but not currently enforced: the service is starting or recovering. */
     public static boolean isRecovering(Context context) {
-        return isActive(context) && !isApplied(context);
+        Bundle state = queryServiceState(context);
+        return state != null && state.getBoolean(KEY_ACTIVE, false)
+                && !state.getBoolean(KEY_APPLIED, false);
     }
 
-    /** VPN authorization and an established service are both required to activate. */
     public static boolean isVpnReady(Context context) {
-        Context appContext = context.getApplicationContext();
-        return VpnService.prepare(appContext) == null && ServiceSinkhole.isVpnEstablished();
+        Bundle state = queryServiceState(context);
+        return VpnService.prepare(context.getApplicationContext()) == null
+                && state != null && state.getBoolean(KEY_VPN_ESTABLISHED, false);
     }
 
-    /**
-     * Request pause/resume. Activation is rejected until the VPN is authorized
-     * and established. Resume is always allowed and clears the in-memory block
-     * overlay immediately; permanent per-app state is untouched.
-     */
+    /** Route state changes through the default-process provider; never write from :heavy. */
     public static boolean setPaused(Context context, boolean paused) {
         if (context == null)
             return false;
         Context appContext = context.getApplicationContext();
+        Bundle extras = new Bundle();
+        extras.putBoolean(KEY_REQUESTED_PAUSED, paused);
+        Uri uri = Uri.parse("content://" + appContext.getPackageName() + ".internetpause.state");
+        try {
+            Bundle result = appContext.getContentResolver().call(uri, METHOD_SET_PAUSED, null, extras);
+            return result != null && result.getBoolean(KEY_SUCCESS, false);
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    /** Provider entry point; runs in the default process with ServiceSinkhole. */
+    static Bundle handleProviderCall(Context context, String method, Bundle extras) {
+        Context appContext = context.getApplicationContext();
+        if (METHOD_GET_STATE.equals(method)) {
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            boolean vpnEstablished = ServiceSinkhole.isVpnEstablished();
+            Bundle result = new Bundle();
+            result.putBoolean(KEY_ACTIVE, prefs.getBoolean(KEY_ACTIVE, false));
+            result.putBoolean(KEY_APPLIED, prefs.getBoolean(KEY_ACTIVE, false)
+                    && prefs.getBoolean(KEY_APPLIED, false) && vpnEstablished);
+            result.putBoolean(KEY_VPN_ESTABLISHED, vpnEstablished);
+            return result;
+        }
+        if (METHOD_SET_PAUSED.equals(method)) {
+            boolean paused = extras != null && extras.getBoolean(KEY_REQUESTED_PAUSED, false);
+            Bundle result = new Bundle();
+            result.putBoolean(KEY_SUCCESS, setPausedInServiceProcess(appContext, paused));
+            return result;
+        }
+        return null;
+    }
+
+    private static boolean setPausedInServiceProcess(Context appContext, boolean paused) {
         synchronized (LOCK) {
-            if (paused && !isVpnReady(appContext))
+            if (paused && (VpnService.prepare(appContext) != null || !ServiceSinkhole.isVpnEstablished()))
                 return false;
 
             SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -84,10 +121,8 @@ public final class InternetPauseManager {
             if (wasActive && paused && wasApplied && ServiceSinkhole.isVpnEstablished())
                 return true;
 
-            if (!prefs.edit()
-                    .putBoolean(KEY_ACTIVE, paused)
-                    .putBoolean(KEY_APPLIED, false)
-                    .commit())
+            if (!prefs.edit().putBoolean(KEY_ACTIVE, paused)
+                    .putBoolean(KEY_APPLIED, false).commit())
                 return false;
 
             if (!paused)
@@ -108,7 +143,9 @@ public final class InternetPauseManager {
     public static void applyToRules(Context context, List<Rule> rules) {
         Context appContext = context.getApplicationContext();
         InternetBlocklist blocklist = InternetBlocklist.getInstance(appContext);
-        if (!isActive(appContext) || rules == null || rules.isEmpty()) {
+        boolean pauseActive = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ACTIVE, false);
+        if (!pauseActive || rules == null || rules.isEmpty()) {
             blocklist.clearTemporaryBlockedUids();
             return;
         }
@@ -151,7 +188,8 @@ public final class InternetPauseManager {
     /** Called only after the service has rebuilt the VPN successfully. */
     public static void markApplied(Context context) {
         Context appContext = context.getApplicationContext();
-        boolean applied = isActive(appContext) && ServiceSinkhole.isVpnEstablished();
+        boolean applied = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ACTIVE, false) && ServiceSinkhole.isVpnEstablished();
         appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_APPLIED, applied).commit();
         notifyStateChanged(appContext);
