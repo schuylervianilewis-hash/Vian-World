@@ -64,25 +64,22 @@ class WelcomeNavigationTest {
     }
 
     @Test
-    fun testSetupCompletedRouting() {
+    fun testSetupCompletedRoutingIsIndependentOfOverlayPermission() {
         val mockPrefs = MockSharedPreferences()
 
-        // 1. Initially, setup_completed is false
+        // Before the user opens Sidebar Settings and completes onboarding, Welcome is shown.
         assertFalse(mockPrefs.getBoolean("setup_completed", false))
+        assertTrue(MainActivity.shouldShowWelcome(setupCompleted = false, forceWelcome = false))
 
-        // 2. Simulate continue action: marks setup_completed = true
+        // Continue completes onboarding even if overlay permission was skipped.
         mockPrefs.edit().putBoolean("setup_completed", true).apply()
         assertTrue(mockPrefs.getBoolean("setup_completed", false))
 
-        // 3. Routing condition logic: when setupCompleted is true, route to SettingsActivity
-        val setupCompleted = mockPrefs.getBoolean("setup_completed", false)
-        val canDrawOverlays = false // Even without overlay permission, should route to Settings
-        val shouldRouteToSettings = canDrawOverlays || setupCompleted
+        // Once completed, Sidebar Settings opens normally; overlay permission is not a routing gate.
+        assertFalse(MainActivity.shouldShowWelcome(setupCompleted = true, forceWelcome = false))
 
-        assertTrue(
-            "MainActivity should route to SettingsActivity once setup is completed",
-            shouldRouteToSettings
-        )
+        // An explicit force-welcome request remains supported for intentional recovery/testing.
+        assertTrue(MainActivity.shouldShowWelcome(setupCompleted = true, forceWelcome = true))
     }
 
     @Test

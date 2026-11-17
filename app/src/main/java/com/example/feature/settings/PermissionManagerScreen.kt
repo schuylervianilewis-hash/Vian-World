@@ -114,7 +114,7 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Grant the permissions needed by Sidebar and the features you use. Display Over Other Apps is required to finish the initial Sidebar setup.",
+            text = "Grant the permissions needed by Sidebar and the features you use. Display Over Other Apps is required for floating handles and Sidebar overlays, but you can continue now and grant it later.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -434,7 +434,7 @@ class AllAppsFragment(
                     R.id.drawer_menu_sidebar_settings -> {
                         val sidebarSettingsIntent = Intent().setClassName(
                             currentActivity.packageName,
-                            "com.example.SettingsActivity"
+                            "com.example.MainActivity"
                         )
                         currentActivity.startActivity(sidebarSettingsIntent)
                         true

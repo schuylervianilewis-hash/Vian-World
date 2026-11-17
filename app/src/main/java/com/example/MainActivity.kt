@@ -14,6 +14,9 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_FORCE_WELCOME = "force_welcome"
+
+        internal fun shouldShowWelcome(setupCompleted: Boolean, forceWelcome: Boolean): Boolean =
+            !setupCompleted || forceWelcome
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,11 +28,11 @@ class MainActivity : ComponentActivity() {
         ).getBoolean("setup_completed", false)
         val forceWelcome = intent.getBooleanExtra(EXTRA_FORCE_WELCOME, false)
 
-        val destination = if (setupCompleted && !forceWelcome) {
+        val destination = if (shouldShowWelcome(setupCompleted, forceWelcome)) {
+            com.example.feature.welcome.WelcomeActivity::class.java
+        } else {
             HandleService.startIfConfigured(this)
             SettingsActivity::class.java
-        } else {
-            com.example.feature.welcome.WelcomeActivity::class.java
         }
 
         startActivity(Intent(this, destination))

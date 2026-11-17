@@ -137,7 +137,6 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : SimpleActivity(), FlingListener {
-    private var sidebarSetupCheckAttempted = false
     private var pendingSidebarElementPlacement: Pair<Int, Rect>? = null
     private var mTouchDownX = -1
     private var mTouchDownY = -1
@@ -308,44 +307,6 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     }
 
-    /**
-     * Reads setup state from the Heavy-process provider, the single owner of this preference.
-     * The Binder read runs in the background so starting :heavy cannot stall the launcher UI.
-     * Run once for each fresh launcher visit, not on every onResume callback.
-     */
-    private fun maybeOpenSidebarSetupForFreshLaunch() {
-        if (sidebarSetupCheckAttempted || isFinishing || !isDefaultLauncher()) return
-        sidebarSetupCheckAttempted = true
-
-        ensureBackgroundThread {
-            val setupCompleted = try {
-                val result = contentResolver.call(
-                    android.net.Uri.parse("content://$packageName.sidebar.setup"),
-                    "is_setup_completed",
-                    null,
-                    null
-                )
-                result?.getBoolean("setup_completed", false) == true
-            } catch (e: Exception) {
-                logKeeper.log("MainActivity", "Could not read Sidebar setup state; opening Welcome safely", e)
-                false
-            }
-
-            runOnUiThread {
-                if (isFinishing || isDestroyed || setupCompleted) return@runOnUiThread
-                try {
-                    startActivity(Intent().setClassName(
-                        packageName,
-                        "com.example.feature.welcome.WelcomeActivity"
-                    ))
-                } catch (e: Exception) {
-                    logKeeper.log("MainActivity", "Failed to open Sidebar Welcome", e)
-                    toast("Unable to open Sidebar setup")
-                }
-            }
-        }
-    }
-
     private fun setupWallpaperColorListener() {
         if (isOreoMr1Plus() && wallpaperColorChangeListener == null) {
             val wallpaperManager = WallpaperManager.getInstance(this)
@@ -380,8 +341,6 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val isFreshLauncherVisit = wasJustPaused
-        if (isFreshLauncherVisit) sidebarSetupCheckAttempted = false
         val wasAnyFragmentOpen = isAllAppsFragmentExpanded() || isWidgetsFragmentExpanded()
         if (wasJustPaused) {
             if (isAllAppsFragmentExpanded()) {
@@ -404,7 +363,6 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
 
         handleIntentAction(intent)
-        if (isFreshLauncherVisit) maybeOpenSidebarSetupForFreshLaunch()
     }
 
     override fun onStart() {
@@ -434,7 +392,6 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     override fun onResume() {
         super.onResume()
-        maybeOpenSidebarSetupForFreshLaunch()
         wasJustPaused = false
         refreshWallpaperSupportsDarkText()
         Handler(Looper.getMainLooper()).postDelayed({
