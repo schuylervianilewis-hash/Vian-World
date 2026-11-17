@@ -107,7 +107,7 @@ public class InternetPauseManagerTest {
 
     @Test
     public void packageBackedSystemAppsAreEligibleButProtectedIdentitiesAreNot() {
-        assertTrue(InternetPauseManager.isEligibleUserRule(true, false, false));
+        assertTrue(InternetPauseManager.isEligiblePackageRule(true, false, false));
         // Preinstalled/OEM system packages are package-backed and should be
         // included in the pause overlay even when normal system routing is off.
         assertTrue(InternetPauseManager.isEligibleUserRule(true, true, false));
