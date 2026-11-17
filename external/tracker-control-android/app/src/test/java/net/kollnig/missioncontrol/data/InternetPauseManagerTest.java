@@ -110,11 +110,11 @@ public class InternetPauseManagerTest {
         assertTrue(InternetPauseManager.isEligiblePackageRule(true, false, false));
         // Preinstalled/OEM system packages are package-backed and should be
         // included in the pause overlay even when normal system routing is off.
-        assertTrue(InternetPauseManager.isEligibleUserRule(true, true, false));
-        assertFalse(InternetPauseManager.isEligibleUserRule(false, false, false));
-        assertFalse(InternetPauseManager.isEligibleUserRule(false, true, false));
-        assertFalse(InternetPauseManager.isEligibleUserRule(true, false, true));
-        assertFalse(InternetPauseManager.isEligibleUserRule(true, true, true));
+        assertTrue(InternetPauseManager.isEligiblePackageRule(true, true, false));
+        assertFalse(InternetPauseManager.isEligiblePackageRule(false, false, false));
+        assertFalse(InternetPauseManager.isEligiblePackageRule(false, true, false));
+        assertFalse(InternetPauseManager.isEligiblePackageRule(true, false, true));
+        assertFalse(InternetPauseManager.isEligiblePackageRule(true, true, true));
     }
 
     @Test
