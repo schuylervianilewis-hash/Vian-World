@@ -56,10 +56,10 @@ fun CallRecorderSettingsScreen(onBack: () -> Unit) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         if (results.all { it.value }) {
             enabled = true
-            prefs.edit().putBoolean("call_recorder_enabled", true).apply()
+            com.example.core.OverlaySyncManager.syncBoolean(context, "call_recorder_enabled", true)
         } else {
             enabled = false
-            prefs.edit().putBoolean("call_recorder_enabled", false).apply()
+            com.example.core.OverlaySyncManager.syncBoolean(context, "call_recorder_enabled", false)
         }
     }
 
@@ -112,7 +112,7 @@ fun CallRecorderSettingsScreen(onBack: () -> Unit) {
                                     launcher.launch(permissions)
                                 } else {
                                     enabled = false
-                                    prefs.edit().putBoolean("call_recorder_enabled", false).apply()
+                                    com.example.core.OverlaySyncManager.syncBoolean(context, "call_recorder_enabled", false)
                                 }
                             }
                         )

@@ -156,9 +156,14 @@ class CallRecorderManager internal constructor(
         if (!isEnabled()) {
             listenerStatus = ListenerStatus.DISABLED
             Log.d(TAG, "Call recorder is disabled, not starting listener")
+            safeLog(TAG, "Call sensor disabled by preference; listener not registered")
             return
         }
-        if (isListening) return
+        if (isListening) {
+            listenerStatus = ListenerStatus.LISTENING
+            return
+        }
+        safeLog(TAG, "Call sensor start requested")
         val ctx = context ?: return
 
         val checkPerm = permissionChecker?.invoke(ctx, Manifest.permission.READ_PHONE_STATE)
@@ -210,7 +215,7 @@ class CallRecorderManager internal constructor(
                 listenerStatus = ListenerStatus.LISTENING
             }
             Log.d(TAG, "Call recorder state listener started in Main process")
-            safeLog(TAG, "Call recorder state listener started")
+            safeLog(TAG, "Call sensor listening in Main process; status=LISTENING")
         } catch (e: SecurityException) {
             Log.w(TAG, "SecurityException registering telephony listener: ${e.message}")
             safeLog(TAG, "Call recorder listener unavailable: ${e.message}")

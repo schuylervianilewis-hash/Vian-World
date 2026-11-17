@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
@@ -44,6 +45,14 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
     var hasLocation by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) }
     var hasCamera by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     var hasAudio by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
+    var hasPhoneState by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) }
+    var hasVpnAuthorization by remember { mutableStateOf(VpnService.prepare(context) == null) }
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        hasVpnAuthorization = VpnService.prepare(context) == null
+    }
 
     var hasPostNotification by remember {
         mutableStateOf(
@@ -61,6 +70,7 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
         hasLocation = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         hasCamera = permissions[Manifest.permission.CAMERA] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         hasAudio = permissions[Manifest.permission.RECORD_AUDIO] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        hasPhoneState = permissions[Manifest.permission.READ_PHONE_STATE] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             hasPostNotification = permissions[Manifest.permission.POST_NOTIFICATIONS] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         }
@@ -77,6 +87,8 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
                 hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                 hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 hasAudio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                hasPhoneState = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+                hasVpnAuthorization = VpnService.prepare(context) == null
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     hasPostNotification = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                 }
@@ -159,6 +171,21 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
             }
         )
         Spacer(modifier = Modifier.height(12.dp))
+
+        PermissionItem(
+            title = "Shield VPN Authorization",
+            description = "Required for Firewall to create and maintain its local VPN connection.",
+            isGranted = hasVpnAuthorization,
+            onClick = {
+                try {
+                    val intent = VpnService.prepare(context)
+                    if (intent == null) hasVpnAuthorization = true else vpnPermissionLauncher.launch(intent)
+                } catch (_: Exception) {
+                    hasVpnAuthorization = VpnService.prepare(context) == null
+                }
+            }
+        )
+        Spacer(modifier = Modifier.height(12.dp))
         
         PermissionItem(
             title = "Usage Access",
@@ -198,6 +225,16 @@ fun PermissionManagerScreen(onContinue: () -> Unit, isFirstLaunch: Boolean = tru
             isGranted = hasAudio,
             onClick = {
                 requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+            }
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        PermissionItem(
+            title = "Phone State (Call Sensor)",
+            description = "Required for the main-process call-state sensor to detect ringing, active calls and call end.",
+            isGranted = hasPhoneState,
+            onClick = {
+                requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE))
             }
         )
         Spacer(modifier = Modifier.height(12.dp))
