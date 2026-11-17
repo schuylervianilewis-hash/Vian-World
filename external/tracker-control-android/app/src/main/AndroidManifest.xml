@@ -349,6 +349,11 @@
         </receiver>
 
         <provider
+            android:name="net.kollnig.missioncontrol.data.InternetPauseStateProvider"
+            android:authorities="${applicationId}.internetpause.state"
+            android:exported="false" />
+
+        <provider
             android:name="eu.faircode.netguard.TrackerControlFileProvider"
             android:authorities="${applicationId}.trackercontrol.provider"
             android:exported="false"
