@@ -21,6 +21,13 @@ class CallStateReceiver : BroadcastReceiver() {
                 else -> -1
             }
             if (state != -1) {
+                val label = when (state) {
+                    TelephonyManager.CALL_STATE_RINGING -> "RINGING"
+                    TelephonyManager.CALL_STATE_OFFHOOK -> "OFFHOOK"
+                    TelephonyManager.CALL_STATE_IDLE -> "IDLE"
+                    else -> "UNKNOWN"
+                }
+                com.example.core.LogKeeper.log(context, "CallStateReceiver", "Phone state broadcast received: " + label)
                 CallRecorderManager.getInstance(context).onCallStateReceived(state)
             }
         }

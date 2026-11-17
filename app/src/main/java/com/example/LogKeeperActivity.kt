@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.FloatingMiniAppLogFilter
+import com.example.core.FirewallLogFilter
 import com.example.core.LogKeeper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -170,6 +171,7 @@ fun LogKeeperScreen(onBack: () -> Unit) {
     var runningState by remember { mutableStateOf(RunningRuntimeState()) }
     var showClearDialog by remember { mutableStateOf(false) }
     var isMiniAppFilterActive by remember { mutableStateOf(false) }
+    var isFirewallFilterActive by remember { mutableStateOf(false) }
 
     fun loadLogs() {
         scope.launch {
@@ -194,8 +196,18 @@ fun LogKeeperScreen(onBack: () -> Unit) {
 
     val currentLogContent = if (selectedTab == 2) {
         rawLogContent
+    } else if (!isMiniAppFilterActive && !isFirewallFilterActive) {
+        rawLogContent
     } else {
-        FloatingMiniAppLogFilter.filter(rawLogContent, isMiniAppFilterActive)
+        val matchingBlocks = FloatingMiniAppLogFilter.splitIntoBlocks(rawLogContent).filter { block ->
+            (isMiniAppFilterActive && FloatingMiniAppLogFilter.isMiniAppLogEntry(block)) ||
+                (isFirewallFilterActive && FirewallLogFilter.isFirewallLogEntry(block))
+        }
+        if (matchingBlocks.isEmpty()) {
+            if (isFirewallFilterActive && !isMiniAppFilterActive) FirewallLogFilter.EMPTY_STATE_MESSAGE
+            else if (isMiniAppFilterActive && !isFirewallFilterActive) FloatingMiniAppLogFilter.EMPTY_STATE_MESSAGE
+            else "No matching logs found."
+        } else matchingBlocks.joinToString("\n\n")
     }
 
     val currentSubTitle = when (selectedTab) {
@@ -298,38 +310,51 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                 )
             } else {
                 // Diagnostic & Crash Log Toolbar & Filter
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    FilterChip(
-                        selected = isMiniAppFilterActive,
-                        onClick = { isMiniAppFilterActive = !isMiniAppFilterActive },
-                        label = { Text("Floating Mini-apps", fontSize = 12.sp) },
-                        leadingIcon = if (isMiniAppFilterActive) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else null,
-                        modifier = Modifier.testTag("filter_floating_mini_apps")
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("LogKeeper", currentLogContent)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Copied logs to clipboard", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.testTag("copy_logs_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Copy Logs", fontSize = 12.sp)
+                        FilterChip(
+                            selected = isMiniAppFilterActive,
+                            onClick = { isMiniAppFilterActive = !isMiniAppFilterActive },
+                            label = { Text("Floating Mini-apps", fontSize = 12.sp) },
+                            leadingIcon = if (isMiniAppFilterActive) {
+                                {
+                                    Icon(Icons.Default.Check, contentDescription = null,
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize))
+                                }
+                            } else null,
+                            modifier = Modifier.testTag("filter_floating_mini_apps")
+                        )
+                        FilterChip(
+                            selected = isFirewallFilterActive,
+                            onClick = { isFirewallFilterActive = !isFirewallFilterActive },
+                            label = { Text("Firewall", fontSize = 12.sp) },
+                            leadingIcon = if (isFirewallFilterActive) {
+                                {
+                                    Icon(Icons.Default.Check, contentDescription = null,
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize))
+                                }
+                            } else null,
+                            modifier = Modifier.testTag("filter_firewall_logs")
+                        )
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText("LogKeeper", currentLogContent)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "Copied logs to clipboard", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("copy_logs_button")
+                        ) {
+                            Text("Copy Logs", fontSize = 12.sp)
+                        }
                     }
                 }
 
