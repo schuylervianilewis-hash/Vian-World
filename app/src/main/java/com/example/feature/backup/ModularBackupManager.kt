@@ -129,6 +129,6 @@ object ModularBackupManager {
     private fun validateLauncher(payload: JSONObject) {
         val version = payload.optInt("schema_version", 1)
         require(version in 1..2) { "Unsupported Launcher backup schema: $version" }
-        require(payload.optJSONArray("grid_items") != null) { "Launcher grid data is missing" }
+        BackupHelper.validateBackupPayload(payload)
     }
 }
