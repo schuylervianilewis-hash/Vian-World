@@ -373,10 +373,28 @@ object BackupHelper {
                     lockedDao.insertLockedApp(lockedApp)
                 }
 
-                // 5. Restore Custom Drawer Renames
+                // 5. Restore Custom Drawer Renames. Reset existing app rows to
+                // their current system labels first so names absent from the full
+                // backup do not survive from the destination installation.
+                val launcherDao = db.AppLaunchersDao()
+                val packageManager = context.packageManager
+                launcherDao.getAppLaunchers().forEach { app ->
+                    val systemTitle = runCatching {
+                        if (app.activityName.isNotBlank()) {
+                            packageManager.getActivityInfo(
+                                android.content.ComponentName(app.packageName, app.activityName),
+                                0
+                            ).loadLabel(packageManager).toString()
+                        } else {
+                            packageManager.getApplicationInfo(app.packageName, 0)
+                                .loadLabel(packageManager).toString()
+                        }
+                    }.getOrNull()
+                    if (!systemTitle.isNullOrBlank())
+                        launcherDao.updateAppTitle(systemTitle, app.packageName)
+                }
                 val drawerRenamesJson = root.optJSONObject("drawer_renames")
                 if (drawerRenamesJson != null) {
-                    val launcherDao = db.AppLaunchersDao()
                     val keys = drawerRenamesJson.keys()
                     while (keys.hasNext()) {
                         val pkg = keys.next()
