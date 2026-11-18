@@ -535,7 +535,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         detachHandles()
 
         if (!OverlayAccessPolicy.canShowApplicationOverlays(this)) {
-            LogKeeper.log(this, "HandleService", "attachHandles skipped: SYSTEM_ALERT_WINDOW permission not granted")
+            LogKeeper.log(this, "HandleService", "attachHandles skipped: overlay permission missing or current app excluded")
             return
         }
 

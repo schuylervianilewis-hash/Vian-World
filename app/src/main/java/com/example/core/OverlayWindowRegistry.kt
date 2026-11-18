@@ -53,7 +53,7 @@ object OverlayWindowRegistry {
     fun removeView(manager: WindowManager?, view: View) {
         val entry = entries.remove(view)
         val actualManager = entry?.manager ?: manager
-        val attached = entry?.attached ?: view.isAttachedToWindow
+        val attached = (entry?.attached == true) || view.isAttachedToWindow
         if (attached && actualManager != null) {
             try { actualManager.removeViewImmediate(view) } catch (_: Throwable) {}
         }

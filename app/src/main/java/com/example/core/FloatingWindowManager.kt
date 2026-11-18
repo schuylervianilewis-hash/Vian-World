@@ -70,6 +70,7 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun unregisterWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
+        suppressedVisibleWindowIds.remove(windowId)
 
         // Detach children
         for (child in getChildren(windowId)) {
@@ -361,6 +362,7 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun hideWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
+        suppressedVisibleWindowIds.remove(windowId)
         window.getView()?.visibility = View.GONE
 
         val oldState = window.state
@@ -400,6 +402,7 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun foldWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
+        suppressedVisibleWindowIds.remove(windowId)
         if (window.isFolded) return true
 
         val view = window.getView()

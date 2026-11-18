@@ -164,7 +164,7 @@ public class FirewallFragment extends Fragment {
         recyclerView = new RecyclerView(context);
         recyclerView.setLayoutManager(new LinearLayoutManager(context));
         recyclerView.setHasFixedSize(false);
-        recyclerView.setItemViewCacheSize(20);
+        recyclerView.setItemViewCacheSize(6);
         adapter = new FirewallAdapter();
         recyclerView.setAdapter(adapter);
         swipeRefresh.addView(recyclerView, new ViewGroup.LayoutParams(
