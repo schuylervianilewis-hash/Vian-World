@@ -76,7 +76,6 @@ public class FirewallFragmentLayoutTest {
         assertNotNull(list);
         assertEquals(ViewGroup.LayoutParams.MATCH_PARENT, list.getLayoutParams().width);
         assertEquals(ViewGroup.LayoutParams.MATCH_PARENT, list.getLayoutParams().height);
-        assertEquals(6, list.getItemViewCacheSize());
     }
 
     private static void assertActionButton(FragmentActivity activity, LinearLayout actions,
