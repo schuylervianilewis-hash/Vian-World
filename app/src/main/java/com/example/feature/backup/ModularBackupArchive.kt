@@ -1,5 +1,6 @@
 package com.example.feature.backup
 
+import com.example.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -45,6 +46,7 @@ object ModularBackupArchive {
     )
 
     data class Parsed(
+        val applicationId: String,
         val appVersion: String,
         val createdAt: Long,
         val modules: Map<String, JSONObject>,
@@ -87,7 +89,10 @@ object ModularBackupArchive {
         val manifest = JSONObject()
             .put("format", FORMAT_NAME)
             .put("formatVersion", FORMAT_VERSION)
+            .put("applicationId", BuildConfig.APPLICATION_ID)
             .put("appVersion", appVersion)
+            .put("versionCode", BuildConfig.VERSION_CODE)
+            .put("buildType", BuildConfig.BUILD_TYPE)
             .put("createdAt", System.currentTimeMillis())
             .put("modules", modulesJson)
 
@@ -134,6 +139,10 @@ object ModularBackupArchive {
         val checksumBytes = entries[CHECKSUMS_PATH] ?: error("Backup checksums are missing")
         val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
         require(manifest.optString("format") == FORMAT_NAME) { "This is not a Vian World backup" }
+        val applicationId = manifest.optString("applicationId")
+        require(applicationId == BuildConfig.APPLICATION_ID) {
+            "This backup belongs to a different application: $applicationId"
+        }
         val version = manifest.optInt("formatVersion", -1)
         require(version == FORMAT_VERSION) { "Unsupported backup format version: $version" }
 
@@ -182,6 +191,7 @@ object ModularBackupArchive {
         }
 
         return Parsed(
+            applicationId = applicationId,
             appVersion = manifest.optString("appVersion", "unknown"),
             createdAt = manifest.optLong("createdAt", 0L),
             modules = payloads,
