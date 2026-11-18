@@ -12,7 +12,4 @@
     <item
         android:id="@+id/drawer_menu_sidebar_settings"
         android:title="@string/sidebar_settings" />
-    <item
-        android:id="@+id/drawer_menu_settings"
-        android:title="@string/launcher_settings" />
 </menu>
