@@ -255,9 +255,11 @@ public final class ModularFirewallBackup {
         SharedPreferences prefs = context.getSharedPreferences(store, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         if (exactRollback) {
-            for (String key : prefs.getAll().keySet())
-                if (isPackageKey(key))
+            for (String key : prefs.getAll().keySet()) {
+                if (isPackageKey(key) &&
+                        !(APPLY.equals(store) && PausedApps.isPaused(context, key)))
                     editor.remove(key);
+            }
         }
         for (java.util.Iterator<String> it = values.keys(); it.hasNext();) {
             String packageName = it.next();
