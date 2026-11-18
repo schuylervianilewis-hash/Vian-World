@@ -182,21 +182,34 @@ class UnifiedPageSystemTest {
     }
 
     @Test
-    fun testFallbackKeyAutoMigrationWritesToIsolatedKey() {
+    fun testSecondaryContainerDoesNotReadOrMigratePrimaryLegacyFallback() {
         val cleanHandleId = "handle_5"
         val containerId = "handle_5_swipe_left"
+        val fallbackKey = "handle_${cleanHandleId}_pages"
         val fallbackJson = """[{"id":"p_calc","type":"calculator","title":"Calc","order":0}]"""
-        fakePrefs.edit().putString("handle_${cleanHandleId}_pages", fallbackJson).apply()
+        fakePrefs.edit().putString(fallbackKey, fallbackJson).apply()
 
+        val pageManager = PageManager.getInstance(fakeContext)
+        val stack = pageManager.getPageStack(containerId)
+
+        // Secondary handles must not inherit another container's legacy page stack.
+        assertTrue(stack.isEmpty())
         assertNull(fakePrefs.getString(HandleManager.getContainerPagesKey(containerId), null))
+        assertEquals(fallbackJson, fakePrefs.getString(fallbackKey, null))
+    }
+
+    @Test
+    fun testPrimaryContainerMigratesItsLegacyFallbackToIsolatedKey() {
+        val containerId = "handle_1_swipe_left"
+        val fallbackKey = "handle_handle_1_pages"
+        val fallbackJson = """[{"id":"p_calc","type":"calculator","title":"Calc","order":0}]"""
+        fakePrefs.edit().putString(fallbackKey, fallbackJson).apply()
 
         val pageManager = PageManager.getInstance(fakeContext)
         val stack = pageManager.getPageStack(containerId)
 
         assertEquals(1, stack.size)
         assertEquals("p_calc", stack[0].pageId)
-
-        // Verify it was auto-migrated and written to the isolated container key in JSON array format
         val migrated = fakePrefs.getString(HandleManager.getContainerPagesKey(containerId), null)
         assertNotNull(migrated)
         assertTrue(migrated!!.startsWith("["))

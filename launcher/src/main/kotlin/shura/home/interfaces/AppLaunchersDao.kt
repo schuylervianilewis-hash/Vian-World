@@ -17,6 +17,12 @@ interface AppLaunchersDao {
     @Query("UPDATE apps SET title = :title WHERE package_name = :packageName")
     fun updateAppTitle(title: String, packageName: String)
 
+    @Query("UPDATE apps SET `order` = 0")
+    fun resetAllAppOrders()
+
+    @Query("UPDATE apps SET `order` = :order WHERE package_name = :packageName AND activity_name = :activityName")
+    fun updateAppOrder(order: Int, packageName: String, activityName: String)
+
     @Query("DELETE FROM apps WHERE package_name = :packageName")
     fun deleteApp(packageName: String)
 

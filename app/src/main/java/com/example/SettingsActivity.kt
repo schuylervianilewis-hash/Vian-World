@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.testTag
 import com.example.core.HandleService
 import com.example.core.LogKeeper
 import com.example.feature.settings.NetSpeedSettingsScreen
+import com.example.feature.backup.BackupRestoreScreen
 import com.example.feature.settings.PermissionManagerScreen
 import com.example.feature.settings.ScreenCapSettingsScreen
 import com.example.feature.settings.handle.HandleSettingsScreen
@@ -134,6 +135,9 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onBack = { navigateBack() }
             )
         }
+        currentRoute == "backup" -> {
+            BackupRestoreScreen(onBack = { navigateBack() })
+        }
         else -> {
             MainSettingsScreen(
                 onNavigateToHandles = { navigateTo("handles") },
@@ -142,6 +146,7 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onNavigateToScreenCap = { navigateTo("screencap") },
                 onNavigateToPermissions = { navigateTo("permissions") },
                 onNavigateToShield = { context.startActivity(ShieldControl.createOpenShieldIntent(context)) },
+                onNavigateToBackup = { navigateTo("backup") },
                 onBack = onFinish
             )
         }
@@ -157,6 +162,7 @@ fun MainSettingsScreen(
     onNavigateToScreenCap: () -> Unit,
     onNavigateToPermissions: () -> Unit,
     onNavigateToShield: () -> Unit,
+    onNavigateToBackup: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -265,6 +271,16 @@ fun MainSettingsScreen(
                             )
                         }
                         .testTag("settings_item_launcher")
+                )
+                HorizontalDivider()
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Backup & Restore") },
+                    supportingContent = { Text("Create or selectively restore a modular Vian World ZIP backup") },
+                    modifier = Modifier
+                        .clickable { onNavigateToBackup() }
+                        .testTag("settings_item_backup_restore")
                 )
                 HorizontalDivider()
             }

@@ -13,6 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -28,7 +29,7 @@ import java.io.OutputStream
  */
 object BackupHelper {
     private const val TAG = "BackupHelper"
-    private const val CURRENT_SCHEMA_VERSION = 1
+    private const val CURRENT_SCHEMA_VERSION = 2
 
     fun exportBackup(context: Context, outputStream: OutputStream): Boolean {
         return try {
@@ -62,6 +63,8 @@ object BackupHelper {
                 put("gesturePinchInAction", config.gesturePinchInAction)
                 put("folderCoverMode", config.folderCoverMode)
                 put("gestureHaptics", config.gestureHaptics)
+                put("showNotificationBadges", config.showNotificationBadges)
+                put("drawerUseCustomWallpaper", config.drawerUseCustomWallpaper)
                 put("logKeeperEnabled", config.logKeeperEnabled)
             }
             root.put("config", configJson)
@@ -158,13 +161,24 @@ object BackupHelper {
             }
             root.put("drawer_renames", drawerRenamesJson)
 
+            val drawerOrderArray = JSONArray()
+            appLaunchers.sortedBy { it.order }.forEach { launcher ->
+                drawerOrderArray.put(
+                    JSONObject()
+                        .put("packageName", launcher.packageName)
+                        .put("activityName", launcher.activityName)
+                        .put("order", launcher.order)
+                )
+            }
+            root.put("app_drawer_order", drawerOrderArray)
+
             // 6. Export Custom Icons (Base64 PNG)
             val customIconsDir = File(context.filesDir, "custom_icons")
             val customIconsJson = JSONObject()
             if (customIconsDir.exists() && customIconsDir.isDirectory) {
                 val files = customIconsDir.listFiles() ?: emptyArray()
                 for (file in files) {
-                    if (file.isFile && file.extension.equals("png", ignoreCase = true)) {
+                    if (file.isFile && file.extension.equals("png", ignoreCase = true) && file.length() in 1..(1024L * 1024L)) {
                         try {
                             val bytes = file.readBytes()
                             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
@@ -177,6 +191,16 @@ object BackupHelper {
                 }
             }
             root.put("custom_icons", customIconsJson)
+
+            // The custom drawer wallpaper is launcher-owned and portable. System
+            // wallpapers are OS-owned and are deliberately not exported.
+            val drawerWallpaperFile = WallpaperHelper.getDrawerWallpaperFile(context)
+            if (config.drawerUseCustomWallpaper && drawerWallpaperFile.isFile && drawerWallpaperFile.length() in 1..(8L * 1024L * 1024L)) {
+                root.put(
+                    "drawer_wallpaper_base64",
+                    Base64.encodeToString(drawerWallpaperFile.readBytes(), Base64.NO_WRAP)
+                )
+            }
 
             // Write JSON out
             val jsonString = root.toString(2)
@@ -200,10 +224,14 @@ object BackupHelper {
             val root = JSONObject(jsonString)
 
             val schemaVersion = root.optInt("schema_version", 1)
-            if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+            if (schemaVersion !in 1..CURRENT_SCHEMA_VERSION) {
                 LogCatcher.log(TAG, "Unsupported backup schema version: $schemaVersion")
                 return false
             }
+
+            // Validate the entire portable launcher payload before clearing any tables.
+            validateBackupPayload(root)
+            val gridArray = root.optJSONArray("grid_items") ?: JSONArray()
 
             val db = AppsDatabase.getInstance(context)
 
@@ -221,8 +249,7 @@ object BackupHelper {
                 val oldToNewIdMap = mutableMapOf<Long, Long>()
 
                 // Read grid items
-                val gridArray = root.optJSONArray("grid_items") ?: JSONArray()
-                val pendingItems = mutableListOf<HomeScreenGridItem>()
+                val pendingItems = mutableListOf<Pair<Long, HomeScreenGridItem>>()
 
                 for (i in 0 until gridArray.length()) {
                     val obj = gridArray.getJSONObject(i)
@@ -254,38 +281,58 @@ object BackupHelper {
                         title = obj.optString("title", ""),
                         type = obj.getInt("type"),
                         className = obj.optString("class_name", ""),
-                        widgetId = obj.optInt("widget_id", -1),
-                        shortcutId = obj.optString("shortcut_id", ""),
+                        // Never reuse the source AppWidget ID. A unique negative
+                        // sentinel keeps the layout row identifiable until bindWidget
+                        // allocates a fresh ID or displays the unavailable-widget tile.
+                        widgetId = obj.optInt("widget_id", -1).let { sourceId ->
+                            if (obj.optInt("type", -1) == ITEM_TYPE_WIDGET && sourceId >= 0) {
+                                -((oldId % 100000L).toInt() + 100)
+                            } else {
+                                // Non-Android popup-widget IDs remain app-owned metadata.
+                                sourceId
+                            }
+                        },
+                        // Sidebar element references are app-owned IDs, not Android
+                        // pinned-shortcut IDs. Preserve those; clear only system shortcut IDs.
+                        shortcutId = if (obj.optString("class_name") == SIDEBAR_ELEMENT_CLASS_NAME) {
+                            obj.optString("shortcut_id", "")
+                        } else {
+                            ""
+                        },
                         icon = bitmap,
                         docked = obj.optBoolean("docked", false),
                         parentId = if (obj.has("parent_id") && !obj.isNull("parent_id")) obj.getLong("parent_id") else null
                     )
 
-                    if (item.type == ITEM_TYPE_FOLDER) {
-                        // Insert folder first so its new ID can be mapped to children
-                        val newId = gridDao.insert(item)
-                        if (oldId != 0L) {
-                            oldToNewIdMap[oldId] = newId
-                        }
-                    } else {
-                        pendingItems.add(item.apply {
-                            // Temporary store oldId in extra memory tag if needed
-                            if (oldId != 0L) {
-                                (this as java.lang.Object).hashCode() // no-op
-                            }
-                        })
-                    }
+                    pendingItems.add(oldId to item)
                 }
 
-                // Insert child items with remapped folder parentId
-                for (item in pendingItems) {
-                    val oldParent = item.parentId
-                    if (oldParent != null && oldToNewIdMap.containsKey(oldParent)) {
-                        item.parentId = oldToNewIdMap[oldParent]
+                // Insert parents before children and build a complete old-ID -> new-ID
+                // map for every restored row. This avoids package-name fallbacks that
+                // could bind a gesture to the wrong duplicate app icon.
+                val remainingItems = pendingItems.toMutableList()
+                while (remainingItems.isNotEmpty()) {
+                    val readyItems = remainingItems.filter { (_, pendingItem) ->
+                        val parentId = pendingItem.parentId
+                        parentId == null ||
+                            oldToNewIdMap.containsKey(parentId) ||
+                            remainingItems.none { it.first == parentId }
                     }
-                    val newId = gridDao.insert(item)
-                    // If we had old item id mapped
-                    // Map by coordinates & package signature for gesture re-linking
+                    if (readyItems.isEmpty()) {
+                        // Break malformed/cyclic parent references safely instead of
+                        // losing the item or creating an invalid foreign-key relation.
+                        val (oldId, pendingItem) = remainingItems.removeAt(0)
+                        pendingItem.parentId = null
+                        val newId = gridDao.insert(pendingItem)
+                        if (oldId != 0L) oldToNewIdMap[oldId] = newId
+                    } else {
+                        readyItems.forEach { (oldId, pendingItem) ->
+                            pendingItem.parentId = pendingItem.parentId?.let { oldToNewIdMap[it] }
+                            val newId = gridDao.insert(pendingItem)
+                            if (oldId != 0L) oldToNewIdMap[oldId] = newId
+                            remainingItems.remove(oldId to pendingItem)
+                        }
+                    }
                 }
 
                 // 2. Restore Item Gestures
@@ -293,7 +340,6 @@ object BackupHelper {
                 val restoredGestures = mutableMapOf<Long, ItemGestureConfig>()
                 if (gesturesJson != null) {
                     // Check against freshly inserted items to match IDs
-                    val allNewItems = gridDao.getAllItems()
                     val keys = gesturesJson.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
@@ -312,24 +358,18 @@ object BackupHelper {
                             swipeDownPackage = gObj.optString("swipeDownPackage", ""),
                             swipeLeftPackage = gObj.optString("swipeLeftPackage", ""),
                             swipeRightPackage = gObj.optString("swipeRightPackage", ""),
-                            linkedWidgetId = gObj.optInt("linkedWidgetId", -1),
+                            // Widget IDs cannot be reused across installations.
+                            linkedWidgetId = -1,
                             linkedWidgetProvider = gObj.optString("linkedWidgetProvider", "")
                         )
 
                         val newId = oldToNewIdMap[oldId]
                         if (newId != null) {
                             restoredGestures[newId] = config
-                        } else {
-                            // If direct mapping not found, match by first item with matching targetPackage or coordinates
-                            val match = allNewItems.firstOrNull { it.packageName == config.targetPackage && it.packageName.isNotEmpty() }
-                            val matchedId = match?.id
-                            if (matchedId != null) {
-                                restoredGestures[matchedId] = config
-                            }
                         }
                     }
                 }
-                ItemGestureManager.restoreConfigs(context, restoredGestures)
+                ItemGestureManager.restoreConfigs(context, restoredGestures, synchronous = true)
 
                 // 3. Restore Hidden Icons
                 val hiddenArray = root.optJSONArray("hidden_icons") ?: JSONArray()
@@ -355,15 +395,48 @@ object BackupHelper {
                     lockedDao.insertLockedApp(lockedApp)
                 }
 
-                // 5. Restore Custom Drawer Renames
+                // 5. Restore Custom Drawer Renames. Reset existing app rows to
+                // their current system labels first so names absent from the full
+                // backup do not survive from the destination installation.
+                val launcherDao = db.AppLaunchersDao()
+                val packageManager = context.packageManager
                 val drawerRenamesJson = root.optJSONObject("drawer_renames")
                 if (drawerRenamesJson != null) {
-                    val launcherDao = db.AppLaunchersDao()
+                    // Reset only when the backup actually contains the rename module;
+                    // older backups without this field must not erase destination names.
+                    launcherDao.getAppLaunchers().forEach { app ->
+                        val systemTitle = runCatching {
+                            if (app.activityName.isNotBlank()) {
+                                packageManager.getActivityInfo(
+                                    android.content.ComponentName(app.packageName, app.activityName),
+                                    0
+                                ).loadLabel(packageManager).toString()
+                            } else {
+                                packageManager.getApplicationInfo(app.packageName, 0)
+                                    .loadLabel(packageManager).toString()
+                            }
+                        }.getOrNull()
+                        if (!systemTitle.isNullOrBlank())
+                            launcherDao.updateAppTitle(systemTitle, app.packageName)
+                    }
                     val keys = drawerRenamesJson.keys()
                     while (keys.hasNext()) {
                         val pkg = keys.next()
                         val customTitle = drawerRenamesJson.getString(pkg)
                         launcherDao.updateAppTitle(customTitle, pkg)
+                    }
+                }
+
+                val drawerOrderArray = root.optJSONArray("app_drawer_order")
+                if (drawerOrderArray != null) {
+                    launcherDao.resetAllAppOrders()
+                    for (index in 0 until drawerOrderArray.length()) {
+                        val orderItem = drawerOrderArray.getJSONObject(index)
+                        launcherDao.updateAppOrder(
+                            orderItem.getInt("order"),
+                            orderItem.getString("packageName"),
+                            orderItem.optString("activityName", "")
+                        )
                     }
                 }
             }
@@ -393,6 +466,8 @@ object BackupHelper {
                 if (configJson.has("gesturePinchInAction")) config.gesturePinchInAction = configJson.getString("gesturePinchInAction")
                 if (configJson.has("folderCoverMode")) config.folderCoverMode = configJson.getBoolean("folderCoverMode")
                 if (configJson.has("gestureHaptics")) config.gestureHaptics = configJson.getBoolean("gestureHaptics")
+                if (configJson.has("showNotificationBadges")) config.showNotificationBadges = configJson.getBoolean("showNotificationBadges")
+                if (configJson.has("drawerUseCustomWallpaper")) config.drawerUseCustomWallpaper = configJson.getBoolean("drawerUseCustomWallpaper")
                 config.wasHomeScreenInit = true
                 config.wasDefaultClockAdded = true
             }
@@ -400,6 +475,10 @@ object BackupHelper {
             // 6. Restore Custom Icons
             val customIconsJson = root.optJSONObject("custom_icons")
             if (customIconsJson != null) {
+                val customIconsDir = File(context.filesDir, "custom_icons")
+                if (!customIconsDir.exists()) customIconsDir.mkdirs()
+                customIconsDir.listFiles()?.filter { it.isFile && it.extension.equals("png", ignoreCase = true) }
+                    ?.forEach { it.delete() }
                 val keys = customIconsJson.keys()
                 while (keys.hasNext()) {
                     val pkgName = keys.next()
@@ -426,6 +505,27 @@ object BackupHelper {
                 }
             }
 
+            // Restore the launcher-owned drawer wallpaper only when the archive
+            // explicitly carries this field. Older schema-1 backups remain compatible.
+            if (root.has("drawer_wallpaper_base64")) {
+                val encoded = root.optString("drawer_wallpaper_base64", "")
+                val bytes = if (encoded.isNotBlank()) Base64.decode(encoded, Base64.NO_WRAP) else ByteArray(0)
+                require(bytes.size <= 8 * 1024 * 1024) { "Drawer wallpaper is too large" }
+                if (bytes.isNotEmpty()) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth in 1..4096 && bounds.outHeight in 1..4096) {
+                        "Invalid drawer wallpaper image"
+                    }
+                    FileOutputStream(WallpaperHelper.getDrawerWallpaperFile(context)).use { it.write(bytes) }
+                    Config(context).drawerUseCustomWallpaper = true
+                } else {
+                    WallpaperHelper.removeDrawerWallpaper(context)
+                }
+            } else if (root.optJSONObject("config")?.optBoolean("drawerUseCustomWallpaper", true) == false) {
+                WallpaperHelper.removeDrawerWallpaper(context)
+            }
+
             // Evict in-memory icon and app caches, reload app locks
             IconCache.clear()
             AppLockManager.reload(context)
@@ -435,6 +535,112 @@ object BackupHelper {
         } catch (e: Exception) {
             LogCatcher.log(TAG, "Failed to import backup", e)
             false
+        }
+    }
+
+    fun validateBackupPayload(root: JSONObject) {
+        val grid = root.optJSONArray("grid_items") ?: error("Launcher grid data is missing")
+        require(grid.length() <= 10000) { "Launcher backup has too many grid items" }
+        val ids = mutableSetOf<Long>()
+        val itemsById = mutableMapOf<Long, JSONObject>()
+        for (index in 0 until grid.length()) {
+            val item = grid.optJSONObject(index) ?: error("Invalid Launcher grid item")
+            val id = item.optLong("id", 0L)
+            require(id > 0L && ids.add(id)) { "Invalid or duplicate Launcher item ID" }
+            require(item.optInt("type", -1) in 0..4) { "Invalid Launcher item type" }
+            itemsById[id] = item
+            // -1 is the launcher's persisted sentinel for docked/size-derived
+            // coordinates; preserve it rather than rejecting a valid dock item.
+            require(item.optInt("left", -2) in -1..10000 && item.optInt("right", -2) in -1..10000) {
+                "Invalid Launcher item horizontal position"
+            }
+            require(item.optInt("top", -2) in -1..10000 && item.optInt("bottom", -2) in -1..10000) {
+                "Invalid Launcher item vertical position"
+            }
+            require(item.optInt("page", -1) in 0..1000) { "Invalid Launcher item page" }
+            require(item.optString("package_name").length <= 255) { "Launcher package name is too long" }
+            require(item.optString("activity_name").length <= 512) { "Launcher activity name is too long" }
+            require(item.optString("class_name").length <= 512) { "Launcher class name is too long" }
+            require(item.optString("title").length <= 200) { "Launcher item title is too long" }
+            require(item.optString("icon_base64").length <= 1_400_000) { "Launcher item icon is too large" }
+            require(item.optString("shortcut_id").length <= 512) { "Launcher shortcut ID is too long" }
+            if (item.has("parent_id") && !item.isNull("parent_id"))
+                require(item.optLong("parent_id", -1L) > 0L) { "Invalid Launcher folder parent ID" }
+        }
+        itemsById.values.forEach { item ->
+            if (!item.has("parent_id") || item.isNull("parent_id")) return@forEach
+            val parent = itemsById[item.getLong("parent_id")]
+            if (parent != null)
+                require(parent.optInt("type", -1) == 3) { "Launcher child item parent is not a folder" }
+        }
+
+        val gestures = root.optJSONObject("item_gestures") ?: JSONObject()
+        require(gestures.length() <= 10000) { "Too many Launcher gesture records" }
+        val gestureKeys = gestures.keys()
+        while (gestureKeys.hasNext()) {
+            val key = gestureKeys.next()
+            val id = key.toLongOrNull() ?: error("Invalid Launcher gesture item ID")
+            require(id > 0L) { "Invalid Launcher gesture item ID" }
+            val config = gestures.optJSONObject(key) ?: error("Invalid Launcher gesture record")
+            for (actionKey in listOf(
+                    "doubleTapAction", "swipeUpAction", "swipeDownAction",
+                    "swipeLeftAction", "swipeRightAction", "targetPackage",
+                    "doubleTapPackage", "swipeUpPackage", "swipeDownPackage",
+                    "swipeLeftPackage", "swipeRightPackage", "linkedWidgetProvider"
+                )) {
+                require(config.optString(actionKey).length <= 512) { "Launcher gesture field is too long" }
+            }
+        }
+
+        val hidden = root.optJSONArray("hidden_icons") ?: JSONArray()
+        val locked = root.optJSONArray("locked_apps") ?: JSONArray()
+        require(hidden.length() <= 5000 && locked.length() <= 5000) { "Too many Launcher app records" }
+        for (index in 0 until hidden.length()) {
+            val item = hidden.opt(index)
+            val packageName = if (item is JSONObject) item.optString("packageName") else item.toString()
+            require(packageName.length in 1..255) { "Invalid hidden app package" }
+        }
+        for (index in 0 until locked.length()) {
+            val item = locked.opt(index)
+            val packageName = if (item is JSONObject) item.optString("packageName") else item.toString()
+            require(packageName.length in 1..255) { "Invalid locked app package" }
+        }
+
+        val drawerOrder = root.optJSONArray("app_drawer_order") ?: JSONArray()
+        require(drawerOrder.length() <= 10000) { "Too many Launcher app drawer order records" }
+        for (index in 0 until drawerOrder.length()) {
+            val item = drawerOrder.optJSONObject(index) ?: error("Invalid Launcher app drawer order record")
+            require(item.optString("packageName").length in 1..255) { "Invalid Launcher app drawer package" }
+            require(item.optString("activityName").length <= 512) { "Invalid Launcher app drawer activity" }
+            require(item.optInt("order", -1) in 0..100000) { "Invalid Launcher app drawer order" }
+        }
+
+        val renames = root.optJSONObject("drawer_renames") ?: JSONObject()
+        require(renames.length() <= 10000) { "Too many Launcher rename records" }
+        val renameKeys = renames.keys()
+        while (renameKeys.hasNext()) {
+            val key = renameKeys.next()
+            require(key.matches(Regex("^[A-Za-z0-9._-]{1,255}$")) && !key.contains("..")) {
+                "Invalid Launcher rename package key"
+            }
+            require(renames.optString(key).length <= 200) { "Launcher rename is too long" }
+        }
+
+        val customIcons = root.optJSONObject("custom_icons") ?: JSONObject()
+        require(customIcons.length() <= 1000) { "Too many Launcher custom icons" }
+        val iconKeys = customIcons.keys()
+        while (iconKeys.hasNext()) {
+            val key = iconKeys.next()
+            require(key.matches(Regex("^[A-Za-z0-9._-]{1,255}$")) && !key.contains("..")) {
+                "Invalid Launcher custom icon key"
+            }
+            require(customIcons.optString(key).length <= 1_400_000) { "Launcher custom icon is too large" }
+        }
+
+        val config = root.optJSONObject("config") ?: error("Launcher configuration is missing")
+        require(config.length() <= 100) { "Launcher configuration is invalid" }
+        require(root.optString("drawer_wallpaper_base64").length <= 12_000_000) {
+            "Launcher drawer wallpaper is too large"
         }
     }
 

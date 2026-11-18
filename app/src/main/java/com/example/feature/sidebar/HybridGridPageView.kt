@@ -404,7 +404,7 @@ class HybridGridPageView(
                 try {
                     if (item.id.startsWith("widget:")) {
                         val wId = item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() ?: continue
-                        val info = appWidgetManager.getAppWidgetInfo(wId)
+                        val info = if (wId >= 0) appWidgetManager.getAppWidgetInfo(wId) else null
                         if (info != null) {
                             val hostView = host.createView(context, wId, info)
                             hostView.setPadding(0, 0, 0, 0)
@@ -525,6 +525,41 @@ class HybridGridPageView(
                                 var y = location[1] - popupLayout.measuredHeight
                                 if (y < 0) y = location[1] + hostView.measuredHeight
                                 popupWindow?.showAtLocation(hostView, Gravity.NO_GRAVITY, x, y)
+                                true
+                            }
+                        } else {
+                            // A restored widget keeps its grid cell and provider hint,
+                            // but its old AppWidget ID is never reused on this device.
+                            val widgetWidth = cellWidth * item.cols.coerceIn(1, totalCols)
+                            val widgetHeight = cellHeight * item.rows.coerceIn(1, 12)
+                            val providerHint = item.id.split(":", limit = 3).getOrNull(2).orEmpty()
+                            val placeholder = TextView(context).apply {
+                                text = if (providerHint.isBlank()) {
+                                    "Widget needs rebind\\nRemove and add it again"
+                                } else {
+                                    "Widget needs rebind\\n${providerHint.substringBefore("/")}"
+                                }
+                                gravity = Gravity.CENTER
+                                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                                textSize = 12f
+                                setTextColor(Color.WHITE)
+                                setPadding(12, 8, 12, 8)
+                                setBackgroundColor(Color.DKGRAY)
+                            }
+                            val params = FrameLayout.LayoutParams(widgetWidth, widgetHeight).apply {
+                                leftMargin = item.x * cellWidth
+                                topMargin = item.y * cellHeight
+                            }
+                            gridLayout.addView(placeholder, params)
+                            maxHeight = max(maxHeight, item.y * cellHeight + widgetHeight)
+                            placeholder.setOnLongClickListener {
+                                val newItems = items.toMutableList()
+                                newItems.removeAll { it.id == item.id }
+                                gridLayout.removeView(placeholder)
+                                saveWidgetItems(newItems)
+                                context.sendBroadcast(Intent("ELEMENT_ADDED_TO_HYBRID").apply {
+                                    putExtra("PAGE_ID", pageId)
+                                })
                                 true
                             }
                         }

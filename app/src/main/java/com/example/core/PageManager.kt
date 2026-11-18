@@ -259,14 +259,20 @@ class PageManager internal constructor(private val context: Context) {
         // 1. Primary isolated container key
         var raw = prefs.getString(isolatedKey, null)
 
-        // 2. Fallback to clean handle key if this is primary gesture (swipe_left)
-        if (raw == null && (containerId == cleanContainerId || containerId.endsWith("_swipe_left"))) {
+        // Only the first Sidebar-opening gesture on Handle 1 owns the resident
+        // Main-process Home Grid. Resolve it dynamically; secondary gestures and
+        // every other handle remain Heavy-process containers.
+        val primaryContainerId = handleManager.getFirstHandlePrimaryContainerId()
+        val isLegacyPrimaryAlias = primaryContainerId == "handle_1_swipe_left" &&
+            (containerId == "sidebar" || containerId == "handle_1")
+
+        // Legacy page-stack aliases are read only for the active primary container.
+        if (raw == null && (containerId == primaryContainerId || isLegacyPrimaryAlias)) {
             raw = prefs.getString("handle_${cleanContainerId}_pages", null)
                 ?: if (cleanContainerId == "sidebar") prefs.getString("sidebar_pages", null) else null
         }
 
-        val isFirstHandlePrimary = (containerId == "sidebar" || containerId == "handle_1" ||
-            containerId == "handle_1_swipe_left")
+        val isFirstHandlePrimary = containerId == primaryContainerId || isLegacyPrimaryAlias
 
         if (raw.isNullOrBlank()) {
             if (isFirstHandlePrimary) {
