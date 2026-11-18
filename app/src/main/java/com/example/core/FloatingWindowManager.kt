@@ -379,6 +379,25 @@ class FloatingWindowManager private constructor(context: Context) {
         return true
     }
 
+    /**
+     * Restores one previously visible window without recursively showing its children.
+     * Each child is restored separately only if it was visible before suppression.
+     */
+    private fun restoreSuppressedWindow(windowId: String): Boolean {
+        val window = windows[windowId] ?: return false
+        if (!window.isAttached && !attachOverlay(windowId)) {
+            suppressedVisibleWindowIds.add(windowId)
+            return false
+        }
+        val container = window.getView() ?: return false
+        container.visibility = View.VISIBLE
+        window.isFolded = false
+        window.notifyStateChanged(window.state, WindowState.VISIBLE)
+        window.onShow()
+        bringToFront(windowId)
+        return true
+    }
+
     /** Detach managed overlays while remembering only those that were visible. */
     @Synchronized
     fun setOverlaySuppressed(shouldSuppress: Boolean) {
@@ -394,7 +413,7 @@ class FloatingWindowManager private constructor(context: Context) {
         } else {
             val restoreIds = suppressedVisibleWindowIds.toList()
             suppressedVisibleWindowIds.clear()
-            restoreIds.forEach { showWindow(it) }
+            restoreIds.forEach { restoreSuppressedWindow(it) }
         }
     }
 
