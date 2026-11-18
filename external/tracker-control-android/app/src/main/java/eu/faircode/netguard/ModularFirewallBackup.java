@@ -155,11 +155,19 @@ public final class ModularFirewallBackup {
     }
 
     public static void restore(Context context, JSONObject payload) throws JSONException {
+        restore(context, payload, false);
+    }
+
+    public static void restore(Context context, JSONObject payload, boolean exactRollback) throws JSONException {
         validate(payload);
 
         SharedPreferences defaults = PreferenceManager.getDefaultSharedPreferences(context);
         JSONObject application = payload.getJSONObject("application");
         SharedPreferences.Editor appEditor = defaults.edit();
+        if (exactRollback) {
+            for (String key : APPLICATION_KEYS)
+                appEditor.remove(key);
+        }
         for (java.util.Iterator<String> it = application.keys(); it.hasNext();) {
             String key = it.next();
             JSONObject typed = application.getJSONObject(key);
@@ -185,10 +193,10 @@ public final class ModularFirewallBackup {
             throw new IllegalStateException("Could not restore Firewall settings");
 
         JSONObject packageFlags = payload.getJSONObject("packageFlags");
-        restorePackageFlags(context, APPLY, packageFlags.getJSONObject(APPLY));
-        restorePackageFlags(context, TRACKER_PROTECT, packageFlags.getJSONObject(TRACKER_PROTECT));
-        restorePackageFlags(context, TRACKER_ESSENTIAL, packageFlags.getJSONObject(TRACKER_ESSENTIAL));
-        restorePackageFlags(context, NOTIFY, packageFlags.getJSONObject(NOTIFY));
+        restorePackageFlags(context, APPLY, packageFlags.getJSONObject(APPLY), exactRollback);
+        restorePackageFlags(context, TRACKER_PROTECT, packageFlags.getJSONObject(TRACKER_PROTECT), exactRollback);
+        restorePackageFlags(context, TRACKER_ESSENTIAL, packageFlags.getJSONObject(TRACKER_ESSENTIAL), exactRollback);
+        restorePackageFlags(context, NOTIFY, packageFlags.getJSONObject(NOTIFY), exactRollback);
 
         JSONArray domains = payload.getJSONArray("domains");
         Set<String> domainSet = new LinkedHashSet<>();
@@ -196,7 +204,7 @@ public final class ModularFirewallBackup {
             domainSet.add(domains.getString(i));
         DomainWhitelist.getInstance(context).replaceDomains(domainSet);
 
-        restoreBlocklists(context, payload.getJSONObject("blocklists"));
+        restoreBlocklists(context, payload.getJSONObject("blocklists"), exactRollback);
         restoreForwarding(context, payload.getJSONArray("forwarding"));
 
         TrackerBlocklist.getInstance(context).loadSettings(context);
@@ -242,14 +250,23 @@ public final class ModularFirewallBackup {
         return output;
     }
 
-    private static void restorePackageFlags(Context context, String store, JSONObject values) {
+    private static void restorePackageFlags(
+            Context context, String store, JSONObject values, boolean exactRollback) {
         SharedPreferences prefs = context.getSharedPreferences(store, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
+        if (exactRollback) {
+            for (String key : prefs.getAll().keySet())
+                if (isPackageKey(key))
+                    editor.remove(key);
+        }
         for (java.util.Iterator<String> it = values.keys(); it.hasNext();) {
             String packageName = it.next();
             if (!isPackageKey(packageName))
                 continue;
-            // These stores are package-keyed in the app's existing XML import contract.
+            // Keep any currently active pause local to this installation. The
+            // backup contains the underlying non-paused value, never the pause.
+            if (APPLY.equals(store) && PausedApps.isPaused(context, packageName))
+                continue;
             editor.putBoolean(packageName, values.optBoolean(packageName, false));
         }
         if (!editor.commit())
@@ -312,9 +329,17 @@ public final class ModularFirewallBackup {
         return result;
     }
 
-    private static void restoreBlocklists(Context context, JSONObject blocklists) throws JSONException {
+    private static void restoreBlocklists(
+            Context context, JSONObject blocklists, boolean exactRollback) throws JSONException {
         SharedPreferences prefs = context.getSharedPreferences(TrackerBlocklist.PREF_BLOCKLIST, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
+        if (exactRollback) {
+            String trackerPrefix = TrackerBlocklist.SHARED_PREFS_BLOCKLIST_APPS_KEY;
+            for (String key : prefs.getAll().keySet())
+                if (key.equals(trackerPrefix) || key.startsWith(trackerPrefix + "_") ||
+                        key.equals(InternetBlocklist.SHARED_PREFS_INTERNET_BLOCKLIST_APPS_KEY))
+                    editor.remove(key);
+        }
         editor.putStringSet(InternetBlocklist.SHARED_PREFS_INTERNET_BLOCKLIST_APPS_KEY,
                 resolvePackageSet(context, blocklists.getJSONArray("internetPackages")));
         editor.putStringSet(TrackerBlocklist.SHARED_PREFS_BLOCKLIST_APPS_KEY,
