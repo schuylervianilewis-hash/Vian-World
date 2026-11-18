@@ -167,7 +167,7 @@ object BackupHelper {
             if (customIconsDir.exists() && customIconsDir.isDirectory) {
                 val files = customIconsDir.listFiles() ?: emptyArray()
                 for (file in files) {
-                    if (file.isFile && file.extension.equals("png", ignoreCase = true)) {
+                    if (file.isFile && file.extension.equals("png", ignoreCase = true) && file.length() in 1..(1024L * 1024L)) {
                         try {
                             val bytes = file.readBytes()
                             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
@@ -184,7 +184,7 @@ object BackupHelper {
             // The custom drawer wallpaper is launcher-owned and portable. System
             // wallpapers are OS-owned and are deliberately not exported.
             val drawerWallpaperFile = WallpaperHelper.getDrawerWallpaperFile(context)
-            if (drawerWallpaperFile.isFile && drawerWallpaperFile.length() in 1..(8L * 1024L * 1024L)) {
+            if (config.drawerUseCustomWallpaper && drawerWallpaperFile.isFile && drawerWallpaperFile.length() in 1..(8L * 1024L * 1024L)) {
                 root.put(
                     "drawer_wallpaper_base64",
                     Base64.encodeToString(drawerWallpaperFile.readBytes(), Base64.NO_WRAP)
@@ -312,7 +312,6 @@ object BackupHelper {
                 val restoredGestures = mutableMapOf<Long, ItemGestureConfig>()
                 if (gesturesJson != null) {
                     // Check against freshly inserted items to match IDs
-                    val allNewItems = gridDao.getAllItems()
                     val keys = gesturesJson.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
