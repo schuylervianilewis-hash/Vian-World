@@ -341,7 +341,7 @@ object BackupHelper {
                         }
                     }
                 }
-                ItemGestureManager.restoreConfigs(context, restoredGestures)
+                ItemGestureManager.restoreConfigs(context, restoredGestures, synchronous = true)
 
                 // 3. Restore Hidden Icons
                 val hiddenArray = root.optJSONArray("hidden_icons") ?: JSONArray()
