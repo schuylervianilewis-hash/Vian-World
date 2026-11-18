@@ -35,7 +35,6 @@ import org.fossify.commons.views.MyGridLayoutManager
 import shura.home.R
 import shura.home.activities.HiddenIconsActivity
 import shura.home.activities.MainActivity
-import shura.home.activities.SettingsActivity
 import shura.home.adapters.LaunchersAdapter
 import shura.home.databinding.AllAppsFragmentBinding
 import shura.home.extensions.config
