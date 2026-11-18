@@ -46,8 +46,8 @@ object SidebarBackupModule {
         var homeGrid: JSONObject? = null
 
         handles.forEach { handle ->
-            HandleGestures.ALL.forEach { gesture ->
-                if (handle.getActionForGesture(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) return@forEach
+            HandleGestures.ALL.forEach gestureLoop@ { gesture ->
+                if (handle.getActionForGesture(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) return@gestureLoop
                 val containerId = HandleManager.getContainerId(handle.id, gesture)
                 val stack = pageManager.getPageStack(containerId)
                 stack.forEachIndexed { index, page ->
@@ -194,7 +194,7 @@ object SidebarBackupModule {
         manager.notifyMainReload(context)
     }
 
-    private data class PageRecord(
+    internal data class PageRecord(
         val handleId: String,
         val gesture: String,
         val containerId: String,
