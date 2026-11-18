@@ -120,10 +120,10 @@ object SidebarBackupModule {
         }
     }
 
-    fun restore(context: Context, payload: JSONObject) {
+    fun restore(context: Context, payload: JSONObject, exactRollback: Boolean = false) {
         validate(payload)
-        restoreHandles(context, payload.getJSONArray("handles"))
-        restorePageMetadata(context, payload.getJSONArray("pages"))
+        restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
+        restorePageMetadata(context, payload.getJSONArray("pages"), exactRollback)
         payload.optJSONObject("homeGrid")?.let { restoreResidentHomeGrid(context, it) }
         OverlaySyncManager.triggerReload(context)
     }
@@ -145,7 +145,7 @@ object SidebarBackupModule {
             .put("gestures", gestures)
     }
 
-    private fun restoreHandles(context: Context, handles: JSONArray) {
+    private fun restoreHandles(context: Context, handles: JSONArray, exactRollback: Boolean) {
         val manager = HandleManager.getInstance(context)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val currentIds = manager.getHandleIds()
@@ -185,9 +185,26 @@ object SidebarBackupModule {
             restoredIds.add(id)
         }
 
-        // Merge handles: restore backed-up handles first, but do not delete handles
-        // that exist only on the destination installation.
-        val mergedIds = (restoredIds + currentIds.filterNot { it in restoredIds }).distinct()
+        // Normal restore merges destination-only handles. Rollback is exact and
+        // removes handles created by the failed restore attempt.
+        val mergedIds = if (exactRollback) {
+            currentIds.filterNot { it in restoredIds }.forEach { id ->
+                val staleIndex = id.removePrefix("handle_").toIntOrNull() ?: return@forEach
+                listOf(
+                    "handle_name_$staleIndex", "handle_enabled_$staleIndex",
+                    "handle_edge_$staleIndex", "handle_pos_$staleIndex",
+                    "handle_width_$staleIndex", "handle_height_$staleIndex",
+                    "handle_color_$staleIndex", "handle_shape_$staleIndex",
+                    "handle_alpha_$staleIndex"
+                ).forEach(editor::remove)
+                HandleGestures.ALL.forEach { gesture ->
+                    editor.remove(HandleManager.getGesturePrefKey(staleIndex, gesture))
+                }
+            }
+            restoredIds.distinct().toMutableList()
+        } else {
+            (restoredIds + currentIds.filterNot { it in restoredIds }).distinct().toMutableList()
+        }
         if ("handle_1" !in mergedIds) mergedIds.add(0, "handle_1")
         editor.putString(HandleManager.KEY_HANDLE_IDS, mergedIds.joinToString(","))
         editor.putInt(HandleManager.KEY_HANDLES_COUNT, mergedIds.size)
@@ -205,7 +222,7 @@ object SidebarBackupModule {
         val order: Int
     )
 
-    private fun restorePageMetadata(context: Context, pages: JSONArray) {
+    private fun restorePageMetadata(context: Context, pages: JSONArray, exactRollback: Boolean) {
         val manager = HandleManager.getInstance(context)
         val pageManager = PageManager.getInstance(context)
         val recordsByContainer = linkedMapOf<String, MutableList<PageRecord>>()
@@ -231,8 +248,32 @@ object SidebarBackupModule {
 
         recordsByContainer.forEach { (containerId, records) ->
             val current = pageManager.getPageStack(containerId)
-            val merged = mergePageStack(current, records)
-            pageManager.savePageStack(containerId, merged)
+            val restored = if (exactRollback) {
+                restorePageStackExact(current, records)
+            } else {
+                mergePageStack(current, records)
+            }
+            pageManager.savePageStack(containerId, restored)
+        }
+    }
+
+    private fun restorePageStackExact(
+        current: List<SidebarPage>,
+        records: List<PageRecord>
+    ): List<SidebarPage> {
+        val currentById = current.associateBy { it.pageId }
+        return records.distinctBy { it.pageId }.sortedBy { it.order }.mapIndexed { index, record ->
+            val existing = currentById[record.pageId]
+            if (existing != null && existing.pageType == record.pageType) {
+                existing.copy(title = record.title, order = index)
+            } else {
+                SidebarPage.createDefault(
+                    id = record.pageId,
+                    type = record.pageType,
+                    title = record.title,
+                    order = index
+                )
+            }
         }
     }
 
