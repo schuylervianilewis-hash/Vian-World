@@ -513,7 +513,7 @@ object BackupHelper {
         while (gestureKeys.hasNext()) {
             val key = gestureKeys.next()
             val id = key.toLongOrNull() ?: error("Invalid Launcher gesture item ID")
-            require(id in ids) { "Launcher gesture refers to a missing item" }
+            require(id > 0L) { "Invalid Launcher gesture item ID" }
             val config = gestures.optJSONObject(key) ?: error("Invalid Launcher gesture record")
             for (actionKey in listOf(
                     "doubleTapAction", "swipeUpAction", "swipeDownAction",
