@@ -607,7 +607,7 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                 }
             }
 
-            if (item.type == ITEM_TYPE_WIDGET && !isBuiltInClockWidget(item.className)) {
+            if (item.type == ITEM_TYPE_WIDGET && !isBuiltInClockWidget(item.className) && item.widgetId >= 0) {
                 appWidgetHost.deleteAppWidgetId(item.widgetId)
             }
 
@@ -1438,7 +1438,10 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
         val activity = context as MainActivity
         val appWidgetProviderInfo = item.providerInfo
             ?: appWidgetManager!!.installedProviders
-                .firstOrNull { it.provider.className == item.className }
+                .firstOrNull {
+                    it.provider.className == item.className &&
+                        (item.packageName.isBlank() || it.provider.packageName == item.packageName)
+                }
         if (appWidgetProviderInfo != null) {
             item.widgetId = appWidgetHost.allocateAppWidgetId()
             ensureBackgroundThread {
@@ -1473,6 +1476,53 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                     prevPage(redraw = true)
                 }
             }
+        } else {
+            // The source installation's widget ID is intentionally not reusable.
+            // Keep its cell visible until the user removes it and adds a fresh widget.
+            val placeholder = UnavailableWidgetHostView(context).apply {
+                tag = item.widgetId
+                setBackgroundColor(android.graphics.Color.DKGRAY)
+                val providerLabel = item.packageName.ifBlank {
+                    item.className.substringAfterLast('.').ifBlank { "Unknown provider" }
+                }
+                val label = android.widget.TextView(context).apply {
+                    text = "Widget unavailable\\n$providerLabel\\nRemove and add it again"
+                    gravity = android.view.Gravity.CENTER
+                    textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
+                    textSize = 12f
+                    setTextColor(android.graphics.Color.WHITE)
+                    val pad = (8 * context.resources.displayMetrics.density).toInt()
+                    setPadding(pad, pad, pad, pad)
+                }
+                addView(
+                    label,
+                    android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                )
+                setOnClickListener {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Widget needs to be rebound on this device.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                longPressListener = { x, y ->
+                    (context as? MainActivity)?.showHomeIconMenu(x, this.y, item, false)
+                    performHapticFeedback()
+                }
+                dragListener = { event, isUp -> activity.handleWidgetDrag(item, event, isUp) }
+                onIgnoreInterceptedListener = { hideResizeLines() }
+            }
+            val currentViewPosition = pager.getCurrentViewPositionInFullPageSpace() * width.toFloat()
+            val widgetPos = calculateWidgetPos(item.getTopLeft(rowCount))
+            placeholder.x = widgetPos.x + width * item.page - currentViewPosition
+            placeholder.y = widgetPos.y.toFloat()
+            val placeholderWidth = item.getWidthInCells() * cellWidth
+            val placeholderHeight = item.getHeightInCells() * cellHeight
+            addView(placeholder, placeholderWidth, placeholderHeight)
+            widgetViews.add(placeholder)
         }
     }
 
@@ -1565,7 +1615,7 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
         val widgetDpWidth = (widgetWidth / density).toInt()
         val widgetDpHeight = (widgetHeight / density).toInt()
 
-        if (widgetView !is BuiltInClockWidgetView) {
+        if (widgetView !is BuiltInClockWidgetView && widgetView !is UnavailableWidgetHostView) {
             val widgetPadding = (4 * density).toInt()
             widgetView.setPadding(widgetPadding, widgetPadding, widgetPadding, widgetPadding)
             widgetView.clipToPadding = false
@@ -3361,3 +3411,6 @@ private class AnimatedGridPager(
             }
     }
 }
+
+
+private class UnavailableWidgetHostView(context: android.content.Context) : MyAppWidgetHostView(context)
