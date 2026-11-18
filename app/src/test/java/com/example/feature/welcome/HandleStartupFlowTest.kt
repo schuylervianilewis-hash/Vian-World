@@ -29,6 +29,8 @@ class HandleStartupFlowTest {
 
     @Before
     fun setup() {
+        PageManager.resetForTesting()
+        HandleManager.resetForTesting()
         fakePrefs = InMemorySharedPreferences()
         fakeContext = FakeAppContext(fakePrefs)
     }
