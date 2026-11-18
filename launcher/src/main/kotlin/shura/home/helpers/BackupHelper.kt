@@ -13,6 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -28,7 +29,7 @@ import java.io.OutputStream
  */
 object BackupHelper {
     private const val TAG = "BackupHelper"
-    private const val CURRENT_SCHEMA_VERSION = 1
+    private const val CURRENT_SCHEMA_VERSION = 2
 
     fun exportBackup(context: Context, outputStream: OutputStream): Boolean {
         return try {
@@ -62,6 +63,8 @@ object BackupHelper {
                 put("gesturePinchInAction", config.gesturePinchInAction)
                 put("folderCoverMode", config.folderCoverMode)
                 put("gestureHaptics", config.gestureHaptics)
+                put("showNotificationBadges", config.showNotificationBadges)
+                put("drawerUseCustomWallpaper", config.drawerUseCustomWallpaper)
                 put("logKeeperEnabled", config.logKeeperEnabled)
             }
             root.put("config", configJson)
@@ -178,6 +181,16 @@ object BackupHelper {
             }
             root.put("custom_icons", customIconsJson)
 
+            // The custom drawer wallpaper is launcher-owned and portable. System
+            // wallpapers are OS-owned and are deliberately not exported.
+            val drawerWallpaperFile = WallpaperHelper.getDrawerWallpaperFile(context)
+            if (drawerWallpaperFile.isFile && drawerWallpaperFile.length() in 1..(8L * 1024L * 1024L)) {
+                root.put(
+                    "drawer_wallpaper_base64",
+                    Base64.encodeToString(drawerWallpaperFile.readBytes(), Base64.NO_WRAP)
+                )
+            }
+
             // Write JSON out
             val jsonString = root.toString(2)
             outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
@@ -222,7 +235,7 @@ object BackupHelper {
 
                 // Read grid items
                 val gridArray = root.optJSONArray("grid_items") ?: JSONArray()
-                val pendingItems = mutableListOf<HomeScreenGridItem>()
+                val pendingItems = mutableListOf<Pair<Long, HomeScreenGridItem>>()
 
                 for (i in 0 until gridArray.length()) {
                     val obj = gridArray.getJSONObject(i)
@@ -254,38 +267,44 @@ object BackupHelper {
                         title = obj.optString("title", ""),
                         type = obj.getInt("type"),
                         className = obj.optString("class_name", ""),
-                        widgetId = obj.optInt("widget_id", -1),
-                        shortcutId = obj.optString("shortcut_id", ""),
+                        // Android widget IDs and pinned-shortcut IDs are local to the
+                        // source installation. Keep the layout item but require a rebind.
+                        widgetId = -1,
+                        shortcutId = "",
                         icon = bitmap,
                         docked = obj.optBoolean("docked", false),
                         parentId = if (obj.has("parent_id") && !obj.isNull("parent_id")) obj.getLong("parent_id") else null
                     )
 
-                    if (item.type == ITEM_TYPE_FOLDER) {
-                        // Insert folder first so its new ID can be mapped to children
-                        val newId = gridDao.insert(item)
-                        if (oldId != 0L) {
-                            oldToNewIdMap[oldId] = newId
-                        }
-                    } else {
-                        pendingItems.add(item.apply {
-                            // Temporary store oldId in extra memory tag if needed
-                            if (oldId != 0L) {
-                                (this as java.lang.Object).hashCode() // no-op
-                            }
-                        })
-                    }
+                    pendingItems.add(oldId to item)
                 }
 
-                // Insert child items with remapped folder parentId
-                for (item in pendingItems) {
-                    val oldParent = item.parentId
-                    if (oldParent != null && oldToNewIdMap.containsKey(oldParent)) {
-                        item.parentId = oldToNewIdMap[oldParent]
+                // Insert parents before children and build a complete old-ID -> new-ID
+                // map for every restored row. This avoids package-name fallbacks that
+                // could bind a gesture to the wrong duplicate app icon.
+                val remainingItems = pendingItems.toMutableList()
+                while (remainingItems.isNotEmpty()) {
+                    val readyItems = remainingItems.filter { (_, pendingItem) ->
+                        val parentId = pendingItem.parentId
+                        parentId == null ||
+                            oldToNewIdMap.containsKey(parentId) ||
+                            remainingItems.none { it.first == parentId }
                     }
-                    val newId = gridDao.insert(item)
-                    // If we had old item id mapped
-                    // Map by coordinates & package signature for gesture re-linking
+                    if (readyItems.isEmpty()) {
+                        // Break malformed/cyclic parent references safely instead of
+                        // losing the item or creating an invalid foreign-key relation.
+                        val (oldId, pendingItem) = remainingItems.removeAt(0)
+                        pendingItem.parentId = null
+                        val newId = gridDao.insert(pendingItem)
+                        if (oldId != 0L) oldToNewIdMap[oldId] = newId
+                    } else {
+                        readyItems.forEach { (oldId, pendingItem) ->
+                            pendingItem.parentId = pendingItem.parentId?.let { oldToNewIdMap[it] }
+                            val newId = gridDao.insert(pendingItem)
+                            if (oldId != 0L) oldToNewIdMap[oldId] = newId
+                            remainingItems.remove(oldId to pendingItem)
+                        }
+                    }
                 }
 
                 // 2. Restore Item Gestures
@@ -312,20 +331,14 @@ object BackupHelper {
                             swipeDownPackage = gObj.optString("swipeDownPackage", ""),
                             swipeLeftPackage = gObj.optString("swipeLeftPackage", ""),
                             swipeRightPackage = gObj.optString("swipeRightPackage", ""),
-                            linkedWidgetId = gObj.optInt("linkedWidgetId", -1),
+                            // Widget IDs cannot be reused across installations.
+                            linkedWidgetId = -1,
                             linkedWidgetProvider = gObj.optString("linkedWidgetProvider", "")
                         )
 
                         val newId = oldToNewIdMap[oldId]
                         if (newId != null) {
                             restoredGestures[newId] = config
-                        } else {
-                            // If direct mapping not found, match by first item with matching targetPackage or coordinates
-                            val match = allNewItems.firstOrNull { it.packageName == config.targetPackage && it.packageName.isNotEmpty() }
-                            val matchedId = match?.id
-                            if (matchedId != null) {
-                                restoredGestures[matchedId] = config
-                            }
                         }
                     }
                 }
@@ -393,6 +406,8 @@ object BackupHelper {
                 if (configJson.has("gesturePinchInAction")) config.gesturePinchInAction = configJson.getString("gesturePinchInAction")
                 if (configJson.has("folderCoverMode")) config.folderCoverMode = configJson.getBoolean("folderCoverMode")
                 if (configJson.has("gestureHaptics")) config.gestureHaptics = configJson.getBoolean("gestureHaptics")
+                if (configJson.has("showNotificationBadges")) config.showNotificationBadges = configJson.getBoolean("showNotificationBadges")
+                if (configJson.has("drawerUseCustomWallpaper")) config.drawerUseCustomWallpaper = configJson.getBoolean("drawerUseCustomWallpaper")
                 config.wasHomeScreenInit = true
                 config.wasDefaultClockAdded = true
             }
@@ -400,6 +415,10 @@ object BackupHelper {
             // 6. Restore Custom Icons
             val customIconsJson = root.optJSONObject("custom_icons")
             if (customIconsJson != null) {
+                val customIconsDir = File(context.filesDir, "custom_icons")
+                if (!customIconsDir.exists()) customIconsDir.mkdirs()
+                customIconsDir.listFiles()?.filter { it.isFile && it.extension.equals("png", ignoreCase = true) }
+                    ?.forEach { it.delete() }
                 val keys = customIconsJson.keys()
                 while (keys.hasNext()) {
                     val pkgName = keys.next()
@@ -424,6 +443,27 @@ object BackupHelper {
                         LogCatcher.log(TAG, "Failed to restore custom icon for $pkgName", e)
                     }
                 }
+            }
+
+            // Restore the launcher-owned drawer wallpaper only when the archive
+            // explicitly carries this field. Older schema-1 backups remain compatible.
+            if (root.has("drawer_wallpaper_base64")) {
+                val encoded = root.optString("drawer_wallpaper_base64", "")
+                val bytes = if (encoded.isNotBlank()) Base64.decode(encoded, Base64.NO_WRAP) else ByteArray(0)
+                require(bytes.size <= 8 * 1024 * 1024) { "Drawer wallpaper is too large" }
+                if (bytes.isNotEmpty()) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth in 1..4096 && bounds.outHeight in 1..4096) {
+                        "Invalid drawer wallpaper image"
+                    }
+                    FileOutputStream(WallpaperHelper.getDrawerWallpaperFile(context)).use { it.write(bytes) }
+                    Config(context).drawerUseCustomWallpaper = true
+                } else {
+                    WallpaperHelper.removeDrawerWallpaper(context)
+                }
+            } else if (root.optJSONObject("config")?.optBoolean("drawerUseCustomWallpaper", true) == false) {
+                WallpaperHelper.removeDrawerWallpaper(context)
             }
 
             // Evict in-memory icon and app caches, reload app locks
