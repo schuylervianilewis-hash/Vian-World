@@ -213,10 +213,14 @@ object BackupHelper {
             val root = JSONObject(jsonString)
 
             val schemaVersion = root.optInt("schema_version", 1)
-            if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+            if (schemaVersion !in 1..CURRENT_SCHEMA_VERSION) {
                 LogCatcher.log(TAG, "Unsupported backup schema version: $schemaVersion")
                 return false
             }
+
+            // Validate the entire portable launcher payload before clearing any tables.
+            validateBackupPayload(root)
+            val gridArray = root.optJSONArray("grid_items") ?: JSONArray()
 
             val db = AppsDatabase.getInstance(context)
 
@@ -234,7 +238,6 @@ object BackupHelper {
                 val oldToNewIdMap = mutableMapOf<Long, Long>()
 
                 // Read grid items
-                val gridArray = root.optJSONArray("grid_items") ?: JSONArray()
                 val pendingItems = mutableListOf<Pair<Long, HomeScreenGridItem>>()
 
                 for (i in 0 until gridArray.length()) {
@@ -477,6 +480,81 @@ object BackupHelper {
         } catch (e: Exception) {
             LogCatcher.log(TAG, "Failed to import backup", e)
             false
+        }
+    }
+
+    internal fun validateBackupPayload(root: JSONObject) {
+        val grid = root.optJSONArray("grid_items") ?: error("Launcher grid data is missing")
+        require(grid.length() <= 10000) { "Launcher backup has too many grid items" }
+        val ids = mutableSetOf<Long>()
+        for (index in 0 until grid.length()) {
+            val item = grid.optJSONObject(index) ?: error("Invalid Launcher grid item")
+            val id = item.optLong("id", 0L)
+            require(id > 0L && ids.add(id)) { "Invalid or duplicate Launcher item ID" }
+            require(item.optInt("left", -1) in 0..10000 && item.optInt("right", -1) in 0..10000) {
+                "Invalid Launcher item horizontal position"
+            }
+            require(item.optInt("top", -1) in 0..10000 && item.optInt("bottom", -1) in 0..10000) {
+                "Invalid Launcher item vertical position"
+            }
+            require(item.optInt("page", -1) in 0..1000) { "Invalid Launcher item page" }
+            require(item.optString("package_name").length <= 255) { "Launcher package name is too long" }
+            require(item.optString("activity_name").length <= 512) { "Launcher activity name is too long" }
+            require(item.optString("class_name").length <= 512) { "Launcher class name is too long" }
+            require(item.optString("title").length <= 200) { "Launcher item title is too long" }
+            require(item.optString("icon_base64").length <= 1_400_000) { "Launcher item icon is too large" }
+            if (item.has("parent_id") && !item.isNull("parent_id"))
+                require(item.optLong("parent_id", -1L) > 0L) { "Invalid Launcher folder parent ID" }
+        }
+
+        val gestures = root.optJSONObject("item_gestures") ?: JSONObject()
+        require(gestures.length() <= 10000) { "Too many Launcher gesture records" }
+        val gestureKeys = gestures.keys()
+        while (gestureKeys.hasNext()) {
+            val key = gestureKeys.next()
+            val id = key.toLongOrNull() ?: error("Invalid Launcher gesture item ID")
+            require(id in ids) { "Launcher gesture refers to a missing item" }
+            val config = gestures.optJSONObject(key) ?: error("Invalid Launcher gesture record")
+            for (actionKey in listOf(
+                    "doubleTapAction", "swipeUpAction", "swipeDownAction",
+                    "swipeLeftAction", "swipeRightAction", "targetPackage",
+                    "doubleTapPackage", "swipeUpPackage", "swipeDownPackage",
+                    "swipeLeftPackage", "swipeRightPackage", "linkedWidgetProvider"
+                )) {
+                require(config.optString(actionKey).length <= 512) { "Launcher gesture field is too long" }
+            }
+        }
+
+        val hidden = root.optJSONArray("hidden_icons") ?: JSONArray()
+        val locked = root.optJSONArray("locked_apps") ?: JSONArray()
+        require(hidden.length() <= 5000 && locked.length() <= 5000) { "Too many Launcher app records" }
+        for (index in 0 until hidden.length()) {
+            val item = hidden.opt(index)
+            val packageName = if (item is JSONObject) item.optString("packageName") else item.toString()
+            require(packageName.length in 1..255) { "Invalid hidden app package" }
+        }
+        for (index in 0 until locked.length()) {
+            val item = locked.opt(index)
+            val packageName = if (item is JSONObject) item.optString("packageName") else item.toString()
+            require(packageName.length in 1..255) { "Invalid locked app package" }
+        }
+
+        val renames = root.optJSONObject("drawer_renames") ?: JSONObject()
+        require(renames.length() <= 10000) { "Too many Launcher rename records" }
+        val renameKeys = renames.keys()
+        while (renameKeys.hasNext())
+            require(renames.optString(renameKeys.next()).length <= 200) { "Launcher rename is too long" }
+
+        val customIcons = root.optJSONObject("custom_icons") ?: JSONObject()
+        require(customIcons.length() <= 1000) { "Too many Launcher custom icons" }
+        val iconKeys = customIcons.keys()
+        while (iconKeys.hasNext())
+            require(customIcons.optString(iconKeys.next()).length <= 1_400_000) { "Launcher custom icon is too large" }
+
+        val config = root.optJSONObject("config") ?: error("Launcher configuration is missing")
+        require(config.length() <= 100) { "Launcher configuration is invalid" }
+        require(root.optString("drawer_wallpaper_base64").length <= 12_000_000) {
+            "Launcher drawer wallpaper is too large"
         }
     }
 
