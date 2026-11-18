@@ -8,6 +8,7 @@ import org.junit.Test
 class BackupHelperValidationTest {
     private fun item(id: Long) = JSONObject()
         .put("id", id)
+        .put("type", 0)
         .put("left", 0)
         .put("right", 1)
         .put("top", 0)
