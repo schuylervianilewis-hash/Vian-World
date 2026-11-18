@@ -63,6 +63,9 @@ object ModularBackupArchive {
             encodedPayloads[modulePaths.getValue(moduleId)] = bytes
         }
 
+        require(encodedPayloads.values.sumOf { it.size.toLong() } <= MAX_TOTAL_BYTES) {
+            "Selected backup modules exceed the archive size limit"
+        }
         val checksums = JSONObject()
         encodedPayloads.forEach { (path, bytes) -> checksums.put(path, sha256(bytes)) }
 
