@@ -199,6 +199,8 @@ object SidebarBackupModule {
                 ).forEach(editor::remove)
                 HandleGestures.ALL.forEach { gesture ->
                     editor.remove(HandleManager.getGesturePrefKey(staleIndex, gesture))
+                    val staleContainer = HandleManager.getContainerId(id, gesture)
+                    editor.remove("handle_${staleContainer}_pages")
                 }
             }
             restoredIds.distinct().toMutableList()
