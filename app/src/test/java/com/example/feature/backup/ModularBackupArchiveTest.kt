@@ -24,7 +24,10 @@ class ModularBackupArchiveTest {
 
         val parsed = ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()))
 
+        assertEquals("com.example.vianworld.test", parsed.applicationId)
         assertEquals("test-version", parsed.appVersion)
+        assertEquals(42L, parsed.versionCode)
+        assertEquals("debug", parsed.buildType)
         assertEquals(setOf("launcher", "sidebar"), parsed.modules.keys)
         assertEquals(2, parsed.modules.getValue("launcher").getInt("schema_version"))
         assertEquals(1, parsed.moduleSchemaVersions.getValue("sidebar"))
