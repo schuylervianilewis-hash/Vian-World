@@ -542,14 +542,24 @@ object BackupHelper {
         val renames = root.optJSONObject("drawer_renames") ?: JSONObject()
         require(renames.length() <= 10000) { "Too many Launcher rename records" }
         val renameKeys = renames.keys()
-        while (renameKeys.hasNext())
-            require(renames.optString(renameKeys.next()).length <= 200) { "Launcher rename is too long" }
+        while (renameKeys.hasNext()) {
+            val key = renameKeys.next()
+            require(key.matches(Regex("^[A-Za-z0-9._-]{1,255}$")) && !key.contains("..")) {
+                "Invalid Launcher rename package key"
+            }
+            require(renames.optString(key).length <= 200) { "Launcher rename is too long" }
+        }
 
         val customIcons = root.optJSONObject("custom_icons") ?: JSONObject()
         require(customIcons.length() <= 1000) { "Too many Launcher custom icons" }
         val iconKeys = customIcons.keys()
-        while (iconKeys.hasNext())
-            require(customIcons.optString(iconKeys.next()).length <= 1_400_000) { "Launcher custom icon is too large" }
+        while (iconKeys.hasNext()) {
+            val key = iconKeys.next()
+            require(key.matches(Regex("^[A-Za-z0-9._-]{1,255}$")) && !key.contains("..")) {
+                "Invalid Launcher custom icon key"
+            }
+            require(customIcons.optString(key).length <= 1_400_000) { "Launcher custom icon is too large" }
+        }
 
         val config = root.optJSONObject("config") ?: error("Launcher configuration is missing")
         require(config.length() <= 100) { "Launcher configuration is invalid" }
