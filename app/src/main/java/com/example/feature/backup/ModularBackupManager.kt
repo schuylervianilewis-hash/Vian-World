@@ -61,8 +61,8 @@ object ModularBackupManager {
         )
     }
 
-    fun inspect(input: ByteArrayInputStream): ModularBackupArchive.Parsed =
-        ModularBackupArchive.read(input)
+    fun inspect(context: Context, input: ByteArrayInputStream): ModularBackupArchive.Parsed =
+        ModularBackupArchive.read(input, context.packageName)
 
     fun restore(
         context: Context,
