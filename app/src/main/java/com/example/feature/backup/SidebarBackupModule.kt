@@ -281,6 +281,7 @@ object SidebarBackupModule {
         val wrapKey = "handle_${containerId}_sidebar_wrap_content"
 
         val gridJson = prefs.getString(gridKey, null)
+            ?: prefs.getString("${containerId}_hybrid_grid_${HOME_PAGE_ID}", null)
             ?: prefs.getString(legacyGridKey, null).takeIf { containerId == "handle_1_swipe_left" || containerId == "sidebar" }
         val elementsJson = prefs.getString(elementsKey, null)
             ?: prefs.getString(legacyElementsKey, null).takeIf { containerId == "handle_1_swipe_left" || containerId == "sidebar" }
@@ -293,13 +294,21 @@ object SidebarBackupModule {
             result.put("elementsJson", elementsJson)
             result.put("elementMetadata", exportElementMetadata(context, elementsJson))
         }
-        if (prefs.contains(columnsKey)) result.put("columns", prefs.getInt(columnsKey, 3))
+        if (prefs.contains(columnsKey)) result.put("columns", prefs.getInt(columnsKey, 4))
         if (prefs.contains(modifiedKey)) result.put("modified", prefs.getBoolean(modifiedKey, false))
         if (prefs.contains(wrapKey)) result.put("wrapContent", prefs.getBoolean(wrapKey, true))
+        val heightKey = "handle_${containerId}_hybrid_grid_height_${HOME_PAGE_ID}"
+        if (prefs.contains(heightKey)) result.put("height", prefs.getInt(heightKey, 0))
         val colorKey = "handle_${containerId}_sidebar_color"
         val transparencyKey = "handle_${containerId}_sidebar_transparency"
-        if (prefs.contains(colorKey)) result.put("sidebarColor", prefs.getString(colorKey, null))
-        if (prefs.contains(transparencyKey)) result.put("sidebarTransparency", prefs.getFloat(transparencyKey, 0.9f).toDouble())
+        val color = prefs.getString(colorKey, null) ?: prefs.getString("sidebar_color", null)
+        val transparency = if (prefs.contains(transparencyKey)) {
+            prefs.getFloat(transparencyKey, 0.9f)
+        } else {
+            prefs.getFloat("sidebar_transparency", 0.9f).takeIf { prefs.contains("sidebar_transparency") }
+        }
+        if (color != null) result.put("sidebarColor", color)
+        if (transparency != null) result.put("sidebarTransparency", transparency.toDouble())
         return result
     }
 
@@ -342,6 +351,7 @@ object SidebarBackupModule {
         val columnsKey = "handle_${containerId}_hybrid_grid_cols_${HOME_PAGE_ID}"
         val modifiedKey = "handle_${containerId}_hybrid_grid_modified_${HOME_PAGE_ID}"
         val wrapKey = "handle_${containerId}_sidebar_wrap_content"
+        val heightKey = "handle_${containerId}_hybrid_grid_height_${HOME_PAGE_ID}"
 
         if (homeGrid.has("gridJson")) editor.putString(gridKey, homeGrid.getString("gridJson"))
         if (homeGrid.has("elementsJson")) {
@@ -352,6 +362,7 @@ object SidebarBackupModule {
         if (homeGrid.has("columns")) editor.putInt(columnsKey, homeGrid.getInt("columns").coerceIn(1, 12))
         if (homeGrid.has("modified")) editor.putBoolean(modifiedKey, homeGrid.getBoolean("modified"))
         if (homeGrid.has("wrapContent")) editor.putBoolean(wrapKey, homeGrid.getBoolean("wrapContent"))
+        if (homeGrid.has("height")) editor.putInt(heightKey, homeGrid.getInt("height").coerceIn(0, 2000))
         if (homeGrid.has("sidebarColor") && !homeGrid.isNull("sidebarColor")) {
             val color = homeGrid.getString("sidebarColor")
             require(color.length <= 32) { "Invalid Home Grid color" }
