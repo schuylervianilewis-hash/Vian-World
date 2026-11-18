@@ -281,7 +281,7 @@ object ItemGestureManager {
     }
 
     private fun saveToFileAsync(context: Context) {
-        ensureBackgroundThread { saveToFile(context) }
+        ensureBackgroundThread { runCatching { saveToFile(context) } }
     }
 
     private fun saveToFile(context: Context) {
