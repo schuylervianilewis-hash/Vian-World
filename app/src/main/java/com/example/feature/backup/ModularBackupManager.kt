@@ -31,7 +31,9 @@ object ModularBackupManager {
 
         val payloads = linkedMapOf<String, JSONObject>()
         selectedModules.sorted().forEach { module ->
-            payloads[module] = exportModule(context, module)
+            val payload = exportModule(context, module)
+            validateModule(module, payload)
+            payloads[module] = payload
         }
         ModularBackupArchive.write(output, com.example.BuildConfig.VERSION_NAME, payloads)
     }
@@ -51,12 +53,7 @@ object ModularBackupManager {
 
         // Validate every selected module before taking snapshots or applying any writes.
         selectedModules.forEach { module ->
-            val payload = archive.modules.getValue(module)
-            when (module) {
-                ModularBackupArchive.MODULE_LAUNCHER -> validateLauncher(payload)
-                ModularBackupArchive.MODULE_FIREWALL -> ModularFirewallBackup.validate(payload)
-                ModularBackupArchive.MODULE_SIDEBAR -> SidebarBackupModule.validate(payload)
-            }
+            validateModule(module, archive.modules.getValue(module))
         }
 
         val snapshots = linkedMapOf<String, JSONObject>()
@@ -93,6 +90,15 @@ object ModularBackupManager {
                 }
             }
             throw IllegalStateException(detail, failure)
+        }
+    }
+
+    private fun validateModule(module: String, payload: JSONObject) {
+        when (module) {
+            ModularBackupArchive.MODULE_LAUNCHER -> validateLauncher(payload)
+            ModularBackupArchive.MODULE_FIREWALL -> ModularFirewallBackup.validate(payload)
+            ModularBackupArchive.MODULE_SIDEBAR -> SidebarBackupModule.validate(payload)
+            else -> error("Unsupported backup module: $module")
         }
     }
 
