@@ -284,12 +284,13 @@ object BackupHelper {
                         // Never reuse the source AppWidget ID. A unique negative
                         // sentinel keeps the layout row identifiable until bindWidget
                         // allocates a fresh ID or displays the unavailable-widget tile.
-                        widgetId = if (obj.optInt("type", -1) == ITEM_TYPE_WIDGET) {
-                            obj.optInt("widget_id", -1).let { sourceId ->
-                                if (sourceId >= 0) -((oldId % 100000L).toInt() + 100) else -1
+                        widgetId = obj.optInt("widget_id", -1).let { sourceId ->
+                            if (obj.optInt("type", -1) == ITEM_TYPE_WIDGET && sourceId >= 0) {
+                                -((oldId % 100000L).toInt() + 100)
+                            } else {
+                                // Non-Android popup-widget IDs remain app-owned metadata.
+                                sourceId
                             }
-                        } else {
-                            -1
                         },
                         // Sidebar element references are app-owned IDs, not Android
                         // pinned-shortcut IDs. Preserve those; clear only system shortcut IDs.
