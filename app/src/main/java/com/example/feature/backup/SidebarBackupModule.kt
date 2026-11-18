@@ -89,7 +89,7 @@ object SidebarBackupModule {
             val id = item.optString("id")
             require(handleIdPattern.matches(id) && seen.add(id)) { "Invalid or duplicate handle ID" }
             require(item.optString("name").length <= 100) { "Handle name is too long" }
-            require(item.optDouble("position", 0.5) in 0.05..0.95) { "Invalid handle position" }
+            require(item.optDouble("position", 0.5) in 0.0..1.0) { "Invalid handle position" }
             require(item.optInt("widthDp", 12) in 4..200) { "Invalid handle width" }
             require(item.optInt("heightDp", 120) in 4..400) { "Invalid handle height" }
             require(item.optInt("alphaPercent", 14) in 0..100) { "Invalid handle alpha" }
@@ -222,7 +222,7 @@ object SidebarBackupModule {
             editor.putString("handle_name_$index", item.optString("name", "Handle $index").take(100))
             editor.putBoolean("handle_enabled_$index", item.optBoolean("enabled", true))
             editor.putString("handle_edge_$index", edge.name)
-            editor.putFloat("handle_pos_$index", item.optDouble("position", 0.5).toFloat().coerceIn(0.05f, 0.95f))
+            editor.putFloat("handle_pos_$index", item.optDouble("position", 0.5).toFloat().coerceIn(0.0f, 1.0f))
             editor.putInt("handle_width_$index", item.optInt("widthDp", 12).coerceIn(4, 200))
             editor.putInt("handle_height_$index", item.optInt("heightDp", 120).coerceIn(4, 400))
             editor.putInt("handle_color_$index", item.optInt("color", Color.parseColor("#242962ff")))
