@@ -194,7 +194,23 @@ object SidebarBackupModule {
         val warnings = mutableListOf<String>()
         restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
         restorePageMetadata(context, payload.getJSONArray("pages"), exactRollback, warnings)
-        restoreResidentHomeGrid(context, payload.getJSONObject("homeGrid"))
+        val homeGrid = payload.getJSONObject("homeGrid")
+        val gridItems = runCatching { JSONArray(homeGrid.optString("gridJson", "[]")) }.getOrDefault(JSONArray())
+        if ((0 until gridItems.length()).any { gridItems.optJSONObject(it)?.optString("id")?.startsWith("widget:") == true }) {
+            warnings.add("A Sidebar Android widget placement was preserved; remove and add the widget again to bind it on this device.")
+        }
+        val elementMetadata = homeGrid.optJSONArray("elementMetadata") ?: JSONArray()
+        for (index in 0 until elementMetadata.length()) {
+            val item = elementMetadata.optJSONObject(index) ?: continue
+            if (item.optString("type") != "app") continue
+            val packageName = item.optString("target")
+            if (packageName.isNotBlank() && runCatching {
+                    context.packageManager.getApplicationInfo(packageName, 0)
+                }.isFailure) {
+                warnings.add("Sidebar Home Grid app is not installed: $packageName")
+            }
+        }
+        restoreResidentHomeGrid(context, homeGrid)
         OverlaySyncManager.triggerReload(context)
         return warnings
     }
