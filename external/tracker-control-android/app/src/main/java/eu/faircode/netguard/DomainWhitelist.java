@@ -57,6 +57,24 @@ public final class DomainWhitelist {
         return domains;
     }
 
+    /**
+     * Replaces the saved allowlist with a normalized, deduplicated snapshot.
+     * Intended for validated backup restore; invalid entries are ignored.
+     */
+    public void replaceDomains(Set<String> values) {
+        synchronized (lock) {
+            Set<String> normalized = new TreeSet<>();
+            if (values != null) {
+                for (String value : values) {
+                    String domain = BlockedDomainLogic.normalize(value);
+                    if (domain != null)
+                        normalized.add(domain);
+                }
+            }
+            publish(normalized);
+        }
+    }
+
     /** Adds a normalized domain. Returns false for invalid or duplicate input. */
     public boolean addDomain(String hostname) {
         String normalized = BlockedDomainLogic.normalize(hostname);
