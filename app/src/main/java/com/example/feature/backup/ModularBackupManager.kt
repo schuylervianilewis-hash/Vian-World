@@ -120,7 +120,7 @@ object ModularBackupManager {
                     "Launcher restore failed"
                 }
             }
-            ModularBackupArchive.MODULE_FIREWALL -> ModularFirewallBackup.restore(context, payload)
+            ModularBackupArchive.MODULE_FIREWALL -> ModularFirewallBackup.restore(context, payload, exactRollback)
             ModularBackupArchive.MODULE_SIDEBAR -> SidebarBackupModule.restore(context, payload, exactRollback)
             else -> error("Unsupported backup module: $module")
         }
