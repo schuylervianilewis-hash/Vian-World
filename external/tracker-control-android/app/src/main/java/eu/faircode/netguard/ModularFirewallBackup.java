@@ -180,12 +180,13 @@ public final class ModularFirewallBackup {
         return root;
     }
 
-    public static void restore(Context context, JSONObject payload) throws JSONException {
-        restore(context, payload, false);
+    public static List<String> restore(Context context, JSONObject payload) throws JSONException {
+        return restore(context, payload, false);
     }
 
-    public static void restore(Context context, JSONObject payload, boolean exactRollback) throws JSONException {
+    public static List<String> restore(Context context, JSONObject payload, boolean exactRollback) throws JSONException {
         validate(payload);
+        List<String> warnings = new ArrayList<>();
 
         SharedPreferences defaults = PreferenceManager.getDefaultSharedPreferences(context);
         JSONObject application = payload.getJSONObject("application");
@@ -230,14 +231,15 @@ public final class ModularFirewallBackup {
             domainSet.add(domains.getString(i));
         DomainWhitelist.getInstance(context).replaceDomains(domainSet);
 
-        restoreBlocklists(context, payload.getJSONObject("blocklists"), exactRollback);
-        restoreForwarding(context, payload.getJSONArray("forwarding"));
+        restoreBlocklists(context, payload.getJSONObject("blocklists"), exactRollback, warnings);
+        restoreForwarding(context, payload.getJSONArray("forwarding"), warnings);
 
         TrackerBlocklist.getInstance(context).loadSettings(context);
         InternetBlocklist.getInstance(context).loadSettings(context);
         BlockingMode.applyMode(context);
         DatabaseHelper.clearCache();
         ServiceSinkhole.reload("modular backup restore", context, false);
+        return warnings;
     }
 
     private static JSONObject encodeValue(Object value) throws JSONException {
@@ -358,7 +360,7 @@ public final class ModularFirewallBackup {
     }
 
     private static void restoreBlocklists(
-            Context context, JSONObject blocklists, boolean exactRollback) throws JSONException {
+            Context context, JSONObject blocklists, boolean exactRollback, List<String> warnings) throws JSONException {
         SharedPreferences prefs = context.getSharedPreferences(TrackerBlocklist.PREF_BLOCKLIST, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         if (exactRollback) {
@@ -369,17 +371,20 @@ public final class ModularFirewallBackup {
                     editor.remove(key);
         }
         editor.putStringSet(InternetBlocklist.SHARED_PREFS_INTERNET_BLOCKLIST_APPS_KEY,
-                resolvePackageSet(context, blocklists.getJSONArray("internetPackages")));
+                resolvePackageSet(context, blocklists.getJSONArray("internetPackages"), "Internet blocklist", warnings));
         editor.putStringSet(TrackerBlocklist.SHARED_PREFS_BLOCKLIST_APPS_KEY,
-                resolvePackageSet(context, blocklists.getJSONArray("trackerPackages")));
+                resolvePackageSet(context, blocklists.getJSONArray("trackerPackages"), "Tracker blocklist", warnings));
 
         JSONObject subsets = blocklists.optJSONObject("trackerSubsets");
         if (subsets != null) {
             for (java.util.Iterator<String> it = subsets.keys(); it.hasNext();) {
                 String packageName = it.next();
                 Integer uid = resolveUid(context, packageName);
-                String storageKey = TrackerBlocklist.SHARED_PREFS_BLOCKLIST_APPS_KEY + "_" +
-                        (uid == null ? packageName : Integer.toString(uid));
+                if (uid == null) {
+                    warnings.add("Skipped tracker categories for app not installed: " + packageName);
+                    continue;
+                }
+                String storageKey = TrackerBlocklist.SHARED_PREFS_BLOCKLIST_APPS_KEY + "_" + uid;
                 JSONArray values = subsets.getJSONArray(packageName);
                 Set<String> subset = new LinkedHashSet<>();
                 for (int i = 0; i < values.length(); i++)
@@ -391,14 +396,18 @@ public final class ModularFirewallBackup {
             throw new IllegalStateException("Could not restore Firewall blocklist settings");
     }
 
-    private static Set<String> resolvePackageSet(Context context, JSONArray packages) {
+    private static Set<String> resolvePackageSet(
+            Context context, JSONArray packages, String listName, List<String> warnings) {
         Set<String> result = new LinkedHashSet<>();
         for (int i = 0; i < packages.length(); i++) {
             String packageName = packages.optString(i, "");
-            if (isPackageKey(packageName)) {
-                Integer uid = resolveUid(context, packageName);
-                result.add(uid == null ? packageName : Integer.toString(uid));
-            }
+            if (!isPackageKey(packageName))
+                continue;
+            Integer uid = resolveUid(context, packageName);
+            if (uid == null)
+                warnings.add("Skipped " + listName + " entry for app not installed: " + packageName);
+            else
+                result.add(Integer.toString(uid));
         }
         return result;
     }
@@ -446,14 +455,17 @@ public final class ModularFirewallBackup {
         return result;
     }
 
-    private static void restoreForwarding(Context context, JSONArray records) throws JSONException {
+    private static void restoreForwarding(
+            Context context, JSONArray records, List<String> warnings) throws JSONException {
         List<Forward> forwards = new ArrayList<>();
         for (int i = 0; i < records.length(); i++) {
             JSONObject item = records.getJSONObject(i);
             String packageName = item.getString("package");
             Integer uid = resolveUid(context, packageName);
-            if (uid == null)
-                continue; // The destination app is not installed on this device.
+            if (uid == null) {
+                warnings.add("Skipped forwarding rule for app not installed: " + packageName);
+                continue;
+            }
             Forward forward = new Forward();
             forward.protocol = item.getInt("protocol");
             forward.dport = item.getInt("destinationPort");
