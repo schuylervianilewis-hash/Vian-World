@@ -193,7 +193,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
                         params.x = initialX + dx.toInt()
                         params.y = initialY + dy.toInt()
                         try {
-                            windowManager.updateViewLayout(root, params)
+                            OverlayWindowRegistry.updateViewLayout(windowManager, root, params)
                         } catch (e: Exception) {}
                     }
                     isDragging
@@ -352,7 +352,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
         if (params != null && root != null) {
             params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             try {
-                windowManager.updateViewLayout(root, params)
+                OverlayWindowRegistry.updateViewLayout(windowManager, root, params)
             } catch (e: Exception) {}
         }
 
@@ -400,7 +400,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
         if (params != null && root != null) {
             params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             try {
-                windowManager.updateViewLayout(root, params)
+                OverlayWindowRegistry.updateViewLayout(windowManager, root, params)
             } catch (e: Exception) {}
         }
     }

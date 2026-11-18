@@ -364,23 +364,23 @@ object PrivacyCurtainManager {
 
         try {
             topPanel?.let {
-                wm.updateViewLayout(it, createPanelParams(0, 0, screenWidth, windowRect.top))
+                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(0, 0, screenWidth, windowRect.top))
             }
             bottomPanel?.let {
-                wm.updateViewLayout(it, createPanelParams(0, windowRect.bottom, screenWidth, max(0, screenHeight - windowRect.bottom)))
+                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(0, windowRect.bottom, screenWidth, max(0, screenHeight - windowRect.bottom)))
             }
             leftPanel?.let {
-                wm.updateViewLayout(it, createPanelParams(0, windowRect.top, windowRect.left, windowRect.height()))
+                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(0, windowRect.top, windowRect.left, windowRect.height()))
             }
             rightPanel?.let {
-                wm.updateViewLayout(it, createPanelParams(windowRect.right, windowRect.top, max(0, screenWidth - windowRect.right), windowRect.height()))
+                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(windowRect.right, windowRect.top, max(0, screenWidth - windowRect.right), windowRect.height()))
             }
             controlPill?.let {
                 val pillY = if (windowRect.top > 54) windowRect.top - 46 else windowRect.bottom + 8
-                wm.updateViewLayout(it, createInteractiveParams(windowRect.left + 8, pillY, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT))
+                OverlayWindowRegistry.updateViewLayout(wm, it, createInteractiveParams(windowRect.left + 8, pillY, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT))
             }
             resizeHandle?.let {
-                wm.updateViewLayout(it, createInteractiveParams(windowRect.right - 36, windowRect.bottom - 36, 36, 36))
+                OverlayWindowRegistry.updateViewLayout(wm, it, createInteractiveParams(windowRect.right - 36, windowRect.bottom - 36, 36, 36))
             }
         } catch (e: Exception) {
             e.printStackTrace()

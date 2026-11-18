@@ -408,7 +408,7 @@ class CursorManager(
         }
 
         try {
-            windowManager?.updateViewLayout(trackpadView, params)
+            windowManager?.let { wm -> trackpadView?.let { OverlayWindowRegistry.updateViewLayout(wm, it, params) } }
         } catch (_: Exception) {}
     }
 
@@ -417,7 +417,7 @@ class CursorManager(
         params.x = pointerX.toInt()
         params.y = pointerY.toInt()
         try {
-            windowManager?.updateViewLayout(pointerView, params)
+            windowManager?.let { wm -> pointerView?.let { OverlayWindowRegistry.updateViewLayout(wm, it, params) } }
         } catch (_: Exception) {}
 
         clickRippleView?.let { ripple ->
@@ -427,7 +427,7 @@ class CursorManager(
             rParams.x = (pointerX - sizePx / 2f).toInt()
             rParams.y = (pointerY - sizePx / 2f).toInt()
             try {
-                windowManager?.updateViewLayout(ripple, rParams)
+                windowManager?.let { wm -> OverlayWindowRegistry.updateViewLayout(wm, ripple, rParams) }
             } catch (_: Exception) {}
         }
     }
@@ -529,7 +529,7 @@ class CursorManager(
             params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         }
         try {
-            wm.updateViewLayout(view, params)
+            OverlayWindowRegistry.updateViewLayout(wm, view, params)
         } catch (_: Exception) {}
     }
 

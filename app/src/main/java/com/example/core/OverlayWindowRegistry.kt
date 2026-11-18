@@ -12,7 +12,7 @@ object OverlayWindowRegistry {
     private data class Entry(
         val manager: WindowManager,
         val view: View,
-        val params: WindowManager.LayoutParams,
+        var params: WindowManager.LayoutParams,
         var attached: Boolean = false,
         var restore: Boolean = true
     )
@@ -23,6 +23,7 @@ object OverlayWindowRegistry {
     fun addView(context: Context, manager: WindowManager, view: View,
         params: WindowManager.LayoutParams): Boolean {
         val entry = entries[view] ?: Entry(manager, view, params).also { entries[view] = it }
+        entry.params = params
         entry.restore = true
         if (suppressed || OverlayAccessPolicy.isForegroundExcluded(context)) {
             suppressed = true
@@ -46,6 +47,21 @@ object OverlayWindowRegistry {
                     "Unable to attach ${view.javaClass.simpleName}", error)
                 false
             }
+        }
+    }
+
+    @Synchronized
+    fun updateViewLayout(manager: WindowManager?, view: View, params: WindowManager.LayoutParams) {
+        val entry = entries[view]
+        if (entry != null) {
+            entry.params = params
+            if (entry.attached && view.isAttachedToWindow) {
+                entry.manager.updateViewLayout(view, params)
+            } else {
+                entry.attached = false
+            }
+        } else if (manager != null && view.isAttachedToWindow) {
+            manager.updateViewLayout(view, params)
         }
     }
 

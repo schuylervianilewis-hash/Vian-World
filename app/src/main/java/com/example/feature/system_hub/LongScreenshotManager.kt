@@ -354,7 +354,7 @@ class LongScreenshotManager(private val service: AccessibilityService) {
                     layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
                     layoutParams.y = initialY - (event.rawY - initialTouchY).toInt()
                     try {
-                        windowManager.updateViewLayout(floatingView, layoutParams)
+                        floatingView?.let { OverlayWindowRegistry.updateViewLayout(windowManager, it, layoutParams) }
                     } catch (_: Exception) {}
                     true
                 }
