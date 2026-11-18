@@ -30,6 +30,8 @@ object ModularBackupArchive {
     private const val MAX_ENTRIES = 8
     private const val MAX_ENTRY_BYTES = 24 * 1024 * 1024
     private const val MAX_TOTAL_BYTES = 64 * 1024 * 1024
+    private const val MAX_COMPRESSION_RATIO = 200L
+    private const val COMPRESSION_RATIO_SLACK_BYTES = 1024L * 1024L
 
     private val modulePaths = linkedMapOf(
         MODULE_LAUNCHER to "launcher/launcher.json",
@@ -101,12 +103,22 @@ object ModularBackupArchive {
                 require(entry.name in allowedPaths()) { "Unexpected backup entry: ${entry.name}" }
                 require(!entries.containsKey(entry.name)) { "Duplicate ZIP entry: ${entry.name}" }
                 require(entries.size < MAX_ENTRIES) { "Too many ZIP entries" }
+                if (entry.size >= 0L)
+                    require(entry.size <= MAX_ENTRY_BYTES.toLong()) { "ZIP entry exceeds size limit" }
 
                 val bytes = readBounded(zip, MAX_ENTRY_BYTES)
                 totalBytes += bytes.size
                 require(totalBytes <= MAX_TOTAL_BYTES) { "Backup archive is too large" }
-                entries[entry.name] = bytes
                 zip.closeEntry()
+                val compressedSize = entry.compressedSize
+                if (compressedSize > 0L) {
+                    val allowedExpandedSize =
+                        compressedSize * MAX_COMPRESSION_RATIO + COMPRESSION_RATIO_SLACK_BYTES
+                    require(bytes.size.toLong() <= allowedExpandedSize) {
+                        "ZIP entry compression ratio is too high"
+                    }
+                }
+                entries[entry.name] = bytes
             }
         }
 
