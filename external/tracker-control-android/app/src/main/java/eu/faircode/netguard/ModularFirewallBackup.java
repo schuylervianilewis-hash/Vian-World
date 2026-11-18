@@ -10,7 +10,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
-import android.text.TextUtils;
 
 import androidx.preference.PreferenceManager;
 
@@ -119,7 +118,7 @@ public final class ModularFirewallBackup {
             throw new IllegalArgumentException("Firewall backup contains too many records");
         for (int i = 0; i < domains.length(); i++) {
             String domain = domains.optString(i, "");
-            if (domain.length() > 253 || TextUtils.isEmpty(domain) ||
+            if (domain.length() > 253 || domain == null || domain.trim().isEmpty() ||
                     BlockedDomainLogic.normalize(domain) == null)
                 throw new IllegalArgumentException("Invalid Firewall domain entry");
         }
@@ -130,7 +129,7 @@ public final class ModularFirewallBackup {
             if (forward.optInt("protocol", -1) < 0 || forward.optInt("protocol", -1) > 255 ||
                     forward.optInt("destinationPort", 0) < 1 || forward.optInt("destinationPort", 0) > 65535 ||
                     forward.optInt("remotePort", 0) < 1 || forward.optInt("remotePort", 0) > 65535 ||
-                    TextUtils.isEmpty(forward.optString("remoteAddress")) ||
+                    forward.optString("remoteAddress").trim().isEmpty() ||
                     forward.optString("remoteAddress").length() > 255)
                 throw new IllegalArgumentException("Invalid forwarding port or address");
         }
@@ -261,7 +260,7 @@ public final class ModularFirewallBackup {
             if (!(entry.getValue() instanceof Boolean))
                 continue;
             String key = entry.getKey();
-            if (TextUtils.isEmpty(key))
+            if (key == null || key.isEmpty())
                 continue;
             try {
                 int uid = Integer.parseInt(key);
@@ -478,7 +477,7 @@ public final class ModularFirewallBackup {
     }
 
     private static boolean isPackageKey(String value) {
-        if (TextUtils.isEmpty(value) || value.length() > 255)
+        if (value == null || value.isEmpty() || value.length() > 255)
             return false;
         if ("root".equals(value) || "mediaserver".equals(value) || "nobody".equals(value))
             return true;
