@@ -531,10 +531,12 @@ object BackupHelper {
             val item = grid.optJSONObject(index) ?: error("Invalid Launcher grid item")
             val id = item.optLong("id", 0L)
             require(id > 0L && ids.add(id)) { "Invalid or duplicate Launcher item ID" }
-            require(item.optInt("left", -1) in 0..10000 && item.optInt("right", -1) in 0..10000) {
+            // -1 is the launcher's persisted sentinel for docked/size-derived
+            // coordinates; preserve it rather than rejecting a valid dock item.
+            require(item.optInt("left", -2) in -1..10000 && item.optInt("right", -2) in -1..10000) {
                 "Invalid Launcher item horizontal position"
             }
-            require(item.optInt("top", -1) in 0..10000 && item.optInt("bottom", -1) in 0..10000) {
+            require(item.optInt("top", -2) in -1..10000 && item.optInt("bottom", -2) in -1..10000) {
                 "Invalid Launcher item vertical position"
             }
             require(item.optInt("page", -1) in 0..1000) { "Invalid Launcher item page" }
