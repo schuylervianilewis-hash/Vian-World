@@ -60,9 +60,16 @@ open class VianSideAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val activePackage = rootInActiveWindow?.packageName?.toString()
-                ?: event.packageName?.toString()
-            OverlayAccessPolicy.updateForegroundPackage(this, activePackage)
+            val eventPackage = event.packageName?.toString()
+            // Prefer the package which emitted the window-state event. If it is Vian's
+            // own overlay window, use the active root to identify the app underneath it.
+            val foregroundPackage = if (!eventPackage.isNullOrBlank() &&
+                eventPackage != packageName) {
+                eventPackage
+            } else {
+                rootInActiveWindow?.packageName?.toString() ?: eventPackage
+            }
+            OverlayAccessPolicy.updateForegroundPackage(this, foregroundPackage)
         }
 
         if (isForceStopping) {
