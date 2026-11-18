@@ -127,7 +127,14 @@ public final class ModularFirewallBackup {
         root.put("application", application);
 
         JSONObject packageFlags = new JSONObject();
-        Map<String, ?> safeApply = PausedApps.applyValuesWithoutPauses(context);
+        // Start with the full persistent per-package values, then overlay the
+        // pre-pause values for packages currently paused on this device. The
+        // pause snapshot store itself is never exported.
+        Map<String, Object> safeApply = new java.util.HashMap<>();
+        for (Map.Entry<String, ?> entry :
+                context.getSharedPreferences(APPLY, Context.MODE_PRIVATE).getAll().entrySet())
+            safeApply.put(entry.getKey(), entry.getValue());
+        safeApply.putAll(PausedApps.applyValuesWithoutPauses(context));
         packageFlags.put(APPLY, exportPackageFlags(context, safeApply));
         packageFlags.put(TRACKER_PROTECT, exportPackageFlags(
                 context, context.getSharedPreferences(TRACKER_PROTECT, Context.MODE_PRIVATE).getAll()));
