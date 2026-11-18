@@ -122,11 +122,12 @@ object ModularBackupManager {
     ): List<String> =
         when (module) {
             ModularBackupArchive.MODULE_LAUNCHER -> {
+                val warnings = launcherWarnings(context, payload)
                 val bytes = payload.toString().toByteArray(Charsets.UTF_8)
                 check(BackupHelper.importBackup(context, ByteArrayInputStream(bytes))) {
                     "Launcher restore failed"
                 }
-                emptyList()
+                warnings
             }
             ModularBackupArchive.MODULE_FIREWALL ->
                 ModularFirewallBackup.restore(context, payload, exactRollback)
@@ -134,6 +135,28 @@ object ModularBackupManager {
                 SidebarBackupModule.restore(context, payload, exactRollback)
             else -> error("Unsupported backup module: $module")
         }
+
+    private fun launcherWarnings(context: Context, payload: JSONObject): List<String> {
+        val warnings = linkedSetOf<String>()
+        val items = payload.optJSONArray("grid_items") ?: return emptyList()
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val packageName = item.optString("package_name")
+            if (packageName.isNotBlank()) {
+                val installed = runCatching {
+                    context.packageManager.getApplicationInfo(packageName, 0)
+                }.isSuccess
+                if (!installed) warnings.add("Launcher app is not installed: $packageName")
+            }
+            if (item.optInt("widget_id", -1) >= 0) {
+                warnings.add("An Android widget position was preserved; it will be rebound with a new widget ID or shown as an unavailable placeholder.")
+            }
+            if (item.optString("shortcut_id").isNotBlank()) {
+                warnings.add("A pinned shortcut ID cannot be transferred; its stale system ID was cleared.")
+            }
+        }
+        return warnings.toList()
+    }
 
     private fun validateLauncher(payload: JSONObject) {
         val version = payload.optInt("schema_version", 1)
