@@ -243,7 +243,7 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                             }
                         }
                         Text(
-                            "Not included: WireGuard profiles or secrets, floating mini-app data, Reader content, PWA packages, and other Sidebar page customisation.",
+                            "Not included: WireGuard profiles or secrets, floating mini-app data, Reader content, PWA packages, and other Sidebar page customisation. Android widgets may need rebinding; pinned shortcut IDs are not portable.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
