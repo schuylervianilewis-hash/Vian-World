@@ -1,6 +1,7 @@
 package com.example.feature.backup
 
 import android.content.Context
+import android.appwidget.AppWidgetManager
 import android.graphics.Color
 import android.util.Base64
 import com.example.core.HandleConfig
@@ -286,9 +287,12 @@ object SidebarBackupModule {
         val heightKey = "handle_${containerId}_hybrid_grid_height_${HOME_PAGE_ID}"
 
         val isLegacyPrimary = containerId == "handle_1_swipe_left" || containerId == "sidebar"
-        val gridJson = prefs.getString(gridKey, null)
+        val rawGridJson = prefs.getString(gridKey, null)
             ?: prefs.getString("${containerId}_hybrid_grid_${HOME_PAGE_ID}", null)
             ?: prefs.getString(legacyGridKey, null).takeIf { isLegacyPrimary }
+        // Widget IDs are Android-host-specific. Preserve their cells and provider hint,
+        // but never put the source installation's numeric widget ID in the archive.
+        val gridJson = rawGridJson?.let { sanitizeWidgetIds(context, it) }
         val elementsJson = prefs.getString(elementsKey, null)
             ?: prefs.getString(legacyElementsKey, null).takeIf { isLegacyPrimary }
         val columns = when {
@@ -337,6 +341,26 @@ object SidebarBackupModule {
         if (color != null) result.put("sidebarColor", color)
         if (transparency != null) result.put("sidebarTransparency", transparency.toDouble())
         return result
+    }
+
+    private fun sanitizeWidgetIds(context: Context, source: String): String {
+        return runCatching {
+            val widgets = JSONArray(source)
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            for (index in 0 until widgets.length()) {
+                val item = widgets.optJSONObject(index) ?: continue
+                val id = item.optString("id")
+                if (!id.startsWith("widget:")) continue
+                val suffix = id.removePrefix("widget:")
+                val sourceId = suffix.substringBefore(":").toIntOrNull()
+                val existingHint = suffix.substringAfter(":", "")
+                val providerHint = sourceId?.takeIf { it >= 0 }?.let { widgetId ->
+                    appWidgetManager.getAppWidgetInfo(widgetId)?.provider?.flattenToString()
+                } ?: existingHint
+                item.put("id", "widget:-1:${providerHint.take(255)}")
+            }
+            widgets.toString()
+        }.getOrDefault("[]")
     }
 
     private fun exportElementMetadata(context: Context, elementsJson: String): JSONArray {
