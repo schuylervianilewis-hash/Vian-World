@@ -76,7 +76,7 @@ object ModularBackupManager {
             val rollbackErrors = mutableListOf<String>()
             attempted.asReversed().forEach { module ->
                 try {
-                    applyModule(context, module, snapshots.getValue(module))
+                    applyModule(context, module, snapshots.getValue(module), exactRollback = true)
                 } catch (rollbackFailure: Throwable) {
                     rollbackErrors.add("$module: ${rollbackFailure.message ?: rollbackFailure.javaClass.simpleName}")
                 }
@@ -107,7 +107,12 @@ object ModularBackupManager {
             else -> error("Unsupported backup module: $module")
         }
 
-    private fun applyModule(context: Context, module: String, payload: JSONObject) {
+    private fun applyModule(
+        context: Context,
+        module: String,
+        payload: JSONObject,
+        exactRollback: Boolean = false
+    ) {
         when (module) {
             ModularBackupArchive.MODULE_LAUNCHER -> {
                 val bytes = payload.toString().toByteArray(Charsets.UTF_8)
@@ -116,7 +121,7 @@ object ModularBackupManager {
                 }
             }
             ModularBackupArchive.MODULE_FIREWALL -> ModularFirewallBackup.restore(context, payload)
-            ModularBackupArchive.MODULE_SIDEBAR -> SidebarBackupModule.restore(context, payload)
+            ModularBackupArchive.MODULE_SIDEBAR -> SidebarBackupModule.restore(context, payload, exactRollback)
             else -> error("Unsupported backup module: $module")
         }
     }
