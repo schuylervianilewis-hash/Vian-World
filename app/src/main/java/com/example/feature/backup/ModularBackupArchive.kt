@@ -28,8 +28,8 @@ object ModularBackupArchive {
     private const val MANIFEST_PATH = "manifest.json"
     private const val CHECKSUMS_PATH = "checksums.json"
     private const val MAX_ENTRIES = 8
-    private const val MAX_ENTRY_BYTES = 8 * 1024 * 1024
-    private const val MAX_TOTAL_BYTES = 32 * 1024 * 1024
+    private const val MAX_ENTRY_BYTES = 24 * 1024 * 1024
+    private const val MAX_TOTAL_BYTES = 64 * 1024 * 1024
 
     private val modulePaths = linkedMapOf(
         MODULE_LAUNCHER to "launcher/launcher.json",
