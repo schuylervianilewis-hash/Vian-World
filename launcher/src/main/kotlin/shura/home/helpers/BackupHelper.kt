@@ -483,7 +483,7 @@ object BackupHelper {
         }
     }
 
-    internal fun validateBackupPayload(root: JSONObject) {
+    fun validateBackupPayload(root: JSONObject) {
         val grid = root.optJSONArray("grid_items") ?: error("Launcher grid data is missing")
         require(grid.length() <= 10000) { "Launcher backup has too many grid items" }
         val ids = mutableSetOf<Long>()
