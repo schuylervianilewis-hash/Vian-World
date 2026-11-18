@@ -277,36 +277,63 @@ object SidebarBackupModule {
         val elementsKey = "hg_${containerId}_${HOME_PAGE_ID}"
         val legacyElementsKey = "hg_${HOME_PAGE_ID}"
         val columnsKey = "handle_${containerId}_hybrid_grid_cols_${HOME_PAGE_ID}"
+        val alternateColumnsKey = "${containerId}_hybrid_grid_cols_${HOME_PAGE_ID}"
+        val legacyColumnsKey = "hybrid_grid_cols_${HOME_PAGE_ID}"
         val modifiedKey = "handle_${containerId}_hybrid_grid_modified_${HOME_PAGE_ID}"
+        val alternateModifiedKey = "${containerId}_hybrid_grid_modified_${HOME_PAGE_ID}"
+        val legacyModifiedKey = "hybrid_grid_modified_${HOME_PAGE_ID}"
         val wrapKey = "handle_${containerId}_sidebar_wrap_content"
+        val heightKey = "handle_${containerId}_hybrid_grid_height_${HOME_PAGE_ID}"
 
+        val isLegacyPrimary = containerId == "handle_1_swipe_left" || containerId == "sidebar"
         val gridJson = prefs.getString(gridKey, null)
             ?: prefs.getString("${containerId}_hybrid_grid_${HOME_PAGE_ID}", null)
-            ?: prefs.getString(legacyGridKey, null).takeIf { containerId == "handle_1_swipe_left" || containerId == "sidebar" }
+            ?: prefs.getString(legacyGridKey, null).takeIf { isLegacyPrimary }
         val elementsJson = prefs.getString(elementsKey, null)
-            ?: prefs.getString(legacyElementsKey, null).takeIf { containerId == "handle_1_swipe_left" || containerId == "sidebar" }
-
-        val result = JSONObject()
-            .put("pageId", HOME_PAGE_ID)
-            .put("containerId", containerId)
-        if (gridJson != null) result.put("gridJson", gridJson)
-        if (elementsJson != null) {
-            result.put("elementsJson", elementsJson)
-            result.put("elementMetadata", exportElementMetadata(context, elementsJson))
+            ?: prefs.getString(legacyElementsKey, null).takeIf { isLegacyPrimary }
+        val columns = when {
+            prefs.contains(columnsKey) -> prefs.getInt(columnsKey, 4)
+            prefs.contains(alternateColumnsKey) -> prefs.getInt(alternateColumnsKey, 4)
+            isLegacyPrimary && prefs.contains(legacyColumnsKey) -> prefs.getInt(legacyColumnsKey, 4)
+            else -> null
         }
-        if (prefs.contains(columnsKey)) result.put("columns", prefs.getInt(columnsKey, 4))
-        if (prefs.contains(modifiedKey)) result.put("modified", prefs.getBoolean(modifiedKey, false))
-        if (prefs.contains(wrapKey)) result.put("wrapContent", prefs.getBoolean(wrapKey, true))
-        val heightKey = "handle_${containerId}_hybrid_grid_height_${HOME_PAGE_ID}"
-        if (prefs.contains(heightKey)) result.put("height", prefs.getInt(heightKey, 0))
+        val modified = when {
+            prefs.contains(modifiedKey) -> prefs.getBoolean(modifiedKey, false)
+            prefs.contains(alternateModifiedKey) -> prefs.getBoolean(alternateModifiedKey, false)
+            isLegacyPrimary && prefs.contains(legacyModifiedKey) -> prefs.getBoolean(legacyModifiedKey, false)
+            else -> null
+        }
         val colorKey = "handle_${containerId}_sidebar_color"
         val transparencyKey = "handle_${containerId}_sidebar_transparency"
         val color = prefs.getString(colorKey, null) ?: prefs.getString("sidebar_color", null)
         val transparency = if (prefs.contains(transparencyKey)) {
             prefs.getFloat(transparencyKey, 0.9f)
         } else {
-            prefs.getFloat("sidebar_transparency", 0.9f).takeIf { prefs.contains("sidebar_transparency") }
+            prefs.getFloat("sidebar_transparency", 0.9f).takeIf { isLegacyPrimary && prefs.contains("sidebar_transparency") }
         }
+
+        val present = JSONObject()
+            .put("gridJson", gridJson != null)
+            .put("elementsJson", elementsJson != null)
+            .put("columns", columns != null)
+            .put("modified", modified != null)
+            .put("wrapContent", prefs.contains(wrapKey))
+            .put("height", prefs.contains(heightKey))
+            .put("sidebarColor", color != null)
+            .put("sidebarTransparency", transparency != null)
+        val result = JSONObject()
+            .put("pageId", HOME_PAGE_ID)
+            .put("containerId", containerId)
+            .put("present", present)
+        if (gridJson != null) result.put("gridJson", gridJson)
+        if (elementsJson != null) {
+            result.put("elementsJson", elementsJson)
+            result.put("elementMetadata", exportElementMetadata(context, elementsJson))
+        }
+        if (columns != null) result.put("columns", columns)
+        if (modified != null) result.put("modified", modified)
+        if (prefs.contains(wrapKey)) result.put("wrapContent", prefs.getBoolean(wrapKey, true))
+        if (prefs.contains(heightKey)) result.put("height", prefs.getInt(heightKey, 0))
         if (color != null) result.put("sidebarColor", color)
         if (transparency != null) result.put("sidebarTransparency", transparency.toDouble())
         return result
@@ -353,26 +380,39 @@ object SidebarBackupModule {
         val wrapKey = "handle_${containerId}_sidebar_wrap_content"
         val heightKey = "handle_${containerId}_hybrid_grid_height_${HOME_PAGE_ID}"
 
-        if (homeGrid.has("gridJson")) editor.putString(gridKey, homeGrid.getString("gridJson"))
-        if (homeGrid.has("elementsJson")) {
+        val present = homeGrid.optJSONObject("present")
+        fun isPresent(key: String, legacyPayload: JSONObject): Boolean =
+            if (present != null && present.has(key)) present.optBoolean(key, false) else legacyPayload.has(key)
+
+        // Write canonical container-scoped keys even when a value was absent in the
+        // source backup. This prevents stale legacy aliases on the destination from
+        // silently repopulating the restored resident grid.
+        if (isPresent("gridJson", homeGrid)) {
+            editor.putString(gridKey, homeGrid.optString("gridJson", "[]"))
+        } else {
+            editor.putString(gridKey, "[]")
+        }
+        if (isPresent("elementsJson", homeGrid)) {
             val elements = JSONArray(homeGrid.getString("elementsJson"))
             require(elements.length() <= 500) { "Home Grid contains too many elements" }
             editor.putString(elementsKey, elements.toString())
+        } else {
+            editor.putString(elementsKey, "[]")
         }
-        if (homeGrid.has("columns")) editor.putInt(columnsKey, homeGrid.getInt("columns").coerceIn(1, 12))
-        if (homeGrid.has("modified")) editor.putBoolean(modifiedKey, homeGrid.getBoolean("modified"))
-        if (homeGrid.has("wrapContent")) editor.putBoolean(wrapKey, homeGrid.getBoolean("wrapContent"))
-        if (homeGrid.has("height")) editor.putInt(heightKey, homeGrid.getInt("height").coerceIn(0, 2000))
-        if (homeGrid.has("sidebarColor") && !homeGrid.isNull("sidebarColor")) {
-            val color = homeGrid.getString("sidebarColor")
-            require(color.length <= 32) { "Invalid Home Grid color" }
-            editor.putString("handle_${containerId}_sidebar_color", color)
+        editor.putInt(columnsKey, if (isPresent("columns", homeGrid)) homeGrid.optInt("columns", 4).coerceIn(1, 12) else 4)
+        editor.putBoolean(modifiedKey, if (isPresent("modified", homeGrid)) homeGrid.optBoolean("modified", false) else false)
+        editor.putBoolean(wrapKey, if (isPresent("wrapContent", homeGrid)) homeGrid.optBoolean("wrapContent", true) else true)
+        if (isPresent("height", homeGrid)) {
+            editor.putInt(heightKey, homeGrid.optInt("height", 0).coerceIn(0, 2000))
+        } else {
+            editor.remove(heightKey)
         }
-        if (homeGrid.has("sidebarTransparency")) {
-            val alpha = homeGrid.getDouble("sidebarTransparency")
-            require(alpha in 0.0..1.0) { "Invalid Home Grid transparency" }
-            editor.putFloat("handle_${containerId}_sidebar_transparency", alpha.toFloat())
-        }
+        val color = if (isPresent("sidebarColor", homeGrid)) homeGrid.optString("sidebarColor", "#1E1E2E") else "#1E1E2E"
+        require(color.length <= 32) { "Invalid Home Grid color" }
+        editor.putString("handle_${containerId}_sidebar_color", color)
+        val alpha = if (isPresent("sidebarTransparency", homeGrid)) homeGrid.optDouble("sidebarTransparency", 0.9) else 0.9
+        require(alpha in 0.0..1.0) { "Invalid Home Grid transparency" }
+        editor.putFloat("handle_${containerId}_sidebar_transparency", alpha.toFloat())
         check(editor.commit()) { "Could not persist resident Home Grid" }
         restoreElementMetadata(context, homeGrid.optJSONArray("elementMetadata") ?: JSONArray())
     }
