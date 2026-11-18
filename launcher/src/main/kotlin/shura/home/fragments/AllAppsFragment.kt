@@ -439,10 +439,6 @@ class AllAppsFragment(
                         currentActivity.startActivity(sidebarSettingsIntent)
                         true
                     }
-                    R.id.drawer_menu_settings -> {
-                        currentActivity.startActivity(Intent(currentActivity, SettingsActivity::class.java))
-                        true
-                    }
                     else -> false
                 }
             }
