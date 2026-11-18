@@ -267,9 +267,12 @@ object BackupHelper {
                         title = obj.optString("title", ""),
                         type = obj.getInt("type"),
                         className = obj.optString("class_name", ""),
-                        // Android widget IDs and pinned-shortcut IDs are local to the
-                        // source installation. Keep the layout item but require a rebind.
-                        widgetId = -1,
+                        // Never reuse the source AppWidget ID. A unique negative
+                        // sentinel keeps the layout row identifiable until bindWidget
+                        // allocates a fresh ID or displays the unavailable-widget tile.
+                        widgetId = obj.optInt("widget_id", -1).let { sourceId ->
+                            if (sourceId >= 0) -((oldId % 100000L).toInt() + 100) else -1
+                        },
                         shortcutId = "",
                         icon = bitmap,
                         docked = obj.optBoolean("docked", false),
