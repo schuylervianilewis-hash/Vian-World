@@ -452,6 +452,19 @@ object SidebarBackupModule {
         return output
     }
 
+    private fun sanitizeWidgetIdsForRestore(source: String): String {
+        val widgets = JSONArray(source)
+        for (index in 0 until widgets.length()) {
+            val item = widgets.optJSONObject(index) ?: continue
+            val id = item.optString("id")
+            if (!id.startsWith("widget:")) continue
+            val suffix = id.removePrefix("widget:")
+            val existingHint = if (suffix.startsWith("-1:")) suffix.substringAfter(":", "") else ""
+            item.put("id", "widget:-1:${existingHint.take(255)}")
+        }
+        return widgets.toString()
+    }
+
     private fun exportElementMetadata(context: Context, elementsJson: String): JSONArray {
         val output = JSONArray()
         val elements = runCatching { JSONArray(elementsJson) }.getOrNull() ?: return output
@@ -501,7 +514,7 @@ object SidebarBackupModule {
         // source backup. This prevents stale legacy aliases on the destination from
         // silently repopulating the restored resident grid.
         if (isPresent("gridJson", homeGrid)) {
-            editor.putString(gridKey, sanitizeWidgetIds(context, homeGrid.optString("gridJson", "[]")))
+            editor.putString(gridKey, sanitizeWidgetIdsForRestore(homeGrid.optString("gridJson", "[]")))
         } else {
             editor.putString(gridKey, "[]")
         }
