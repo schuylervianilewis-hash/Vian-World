@@ -148,10 +148,12 @@ object ModularBackupManager {
                 }.isSuccess
                 if (!installed) warnings.add("Launcher app is not installed: $packageName")
             }
-            if (item.optInt("widget_id", -1) >= 0) {
+            if (item.optInt("type", -1) == 1 && item.optInt("widget_id", -1) >= 0) {
                 warnings.add("An Android widget position was preserved; it will be rebound with a new widget ID or shown as an unavailable placeholder.")
             }
-            if (item.optString("shortcut_id").isNotBlank()) {
+            if (item.optInt("type", -1) == 2 &&
+                item.optString("class_name") != "vian_world_sidebar_element" &&
+                item.optString("shortcut_id").isNotBlank()) {
                 warnings.add("A pinned shortcut ID cannot be transferred; its stale system ID was cleared.")
             }
         }
