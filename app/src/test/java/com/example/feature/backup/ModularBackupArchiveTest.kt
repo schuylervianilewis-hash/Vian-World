@@ -15,14 +15,17 @@ class ModularBackupArchiveTest {
         val output = ByteArrayOutputStream()
         ModularBackupArchive.write(
             output,
+            "com.example.vianworld.test",
             "test-version",
+            42L,
+            "debug",
             mapOf(
                 ModularBackupArchive.MODULE_LAUNCHER to JSONObject().put("schema_version", 2),
                 ModularBackupArchive.MODULE_SIDEBAR to JSONObject().put("schemaVersion", 1)
             )
         )
 
-        val parsed = ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()))
+        val parsed = ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()), "com.example.vianworld.test")
 
         assertEquals("com.example.vianworld.test", parsed.applicationId)
         assertEquals("test-version", parsed.appVersion)
