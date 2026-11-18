@@ -79,9 +79,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 }
                 ACTION_RELOAD_HANDLES -> {
                     LogKeeper.logLifecycle(context, "HandleService", "RELOAD_HANDLES", "Reloading handles on configuration change")
-                    if (isScreenOn && Settings.canDrawOverlays(this@HandleService)) {
-                        attachHandles()
-                    }
+                    applyOverlayAccessPolicy()
                 }
                 OverlayAccessPolicy.ACTION_POLICY_CHANGED -> {
                     OverlayAccessPolicy.applyBroadcast(this@HandleService, intent)
@@ -274,18 +272,14 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
         if (intent == null) {
             LogKeeper.logLifecycle(this, "HandleService", "SERVICE_RECREATED_STICKY", "Recreated by Android framework after process termination (START_STICKY)")
-            if (isScreenOn && Settings.canDrawOverlays(this)) {
-                attachHandles()
-            }
+            applyOverlayAccessPolicy()
         } else {
             when (intent.action) {
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
                     handleSyncPrefIntent(intent)
                 }
                 ACTION_RELOAD_HANDLES -> {
-                    if (isScreenOn && Settings.canDrawOverlays(this)) {
-                        attachHandles()
-                    }
+                    applyOverlayAccessPolicy()
                 }
                 OverlayAccessPolicy.ACTION_POLICY_CHANGED -> {
                     OverlayAccessPolicy.applyBroadcast(this, intent)

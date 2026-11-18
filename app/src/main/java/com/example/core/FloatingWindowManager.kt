@@ -338,7 +338,9 @@ class FloatingWindowManager private constructor(context: Context) {
     fun showWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
         if (!canDrawOverlays()) {
-            suppressedVisibleWindowIds.add(windowId)
+            if (OverlayAccessPolicy.isForegroundExcluded(appContext)) {
+                suppressedVisibleWindowIds.add(windowId)
+            }
             return false
         }
         if (!window.isAttached && !attachOverlay(windowId)) return false
