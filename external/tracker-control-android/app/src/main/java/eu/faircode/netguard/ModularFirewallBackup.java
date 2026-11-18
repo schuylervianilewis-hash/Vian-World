@@ -92,11 +92,35 @@ public final class ModularFirewallBackup {
             }
         }
 
+        JSONArray internetPackages = blocklists.optJSONArray("internetPackages");
+        JSONArray trackerPackages = blocklists.optJSONArray("trackerPackages");
+        JSONObject trackerSubsets = blocklists.optJSONObject("trackerSubsets");
+        if (internetPackages == null || trackerPackages == null || trackerSubsets == null)
+            throw new IllegalArgumentException("Firewall blocklist data is incomplete");
+        if (internetPackages.length() > 10000 || trackerPackages.length() > 10000)
+            throw new IllegalArgumentException("Firewall blocklist contains too many apps");
+        for (int i = 0; i < internetPackages.length(); i++)
+            if (!isPackageKey(internetPackages.optString(i, "")))
+                throw new IllegalArgumentException("Invalid Internet blocklist package");
+        for (int i = 0; i < trackerPackages.length(); i++)
+            if (!isPackageKey(trackerPackages.optString(i, "")))
+                throw new IllegalArgumentException("Invalid tracker blocklist package");
+        for (java.util.Iterator<String> it = trackerSubsets.keys(); it.hasNext();) {
+            String packageName = it.next();
+            JSONArray subset = trackerSubsets.optJSONArray(packageName);
+            if (!isPackageKey(packageName) || subset == null || subset.length() > 10000)
+                throw new IllegalArgumentException("Invalid tracker subset");
+            for (int i = 0; i < subset.length(); i++)
+                if (subset.optString(i, "").length() > 255)
+                    throw new IllegalArgumentException("Invalid tracker category");
+        }
+
         if (domains.length() > 10000 || forwarding.length() > 1000)
             throw new IllegalArgumentException("Firewall backup contains too many records");
         for (int i = 0; i < domains.length(); i++) {
             String domain = domains.optString(i, "");
-            if (domain.length() > 253 || TextUtils.isEmpty(domain))
+            if (domain.length() > 253 || TextUtils.isEmpty(domain) ||
+                    BlockedDomainLogic.normalize(domain) == null)
                 throw new IllegalArgumentException("Invalid Firewall domain entry");
         }
         for (int i = 0; i < forwarding.length(); i++) {
@@ -105,8 +129,10 @@ public final class ModularFirewallBackup {
                 throw new IllegalArgumentException("Invalid forwarding rule");
             if (forward.optInt("protocol", -1) < 0 || forward.optInt("protocol", -1) > 255 ||
                     forward.optInt("destinationPort", 0) < 1 || forward.optInt("destinationPort", 0) > 65535 ||
-                    forward.optInt("remotePort", 0) < 1 || forward.optInt("remotePort", 0) > 65535)
-                throw new IllegalArgumentException("Invalid forwarding port");
+                    forward.optInt("remotePort", 0) < 1 || forward.optInt("remotePort", 0) > 65535 ||
+                    TextUtils.isEmpty(forward.optString("remoteAddress")) ||
+                    forward.optString("remoteAddress").length() > 255)
+                throw new IllegalArgumentException("Invalid forwarding port or address");
         }
     }
 
