@@ -130,6 +130,28 @@ object SidebarBackupModule {
         run {
             require(homeGrid.optString("pageId") == HOME_PAGE_ID) { "Unexpected full Sidebar page payload" }
             require(homeGrid.optString("containerId").isNotBlank()) { "Home Grid container is missing" }
+            val present = homeGrid.optJSONObject("present")
+            if (present != null) {
+                listOf(
+                    "gridJson", "elementsJson", "columns", "modified", "wrapContent",
+                    "height", "sidebarColor", "sidebarTransparency"
+                ).forEach { key ->
+                    if (present.optBoolean(key, false))
+                        require(homeGrid.has(key)) { "Home Grid payload is missing $key" }
+                }
+            }
+            require(homeGrid.optInt("columns", 4) in 1..12) { "Invalid Home Grid column count" }
+            require(homeGrid.optInt("height", 0) in 0..2000) { "Invalid Home Grid height" }
+            if (homeGrid.has("sidebarTransparency")) {
+                val alpha = homeGrid.optDouble("sidebarTransparency", -1.0)
+                require(alpha in 0.0..1.0) { "Invalid Home Grid transparency" }
+            }
+            if (homeGrid.has("sidebarColor")) {
+                val color = homeGrid.optString("sidebarColor")
+                require(color.length <= 32 && runCatching { Color.parseColor(color) }.isSuccess) {
+                    "Invalid Home Grid color"
+                }
+            }
             homeGrid.optString("gridJson").takeIf { it.isNotBlank() }?.let { raw ->
                 val grid = JSONArray(raw)
                 require(grid.length() <= 500) { "Home Grid has too many placed elements" }
