@@ -142,6 +142,9 @@ object ModularBackupManager {
     private fun launcherWarnings(context: Context, payload: JSONObject): List<String> {
         val warnings = linkedSetOf<String>()
         val items = payload.optJSONArray("grid_items") ?: return emptyList()
+        if (payload.optJSONObject("config")?.optBoolean("appLockEnabled", false) == true) {
+            warnings.add("App Lock is enabled in this backup, but its password hash and biometric/device enrollment are not transferred.")
+        }
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index) ?: continue
             val packageName = item.optString("package_name")
