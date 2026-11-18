@@ -161,6 +161,17 @@ object BackupHelper {
             }
             root.put("drawer_renames", drawerRenamesJson)
 
+            val drawerOrderArray = JSONArray()
+            appLaunchers.sortedBy { it.order }.forEach { launcher ->
+                drawerOrderArray.put(
+                    JSONObject()
+                        .put("packageName", launcher.packageName)
+                        .put("activityName", launcher.activityName)
+                        .put("order", launcher.order)
+                )
+            }
+            root.put("app_drawer_order", drawerOrderArray)
+
             // 6. Export Custom Icons (Base64 PNG)
             val customIconsDir = File(context.filesDir, "custom_icons")
             val customIconsJson = JSONObject()
@@ -378,6 +389,7 @@ object BackupHelper {
                 // backup do not survive from the destination installation.
                 val launcherDao = db.AppLaunchersDao()
                 val packageManager = context.packageManager
+                launcherDao.resetAllAppOrders()
                 launcherDao.getAppLaunchers().forEach { app ->
                     val systemTitle = runCatching {
                         if (app.activityName.isNotBlank()) {
@@ -393,6 +405,16 @@ object BackupHelper {
                     if (!systemTitle.isNullOrBlank())
                         launcherDao.updateAppTitle(systemTitle, app.packageName)
                 }
+                val drawerOrderArray = root.optJSONArray("app_drawer_order") ?: JSONArray()
+                for (index in 0 until drawerOrderArray.length()) {
+                    val orderItem = drawerOrderArray.getJSONObject(index)
+                    launcherDao.updateAppOrder(
+                        orderItem.getInt("order"),
+                        orderItem.getString("packageName"),
+                        orderItem.optString("activityName", "")
+                    )
+                }
+
                 val drawerRenamesJson = root.optJSONObject("drawer_renames")
                 if (drawerRenamesJson != null) {
                     val keys = drawerRenamesJson.keys()
@@ -555,6 +577,15 @@ object BackupHelper {
             val item = locked.opt(index)
             val packageName = if (item is JSONObject) item.optString("packageName") else item.toString()
             require(packageName.length in 1..255) { "Invalid locked app package" }
+        }
+
+        val drawerOrder = root.optJSONArray("app_drawer_order") ?: JSONArray()
+        require(drawerOrder.length() <= 10000) { "Too many Launcher app drawer order records" }
+        for (index in 0 until drawerOrder.length()) {
+            val item = drawerOrder.optJSONObject(index) ?: error("Invalid Launcher app drawer order record")
+            require(item.optString("packageName").length in 1..255) { "Invalid Launcher app drawer package" }
+            require(item.optString("activityName").length <= 512) { "Invalid Launcher app drawer activity" }
+            require(item.optInt("order", -1) in 0..100000) { "Invalid Launcher app drawer order" }
         }
 
         val renames = root.optJSONObject("drawer_renames") ?: JSONObject()
