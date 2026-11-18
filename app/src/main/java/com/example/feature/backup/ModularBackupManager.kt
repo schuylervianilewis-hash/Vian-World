@@ -65,13 +65,14 @@ object ModularBackupManager {
         }
 
         val attempted = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
         try {
             // Stable ordering makes restore and rollback behavior deterministic.
             selectedModules.sorted().forEach { module ->
                 attempted.add(module)
-                applyModule(context, module, archive.modules.getValue(module))
+                warnings.addAll(applyModule(context, module, archive.modules.getValue(module)))
             }
-            return BackupRestoreReport(restoredModules = attempted)
+            return BackupRestoreReport(restoredModules = attempted, warnings = warnings)
         } catch (failure: Throwable) {
             val rollbackErrors = mutableListOf<String>()
             attempted.asReversed().forEach { module ->
@@ -112,19 +113,21 @@ object ModularBackupManager {
         module: String,
         payload: JSONObject,
         exactRollback: Boolean = false
-    ) {
+    ): List<String> =
         when (module) {
             ModularBackupArchive.MODULE_LAUNCHER -> {
                 val bytes = payload.toString().toByteArray(Charsets.UTF_8)
                 check(BackupHelper.importBackup(context, ByteArrayInputStream(bytes))) {
                     "Launcher restore failed"
                 }
+                emptyList()
             }
-            ModularBackupArchive.MODULE_FIREWALL -> ModularFirewallBackup.restore(context, payload, exactRollback)
-            ModularBackupArchive.MODULE_SIDEBAR -> SidebarBackupModule.restore(context, payload, exactRollback)
+            ModularBackupArchive.MODULE_FIREWALL ->
+                ModularFirewallBackup.restore(context, payload, exactRollback)
+            ModularBackupArchive.MODULE_SIDEBAR ->
+                SidebarBackupModule.restore(context, payload, exactRollback)
             else -> error("Unsupported backup module: $module")
         }
-    }
 
     private fun validateLauncher(payload: JSONObject) {
         val version = payload.optInt("schema_version", 1)
