@@ -44,6 +44,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     private var serviceStartTime: Long = System.currentTimeMillis()
     private var isFirstSpeedCallback = true
     private var isQueryingTodayData = false
+    private var overlaySuppressed = false
 
     private var cachedTodayDataFormatted: String = "--"
     private var lastDailyQueryTimestamp: Long = 0L
@@ -81,6 +82,10 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                     if (isScreenOn && Settings.canDrawOverlays(this@HandleService)) {
                         attachHandles()
                     }
+                }
+                OverlayAccessPolicy.ACTION_POLICY_CHANGED -> {
+                    OverlayAccessPolicy.applyBroadcast(this@HandleService, intent)
+                    applyOverlayAccessPolicy()
                 }
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
                     LogKeeper.logLifecycle(context, "HandleService", "ACTION_SYNC_PREF", "Syncing preferences from Heavy process")
@@ -227,6 +232,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(ACTION_RELOAD_HANDLES)
+            addAction(OverlayAccessPolicy.ACTION_POLICY_CHANGED)
             addAction(OverlaySyncManager.ACTION_SYNC_PREF)
         }
         ContextCompat.registerReceiver(
@@ -238,9 +244,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         prefs.registerOnSharedPreferenceChangeListener(this)
 
         handleManager = HandleManager.getInstance(this)
-        if (isScreenOn && Settings.canDrawOverlays(this)) {
-            attachHandles()
-        }
+        applyOverlayAccessPolicy()
         val callRecorder = CallRecorderManager.getInstance(this)
         if (callRecorder.shouldListen()) {
             callRecorder.startListening()
@@ -282,6 +286,10 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                     if (isScreenOn && Settings.canDrawOverlays(this)) {
                         attachHandles()
                     }
+                }
+                OverlayAccessPolicy.ACTION_POLICY_CHANGED -> {
+                    OverlayAccessPolicy.applyBroadcast(this, intent)
+                    applyOverlayAccessPolicy()
                 }
                 else -> {
                     if (isScreenOn && Settings.canDrawOverlays(this)) {
@@ -512,11 +520,21 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         }
     }
 
+    private fun applyOverlayAccessPolicy() {
+        overlaySuppressed = OverlayAccessPolicy.isForegroundExcluded(this)
+        OverlayWindowRegistry.setSuppressed(overlaySuppressed)
+        FloatingWindowManager.getInstance(this).setOverlaySuppressed(overlaySuppressed)
+        if (overlaySuppressed) {
+            detachHandles()
+        } else if (isScreenOn && Settings.canDrawOverlays(this)) {
+            attachHandles()
+        }
+    }
+
     private fun attachHandles() {
-        // Remove existing attached views
         detachHandles()
 
-        if (!Settings.canDrawOverlays(this)) {
+        if (!OverlayAccessPolicy.canShowApplicationOverlays(this)) {
             LogKeeper.log(this, "HandleService", "attachHandles skipped: SYSTEM_ALERT_WINDOW permission not granted")
             return
         }

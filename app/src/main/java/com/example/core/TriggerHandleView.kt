@@ -172,6 +172,7 @@ class TriggerHandleView(
     }
 
     fun attachToWindow() {
+        if (!OverlayAccessPolicy.canShowApplicationOverlays(context)) return
         if (!isAttached) {
             try {
                 windowManager.addView(this, layoutParams)

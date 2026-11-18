@@ -7,6 +7,8 @@ import android.os.Build
 import android.os.Process
 import com.example.core.FloatingWindowManager
 import com.example.core.LogKeeper
+import com.example.core.OverlayAccessPolicy
+import com.example.core.OverlayWindowRegistry
 import org.fossify.commons.FossifyApp
 import shura.home.helpers.AddElementBridge
 import shura.home.helpers.Config
@@ -25,6 +27,12 @@ class App : FossifyApp() {
 
         // One crash/logging foundation is installed by Sidebar in each process.
         LogKeeper.init(this)
+        OverlayAccessPolicy.registerProcessReceiver(this) { suppressed ->
+            OverlayWindowRegistry.setSuppressed(suppressed)
+            if (getProcessNameCompat() == packageName) {
+                FloatingWindowManager.setOverlaySuppressedIfInitialized(suppressed)
+            }
+        }
         LogCatcher.setBackend(object : LogCatcher.Backend {
             override fun log(tag: String, message: String, throwable: Throwable?) {
                 if (throwable == null) {
