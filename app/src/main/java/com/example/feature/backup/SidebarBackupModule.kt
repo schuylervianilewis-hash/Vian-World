@@ -157,9 +157,13 @@ object SidebarBackupModule {
                 require(item.optString("id").length in 1..512) { "Invalid metadata element ID" }
                 require(item.optString("type") in setOf("app", "link")) { "Unsupported Home Grid metadata type" }
                 require(item.optString("target").length in 1..4096) { "Invalid Home Grid metadata target" }
-                require(item.optString("label").length in 1..200) { "Invalid Home Grid metadata label" }
+                require(item.optString("label").length <= 200) { "Invalid Home Grid metadata label" }
                 require(item.optString("iconBase64").length <= 1_400_000) { "Home Grid icon is too large" }
             }
+            val savedLinks = homeGrid.optJSONArray("savedLinkIds") ?: JSONArray()
+            require(savedLinks.length() <= 500) { "Too many Home Grid link references" }
+            for (i in 0 until savedLinks.length())
+                require(savedLinks.optString(i).length in 1..128) { "Invalid Home Grid link reference" }
         }
     }
 
