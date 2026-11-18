@@ -130,12 +130,13 @@ class DefaultSidebarPageFactory(
         /**
          * Enforces the Main/Heavy Sidebar split residency rule for Home Grid:
          *
-         * MAIN owns exactly ONE resident page:
-         * Handle 1 -> primary/default gesture (Swipe Left) -> first/default container -> default_hybrid.
+         * MAIN owns exactly ONE resident page: default_hybrid on Handle 1's
+         * first configured Sidebar-opening gesture. The default configuration is
+         * Handle 1 Swipe Left; if the user changes that primary gesture, residency
+         * follows the new container rather than leaving the Home Grid stranded.
          *
-         * Every other Home Grid (any secondary Home Grid, generated hybrid_grid_*,
-         * Home Grid on Handle 2+, Home Grid on another gesture, Home Grid on another container)
-         * belongs to :heavy and is represented by HeavyPagePlaceholderView.
+         * Every secondary Home Grid and every other handle/container belongs to
+         * :heavy and is represented by HeavyPagePlaceholderView.
          */
         fun isResidentDefaultHybrid(
             context: Context,
@@ -147,12 +148,12 @@ class DefaultSidebarPageFactory(
             val cleanHandleId = PageManager.getCleanHandleId(
                 if (physicalHandleId.isNotBlank()) physicalHandleId else containerId
             )
-            if (cleanHandleId != "handle_1" && cleanHandleId != "sidebar") {
-                return false
-            }
-            return containerId == "sidebar" ||
-                    containerId == "handle_1" ||
-                    containerId == "handle_1_swipe_left"
+            if (cleanHandleId != "handle_1" && cleanHandleId != "sidebar") return false
+
+            val primaryContainerId = HandleManager.getInstance(context).getFirstHandlePrimaryContainerId()
+            val isLegacyPrimaryAlias = primaryContainerId == "handle_1_swipe_left" &&
+                (containerId == "sidebar" || containerId == "handle_1")
+            return containerId == primaryContainerId || isLegacyPrimaryAlias
         }
     }
 }
