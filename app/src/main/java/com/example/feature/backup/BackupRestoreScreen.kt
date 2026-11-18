@@ -263,7 +263,9 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                                         onSuccess = {
                                             parsedArchive = null
                                             restoreSelection = emptySet()
-                                            "Restored: ${it.restoredModules.joinToString(", ")}."
+                                            val restored = "Restored: ${it.restoredModules.joinToString(", ")}."
+                                            if (it.warnings.isEmpty()) restored
+                                            else restored + " Warnings: " + it.warnings.take(5).joinToString(" ")
                                         },
                                         onFailure = { "Restore failed: ${it.message ?: "unknown error"}" }
                                     )
