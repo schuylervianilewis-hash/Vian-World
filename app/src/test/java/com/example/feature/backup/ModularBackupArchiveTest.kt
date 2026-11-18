@@ -46,7 +46,7 @@ class ModularBackupArchiveTest {
         }
 
         val failure = runCatching {
-            ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()))
+            ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()), "com.example.vianworld.test")
         }.exceptionOrNull()
 
         assertTrue(failure is IllegalArgumentException)
@@ -62,7 +62,7 @@ class ModularBackupArchiveTest {
         }
 
         val failure = runCatching {
-            ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()))
+            ModularBackupArchive.read(ByteArrayInputStream(output.toByteArray()), "com.example.vianworld.test")
         }.exceptionOrNull()
 
         assertTrue(failure != null)
