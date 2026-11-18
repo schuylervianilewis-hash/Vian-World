@@ -56,9 +56,13 @@ object ModularBackupArchive {
 
     fun write(
         output: OutputStream,
+        applicationId: String,
         appVersion: String,
+        versionCode: Long,
+        buildType: String,
         payloads: Map<String, JSONObject>
     ) {
+        require(applicationId.isNotBlank()) { "Application ID must not be blank" }
         require(payloads.isNotEmpty()) { "Select at least one backup module" }
         require(payloads.keys.all { it in modulePaths }) { "Unknown backup module" }
 
