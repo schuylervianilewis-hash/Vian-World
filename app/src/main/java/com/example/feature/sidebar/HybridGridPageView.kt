@@ -404,7 +404,7 @@ class HybridGridPageView(
                 try {
                     if (item.id.startsWith("widget:")) {
                         val wId = item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() ?: continue
-                        val info = appWidgetManager.getAppWidgetInfo(wId)
+                        val info = if (wId >= 0) appWidgetManager.getAppWidgetInfo(wId) else null
                         if (info != null) {
                             val hostView = host.createView(context, wId, info)
                             hostView.setPadding(0, 0, 0, 0)
@@ -555,6 +555,7 @@ class HybridGridPageView(
                             placeholder.setOnLongClickListener {
                                 val newItems = items.toMutableList()
                                 newItems.removeAll { it.id == item.id }
+                                gridLayout.removeView(placeholder)
                                 saveWidgetItems(newItems)
                                 context.sendBroadcast(Intent("ELEMENT_ADDED_TO_HYBRID").apply {
                                     putExtra("PAGE_ID", pageId)
