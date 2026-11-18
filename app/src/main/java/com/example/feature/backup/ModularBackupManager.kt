@@ -4,6 +4,9 @@ import android.content.Context
 import eu.faircode.netguard.ModularFirewallBackup
 import org.json.JSONObject
 import shura.home.helpers.BackupHelper
+import shura.home.helpers.ITEM_TYPE_SHORTCUT
+import shura.home.helpers.ITEM_TYPE_WIDGET
+import shura.home.helpers.SIDEBAR_ELEMENT_CLASS_NAME
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
@@ -148,11 +151,11 @@ object ModularBackupManager {
                 }.isSuccess
                 if (!installed) warnings.add("Launcher app is not installed: $packageName")
             }
-            if (item.optInt("type", -1) == 1 && item.optInt("widget_id", -1) >= 0) {
+            if (item.optInt("type", -1) == ITEM_TYPE_WIDGET && item.optInt("widget_id", -1) >= 0) {
                 warnings.add("An Android widget position was preserved; it will be rebound with a new widget ID or shown as an unavailable placeholder.")
             }
-            if (item.optInt("type", -1) == 2 &&
-                item.optString("class_name") != "vian_world_sidebar_element" &&
+            if (item.optInt("type", -1) == ITEM_TYPE_SHORTCUT &&
+                item.optString("class_name") != SIDEBAR_ELEMENT_CLASS_NAME &&
                 item.optString("shortcut_id").isNotBlank()) {
                 warnings.add("A pinned shortcut ID cannot be transferred; its stale system ID was cleared.")
             }
