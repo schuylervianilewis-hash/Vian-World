@@ -38,6 +38,11 @@ object ModularBackupArchive {
         MODULE_FIREWALL to "firewall/firewall.json",
         MODULE_SIDEBAR to "sidebar/sidebar.json"
     )
+    private val currentModuleSchemas = mapOf(
+        MODULE_LAUNCHER to 2,
+        MODULE_FIREWALL to 1,
+        MODULE_SIDEBAR to 1
+    )
 
     data class Parsed(
         val appVersion: String,
@@ -74,7 +79,7 @@ object ModularBackupArchive {
             modulesJson.put(
                 JSONObject()
                     .put("id", moduleId)
-                    .put("schemaVersion", 1)
+                    .put("schemaVersion", currentModuleSchemas.getValue(moduleId))
                     .put("path", modulePaths.getValue(moduleId))
             )
         }
@@ -143,7 +148,9 @@ object ModularBackupArchive {
             require(id in modulePaths) { "Unknown module in backup: $id" }
             require(!declared.containsKey(id)) { "Duplicate module descriptor: $id" }
             val schemaVersion = item.optInt("schemaVersion", -1)
-            require(schemaVersion == 1) { "Unsupported $id module schema: $schemaVersion" }
+            require(schemaVersion in 1..currentModuleSchemas.getValue(id)) {
+                "Unsupported $id module schema: $schemaVersion"
+            }
             val path = item.optString("path")
             require(path == modulePaths[id]) { "Invalid payload path for $id" }
             declared[id] = schemaVersion
@@ -163,7 +170,15 @@ object ModularBackupArchive {
             val expectedHash = checksums.optString(path)
             require(expectedHash.matches(Regex("^[a-f0-9]{64}$"))) { "Invalid checksum for $id" }
             require(constantTimeEquals(expectedHash, sha256(bytes))) { "Checksum mismatch for $id" }
-            payloads[id] = JSONObject(String(bytes, Charsets.UTF_8))
+            val payload = JSONObject(String(bytes, Charsets.UTF_8))
+            val payloadSchema = when (id) {
+                MODULE_LAUNCHER -> payload.optInt("schema_version", -1)
+                else -> payload.optInt("schemaVersion", -1)
+            }
+            require(payloadSchema == schemaVersion) {
+                "The $id payload schema does not match its manifest descriptor"
+            }
+            payloads[id] = payload
         }
 
         return Parsed(
