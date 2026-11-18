@@ -83,6 +83,7 @@ object SidebarBackupModule {
         val handles = payload.getJSONArray("handles")
         require(handles.length() in 1..100) { "Invalid Sidebar handle count" }
         val seen = mutableSetOf<String>()
+        var firstHandleHasSidebarGesture = false
         for (i in 0 until handles.length()) {
             val item = handles.optJSONObject(i) ?: error("Invalid handle record")
             val id = item.optString("id")
@@ -98,10 +99,16 @@ object SidebarBackupModule {
             HandleGestures.ALL.forEach { gesture ->
                 val action = gestures.optString(gesture, HandleManager.ACTION_NONE)
                 require(actionPattern.matches(action)) { "Invalid gesture action" }
+                if (id == "handle_1" && action == HandleManager.ACTION_OPEN_SIDEBAR)
+                    firstHandleHasSidebarGesture = true
             }
+        }
+        require("handle_1" in seen && firstHandleHasSidebarGesture) {
+            "Sidebar backup must preserve Handle 1's Sidebar-opening gesture"
         }
         val pages = payload.getJSONArray("pages")
         require(pages.length() <= 1000) { "Too many Sidebar page records" }
+        val seenPageRecords = mutableSetOf<String>()
         for (i in 0 until pages.length()) {
             val item = pages.optJSONObject(i) ?: error("Invalid Sidebar page record")
             val handleId = item.optString("handleId")
@@ -110,13 +117,17 @@ object SidebarBackupModule {
             require(item.optString("containerId") == HandleManager.getContainerId(handleId, gesture)) {
                 "Page container identity mismatch"
             }
+            require(seenPageRecords.add("${item.optString("containerId")}/${item.optString("pageId")}")) {
+                "Duplicate Sidebar page metadata record"
+            }
             require(pageIdPattern.matches(item.optString("pageId"))) { "Invalid page ID" }
             require(pageTypePattern.matches(item.optString("pageType"))) { "Invalid page type" }
             require(item.optString("title").length <= 100) { "Page title is too long" }
             require(item.optInt("order", -1) in 0..1000) { "Invalid page order" }
         }
         val homeGrid = payload.optJSONObject("homeGrid")
-        if (homeGrid != null) {
+            ?: error("Resident Main-process Home Grid data is missing")
+        run {
             require(homeGrid.optString("pageId") == HOME_PAGE_ID) { "Unexpected full Sidebar page payload" }
             require(homeGrid.optString("containerId").isNotBlank()) { "Home Grid container is missing" }
             homeGrid.optString("gridJson").takeIf { it.isNotBlank() }?.let { raw ->
@@ -152,12 +163,14 @@ object SidebarBackupModule {
         }
     }
 
-    fun restore(context: Context, payload: JSONObject, exactRollback: Boolean = false) {
+    fun restore(context: Context, payload: JSONObject, exactRollback: Boolean = false): List<String> {
         validate(payload)
+        val warnings = mutableListOf<String>()
         restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
-        restorePageMetadata(context, payload.getJSONArray("pages"), exactRollback)
-        payload.optJSONObject("homeGrid")?.let { restoreResidentHomeGrid(context, it) }
+        restorePageMetadata(context, payload.getJSONArray("pages"), exactRollback, warnings)
+        restoreResidentHomeGrid(context, payload.getJSONObject("homeGrid"))
         OverlaySyncManager.triggerReload(context)
+        return warnings
     }
 
     private fun handleToJson(handle: HandleConfig): JSONObject {
@@ -256,7 +269,12 @@ object SidebarBackupModule {
         val order: Int
     )
 
-    private fun restorePageMetadata(context: Context, pages: JSONArray, exactRollback: Boolean) {
+    private fun restorePageMetadata(
+        context: Context,
+        pages: JSONArray,
+        exactRollback: Boolean,
+        warnings: MutableList<String>
+    ) {
         val manager = HandleManager.getInstance(context)
         val pageManager = PageManager.getInstance(context)
         val recordsByContainer = linkedMapOf<String, MutableList<PageRecord>>()
@@ -272,9 +290,14 @@ object SidebarBackupModule {
                 title = item.optString("title", "").take(100),
                 order = item.optInt("order", 0)
             )
-            val handle = manager.getHandle(record.handleId) ?: continue
+            val handle = manager.getHandle(record.handleId)
+            if (handle == null) {
+                warnings.add("Skipped page ${record.title}: its handle is unavailable.")
+                continue
+            }
             if (handle.getActionForGesture(record.gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
                 // Do not invent a gesture binding to accommodate an orphaned page stack.
+                warnings.add("Skipped page ${record.title}: its saved gesture does not open Sidebar.")
                 continue
             }
             recordsByContainer.getOrPut(record.containerId) { mutableListOf() }.add(record)
@@ -282,6 +305,13 @@ object SidebarBackupModule {
 
         recordsByContainer.forEach { (containerId, records) ->
             val current = pageManager.getPageStack(containerId)
+            if (!exactRollback) {
+                records.forEach { record ->
+                    val existing = current.firstOrNull { it.pageId == record.pageId }
+                    if (existing != null && existing.pageType != record.pageType)
+                        warnings.add("Skipped page ${record.title}: its existing page type differs.")
+                }
+            }
             val restored = if (exactRollback) {
                 restorePageStackExact(current, records)
             } else {
