@@ -1,0 +1,410 @@
+package com.example.feature.backup
+
+import android.content.Context
+import android.graphics.Color
+import android.util.Base64
+import com.example.core.HandleConfig
+import com.example.core.HandleGestures
+import com.example.core.HandleManager
+import com.example.core.OverlaySyncManager
+import com.example.core.PageManager
+import com.example.core.SidebarPage
+import com.example.feature.sidebar.ElementMetadata
+import com.example.feature.sidebar.ElementMetadataStore
+import com.example.util.HandleEdge
+import com.example.util.HandleShape
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.security.MessageDigest
+
+/**
+ * Sidebar backup boundary.
+ *
+ * Includes handle configuration, minimal metadata for every configured page stack, and
+ * only the resident Main-process default_hybrid Home Grid. It deliberately does not
+ * enumerate or copy arbitrary FloatingReaderPrefs keys.
+ */
+object SidebarBackupModule {
+    private const val PREFS_NAME = "FloatingReaderPrefs"
+    private const val HOME_PAGE_ID = "default_hybrid"
+    private val handleIdPattern = Regex("^handle_[1-9][0-9]{0,2}$")
+    private val actionPattern = Regex("^[a-zA-Z0-9_]{1,96}$")
+    private val pageIdPattern = Regex("^[a-zA-Z0-9_.:-]{1,128}$")
+    private val pageTypePattern = Regex("^[a-zA-Z0-9_]{1,64}$")
+    private val gestureSet = HandleGestures.ALL.toSet()
+
+    fun export(context: Context): JSONObject {
+        val manager = HandleManager.getInstance(context)
+        val pageManager = PageManager.getInstance(context)
+        val handles = manager.getAllHandles()
+        val handlesJson = JSONArray()
+        handles.forEach { handlesJson.put(handleToJson(it)) }
+
+        val pageStacks = JSONArray()
+        val primaryContainer = manager.getFirstHandlePrimaryContainerId()
+        var homeGrid: JSONObject? = null
+
+        handles.forEach { handle ->
+            HandleGestures.ALL.forEach { gesture ->
+                if (handle.getActionForGesture(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) return@forEach
+                val containerId = HandleManager.getContainerId(handle.id, gesture)
+                val stack = pageManager.getPageStack(containerId)
+                stack.forEachIndexed { index, page ->
+                    pageStacks.put(
+                        JSONObject()
+                            .put("handleId", handle.id)
+                            .put("gesture", gesture)
+                            .put("containerId", containerId)
+                            .put("pageId", page.pageId)
+                            .put("pageType", page.pageType)
+                            .put("title", page.title)
+                            .put("order", index)
+                    )
+                    if (containerId == primaryContainer && page.pageId == HOME_PAGE_ID) {
+                        homeGrid = exportResidentHomeGrid(context, containerId)
+                    }
+                }
+            }
+        }
+
+        return JSONObject()
+            .put("schemaVersion", 1)
+            .put("handles", handlesJson)
+            .put("pages", pageStacks)
+            .put("homeGrid", homeGrid ?: JSONObject.NULL)
+    }
+
+    fun validate(payload: JSONObject) {
+        require(payload.optInt("schemaVersion", -1) == 1) { "Unsupported Sidebar backup schema" }
+        require(payload.optJSONArray("handles") != null) { "Sidebar handles are missing" }
+        require(payload.optJSONArray("pages") != null) { "Sidebar page metadata is missing" }
+        val handles = payload.getJSONArray("handles")
+        require(handles.length() in 1..100) { "Invalid Sidebar handle count" }
+        val seen = mutableSetOf<String>()
+        for (i in 0 until handles.length()) {
+            val item = handles.optJSONObject(i) ?: error("Invalid handle record")
+            val id = item.optString("id")
+            require(handleIdPattern.matches(id) && seen.add(id)) { "Invalid or duplicate handle ID" }
+            require(item.optString("name").length <= 100) { "Handle name is too long" }
+            require(item.optDouble("position", 0.5) in 0.05..0.95) { "Invalid handle position" }
+            require(item.optInt("widthDp", 12) in 4..200) { "Invalid handle width" }
+            require(item.optInt("heightDp", 120) in 4..400) { "Invalid handle height" }
+            require(item.optInt("alphaPercent", 14) in 0..100) { "Invalid handle alpha" }
+            val gestures = item.optJSONObject("gestures") ?: error("Handle gestures are missing")
+            HandleGestures.ALL.forEach { gesture ->
+                val action = gestures.optString(gesture, HandleManager.ACTION_NONE)
+                require(actionPattern.matches(action)) { "Invalid gesture action" }
+            }
+        }
+        val pages = payload.getJSONArray("pages")
+        require(pages.length() <= 1000) { "Too many Sidebar page records" }
+        for (i in 0 until pages.length()) {
+            val item = pages.optJSONObject(i) ?: error("Invalid Sidebar page record")
+            val handleId = item.optString("handleId")
+            val gesture = item.optString("gesture")
+            require(handleIdPattern.matches(handleId) && gesture in gestureSet) { "Invalid page container identity" }
+            require(item.optString("containerId") == HandleManager.getContainerId(handleId, gesture)) {
+                "Page container identity mismatch"
+            }
+            require(pageIdPattern.matches(item.optString("pageId"))) { "Invalid page ID" }
+            require(pageTypePattern.matches(item.optString("pageType"))) { "Invalid page type" }
+            require(item.optString("title").length <= 100) { "Page title is too long" }
+            require(item.optInt("order", -1) in 0..1000) { "Invalid page order" }
+        }
+        val homeGrid = payload.optJSONObject("homeGrid")
+        if (homeGrid != null) {
+            require(homeGrid.optString("pageId") == HOME_PAGE_ID) { "Unexpected full Sidebar page payload" }
+            require(homeGrid.optString("containerId").isNotBlank()) { "Home Grid container is missing" }
+        }
+    }
+
+    fun restore(context: Context, payload: JSONObject) {
+        validate(payload)
+        restoreHandles(context, payload.getJSONArray("handles"))
+        restorePageMetadata(context, payload.getJSONArray("pages"))
+        payload.optJSONObject("homeGrid")?.let { restoreResidentHomeGrid(context, it) }
+        OverlaySyncManager.triggerReload(context)
+    }
+
+    private fun handleToJson(handle: HandleConfig): JSONObject {
+        val gestures = JSONObject()
+        HandleGestures.ALL.forEach { gestures.put(it, handle.getActionForGesture(it)) }
+        return JSONObject()
+            .put("id", handle.id)
+            .put("name", handle.name)
+            .put("enabled", handle.enabled)
+            .put("edge", handle.edge.name)
+            .put("position", handle.positionPercent.toDouble())
+            .put("widthDp", handle.widthDp)
+            .put("heightDp", handle.heightDp)
+            .put("color", handle.color)
+            .put("shape", handle.shape.name)
+            .put("alphaPercent", handle.alphaPercent)
+            .put("gestures", gestures)
+    }
+
+    private fun restoreHandles(context: Context, handles: JSONArray) {
+        val manager = HandleManager.getInstance(context)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val currentIds = manager.getHandleIds()
+        val restoredIds = mutableListOf<String>()
+        val editor = prefs.edit()
+
+        for (i in 0 until handles.length()) {
+            val item = handles.getJSONObject(i)
+            val id = item.getString("id")
+            if (!handleIdPattern.matches(id) || id in restoredIds) continue
+            val index = id.removePrefix("handle_").toIntOrNull() ?: continue
+            val edge = runCatching { HandleEdge.valueOf(item.optString("edge")) }.getOrNull() ?: continue
+            val shape = runCatching { HandleShape.valueOf(item.optString("shape")) }.getOrNull() ?: continue
+            val gestures = item.optJSONObject("gestures") ?: continue
+            val actions = HandleGestures.ALL.associateWith { gesture ->
+                val candidate = gestures.optString(gesture, HandleManager.ACTION_NONE)
+                if (actionPattern.matches(candidate)) candidate else HandleManager.ACTION_NONE
+            }.toMutableMap()
+
+            // Keep the non-removable first handle capable of opening a Sidebar.
+            if (id == "handle_1" && actions.values.none { it == HandleManager.ACTION_OPEN_SIDEBAR }) {
+                actions[HandleGestures.SWIPE_LEFT] = HandleManager.ACTION_OPEN_SIDEBAR
+            }
+
+            editor.putString("handle_name_$index", item.optString("name", "Handle $index").take(100))
+            editor.putBoolean("handle_enabled_$index", item.optBoolean("enabled", true))
+            editor.putString("handle_edge_$index", edge.name)
+            editor.putFloat("handle_pos_$index", item.optDouble("position", 0.5).toFloat().coerceIn(0.05f, 0.95f))
+            editor.putInt("handle_width_$index", item.optInt("widthDp", 12).coerceIn(4, 200))
+            editor.putInt("handle_height_$index", item.optInt("heightDp", 120).coerceIn(4, 400))
+            editor.putInt("handle_color_$index", item.optInt("color", Color.parseColor("#242962ff")))
+            editor.putString("handle_shape_$index", shape.name)
+            editor.putInt("handle_alpha_$index", item.optInt("alphaPercent", 14).coerceIn(0, 100))
+            actions.forEach { (gesture, action) ->
+                editor.putString(HandleManager.getGesturePrefKey(index, gesture), action)
+            }
+            restoredIds.add(id)
+        }
+
+        // Merge handles: restore backed-up handles first, but do not delete handles
+        // that exist only on the destination installation.
+        val mergedIds = (restoredIds + currentIds.filterNot { it in restoredIds }).distinct()
+        if ("handle_1" !in mergedIds) mergedIds.add(0, "handle_1")
+        editor.putString(HandleManager.KEY_HANDLE_IDS, mergedIds.joinToString(","))
+        editor.putInt(HandleManager.KEY_HANDLES_COUNT, mergedIds.size)
+        check(editor.commit()) { "Could not persist Sidebar handles" }
+        manager.notifyMainReload(context)
+    }
+
+    private data class PageRecord(
+        val handleId: String,
+        val gesture: String,
+        val containerId: String,
+        val pageId: String,
+        val pageType: String,
+        val title: String,
+        val order: Int
+    )
+
+    private fun restorePageMetadata(context: Context, pages: JSONArray) {
+        val manager = HandleManager.getInstance(context)
+        val pageManager = PageManager.getInstance(context)
+        val recordsByContainer = linkedMapOf<String, MutableList<PageRecord>>()
+
+        for (i in 0 until pages.length()) {
+            val item = pages.getJSONObject(i)
+            val record = PageRecord(
+                handleId = item.getString("handleId"),
+                gesture = item.getString("gesture"),
+                containerId = item.getString("containerId"),
+                pageId = item.getString("pageId"),
+                pageType = item.getString("pageType"),
+                title = item.optString("title", "").take(100),
+                order = item.optInt("order", 0)
+            )
+            val handle = manager.getHandle(record.handleId) ?: continue
+            if (handle.getActionForGesture(record.gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
+                // Do not invent a gesture binding to accommodate an orphaned page stack.
+                continue
+            }
+            recordsByContainer.getOrPut(record.containerId) { mutableListOf() }.add(record)
+        }
+
+        recordsByContainer.forEach { (containerId, records) ->
+            val current = pageManager.getPageStack(containerId)
+            val merged = mergePageStack(current, records)
+            pageManager.savePageStack(containerId, merged)
+        }
+    }
+
+    /**
+     * Merge semantics: backup records are reinserted at their saved indices, while
+     * destination-only pages retain their relative order. Type conflicts stay untouched.
+     */
+    internal fun mergePageStack(current: List<SidebarPage>, records: List<PageRecord>): List<SidebarPage> {
+        val currentById = current.associateBy { it.pageId }
+        val applicable = records
+            .distinctBy { it.pageId }
+            .sortedBy { it.order }
+            .filter { record ->
+                val existing = currentById[record.pageId]
+                existing == null || existing.pageType == record.pageType
+            }
+        val applicableIds = applicable.map { it.pageId }.toSet()
+        val result = current.filterNot { it.pageId in applicableIds }.toMutableList()
+
+        applicable.forEach { record ->
+            val existing = currentById[record.pageId]
+            val page = if (existing != null) {
+                // Preserve every non-metadata field on an existing page.
+                existing.copy(title = record.title)
+            } else {
+                SidebarPage.createDefault(
+                    id = record.pageId,
+                    type = record.pageType,
+                    title = record.title,
+                    order = record.order
+                )
+            }
+            val insertionIndex = record.order.coerceIn(0, result.size)
+            result.add(insertionIndex, page)
+        }
+        return result.mapIndexed { index, page -> page.copy(order = index) }
+    }
+
+    private fun exportResidentHomeGrid(context: Context, containerId: String): JSONObject {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val gridKey = "handle_${containerId}_hybrid_grid_${HOME_PAGE_ID}"
+        val legacyGridKey = "hybrid_grid_${HOME_PAGE_ID}"
+        val elementsKey = "hg_${containerId}_${HOME_PAGE_ID}"
+        val legacyElementsKey = "hg_${HOME_PAGE_ID}"
+        val columnsKey = "handle_${containerId}_hybrid_grid_cols_${HOME_PAGE_ID}"
+        val modifiedKey = "handle_${containerId}_hybrid_grid_modified_${HOME_PAGE_ID}"
+        val wrapKey = "handle_${containerId}_sidebar_wrap_content"
+
+        val gridJson = prefs.getString(gridKey, null)
+            ?: prefs.getString(legacyGridKey, null).takeIf { containerId == "handle_1_swipe_left" || containerId == "sidebar" }
+        val elementsJson = prefs.getString(elementsKey, null)
+            ?: prefs.getString(legacyElementsKey, null).takeIf { containerId == "handle_1_swipe_left" || containerId == "sidebar" }
+
+        val result = JSONObject()
+            .put("pageId", HOME_PAGE_ID)
+            .put("containerId", containerId)
+        if (gridJson != null) result.put("gridJson", gridJson)
+        if (elementsJson != null) {
+            result.put("elementsJson", elementsJson)
+            result.put("elementMetadata", exportElementMetadata(context, elementsJson))
+        }
+        if (prefs.contains(columnsKey)) result.put("columns", prefs.getInt(columnsKey, 3))
+        if (prefs.contains(modifiedKey)) result.put("modified", prefs.getBoolean(modifiedKey, false))
+        if (prefs.contains(wrapKey)) result.put("wrapContent", prefs.getBoolean(wrapKey, true))
+        val colorKey = "handle_${containerId}_sidebar_color"
+        val transparencyKey = "handle_${containerId}_sidebar_transparency"
+        if (prefs.contains(colorKey)) result.put("sidebarColor", prefs.getString(colorKey, null))
+        if (prefs.contains(transparencyKey)) result.put("sidebarTransparency", prefs.getFloat(transparencyKey, 0.9f).toDouble())
+        return result
+    }
+
+    private fun exportElementMetadata(context: Context, elementsJson: String): JSONArray {
+        val output = JSONArray()
+        val elements = runCatching { JSONArray(elementsJson) }.getOrNull() ?: return output
+        for (i in 0 until elements.length()) {
+            val id = elements.optString(i)
+            if (id.isBlank() || id.startsWith("pwa:") || id.startsWith("miniapp:")) continue
+            val metadata = ElementMetadataStore.get(context, id) ?: continue
+            if (metadata.type != "app" && metadata.type != "link") continue
+            val item = JSONObject()
+                .put("id", metadata.id)
+                .put("type", metadata.type)
+                .put("target", metadata.target)
+                .put("label", metadata.label.take(200))
+            metadata.browserPackage?.takeIf { it.isNotBlank() }?.let { item.put("browserPackage", it) }
+            val iconFile = metadata.iconPath.takeIf { it.isNotBlank() }?.let(::File)
+            if (iconFile != null && iconFile.isFile && iconFile.length() in 1..(1024L * 1024L)) {
+                runCatching {
+                    item.put("iconBase64", Base64.encodeToString(iconFile.readBytes(), Base64.NO_WRAP))
+                }
+            }
+            output.put(item)
+        }
+        return output
+    }
+
+    private fun restoreResidentHomeGrid(context: Context, homeGrid: JSONObject) {
+        val manager = HandleManager.getInstance(context)
+        val containerId = homeGrid.optString("containerId")
+        require(containerId == manager.getFirstHandlePrimaryContainerId()) {
+            "Backup Home Grid does not belong to the current resident container"
+        }
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        val gridKey = "handle_${containerId}_hybrid_grid_${HOME_PAGE_ID}"
+        val elementsKey = "hg_${containerId}_${HOME_PAGE_ID}"
+        val columnsKey = "handle_${containerId}_hybrid_grid_cols_${HOME_PAGE_ID}"
+        val modifiedKey = "handle_${containerId}_hybrid_grid_modified_${HOME_PAGE_ID}"
+        val wrapKey = "handle_${containerId}_sidebar_wrap_content"
+
+        if (homeGrid.has("gridJson")) editor.putString(gridKey, homeGrid.getString("gridJson"))
+        if (homeGrid.has("elementsJson")) {
+            val elements = JSONArray(homeGrid.getString("elementsJson"))
+            require(elements.length() <= 500) { "Home Grid contains too many elements" }
+            editor.putString(elementsKey, elements.toString())
+        }
+        if (homeGrid.has("columns")) editor.putInt(columnsKey, homeGrid.getInt("columns").coerceIn(1, 12))
+        if (homeGrid.has("modified")) editor.putBoolean(modifiedKey, homeGrid.getBoolean("modified"))
+        if (homeGrid.has("wrapContent")) editor.putBoolean(wrapKey, homeGrid.getBoolean("wrapContent"))
+        if (homeGrid.has("sidebarColor") && !homeGrid.isNull("sidebarColor")) {
+            val color = homeGrid.getString("sidebarColor")
+            require(color.length <= 32) { "Invalid Home Grid color" }
+            editor.putString("handle_${containerId}_sidebar_color", color)
+        }
+        if (homeGrid.has("sidebarTransparency")) {
+            val alpha = homeGrid.getDouble("sidebarTransparency")
+            require(alpha in 0.0..1.0) { "Invalid Home Grid transparency" }
+            editor.putFloat("handle_${containerId}_sidebar_transparency", alpha.toFloat())
+        }
+        check(editor.commit()) { "Could not persist resident Home Grid" }
+        restoreElementMetadata(context, homeGrid.optJSONArray("elementMetadata") ?: JSONArray())
+    }
+
+    private fun restoreElementMetadata(context: Context, metadata: JSONArray) {
+        val iconDir = File(context.filesDir, "sidebar_backup_icons")
+        if (!iconDir.exists()) iconDir.mkdirs()
+        for (i in 0 until metadata.length()) {
+            val item = metadata.optJSONObject(i) ?: continue
+            val id = item.optString("id")
+            val type = item.optString("type")
+            if (id.isBlank() || id.startsWith("pwa:") || id.startsWith("miniapp:")) continue
+            if (type != "app" && type != "link") continue
+            val target = item.optString("target")
+            val label = item.optString("label").take(200)
+            if (target.isBlank() || label.isBlank()) continue
+            var iconPath = ""
+            val encoded = item.optString("iconBase64")
+            if (encoded.isNotBlank()) {
+                runCatching {
+                    val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+                    require(bytes.size in 1..(1024 * 1024))
+                    val file = File(iconDir, "${safeFileName(id)}.webp")
+                    file.writeBytes(bytes)
+                    iconPath = file.absolutePath
+                }
+            }
+            ElementMetadataStore.save(
+                context,
+                ElementMetadata(
+                    id = id,
+                    type = type,
+                    target = target,
+                    label = label,
+                    iconPath = iconPath,
+                    browserPackage = item.optString("browserPackage").takeIf { it.isNotBlank() }
+                )
+            )
+        }
+    }
+
+    private fun safeFileName(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+}
