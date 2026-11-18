@@ -92,6 +92,8 @@ object SidebarBackupModule {
             require(item.optInt("widthDp", 12) in 4..200) { "Invalid handle width" }
             require(item.optInt("heightDp", 120) in 4..400) { "Invalid handle height" }
             require(item.optInt("alphaPercent", 14) in 0..100) { "Invalid handle alpha" }
+            require(runCatching { HandleEdge.valueOf(item.optString("edge")) }.isSuccess) { "Invalid handle edge" }
+            require(runCatching { HandleShape.valueOf(item.optString("shape")) }.isSuccess) { "Invalid handle shape" }
             val gestures = item.optJSONObject("gestures") ?: error("Handle gestures are missing")
             HandleGestures.ALL.forEach { gesture ->
                 val action = gestures.optString(gesture, HandleManager.ACTION_NONE)
@@ -117,6 +119,36 @@ object SidebarBackupModule {
         if (homeGrid != null) {
             require(homeGrid.optString("pageId") == HOME_PAGE_ID) { "Unexpected full Sidebar page payload" }
             require(homeGrid.optString("containerId").isNotBlank()) { "Home Grid container is missing" }
+            homeGrid.optString("gridJson").takeIf { it.isNotBlank() }?.let { raw ->
+                val grid = JSONArray(raw)
+                require(grid.length() <= 500) { "Home Grid has too many placed elements" }
+                for (i in 0 until grid.length()) {
+                    val item = grid.optJSONObject(i) ?: error("Invalid Home Grid placement")
+                    require(item.optString("id").length in 1..512) { "Invalid Home Grid element reference" }
+                    require(item.optInt("cols", 1) in 1..12 && item.optInt("rows", 1) in 1..12) {
+                        "Invalid Home Grid element span"
+                    }
+                    require(item.optInt("x", 0) in 0..1000 && item.optInt("y", 0) in 0..1000) {
+                        "Invalid Home Grid element position"
+                    }
+                }
+            }
+            homeGrid.optString("elementsJson").takeIf { it.isNotBlank() }?.let { raw ->
+                val elements = JSONArray(raw)
+                require(elements.length() <= 500) { "Home Grid contains too many elements" }
+                for (i in 0 until elements.length())
+                    require(elements.optString(i).length in 1..512) { "Invalid Home Grid element ID" }
+            }
+            val metadata = homeGrid.optJSONArray("elementMetadata") ?: JSONArray()
+            require(metadata.length() <= 500) { "Too much Home Grid element metadata" }
+            for (i in 0 until metadata.length()) {
+                val item = metadata.optJSONObject(i) ?: error("Invalid Home Grid element metadata")
+                require(item.optString("id").length in 1..512) { "Invalid metadata element ID" }
+                require(item.optString("type") in setOf("app", "link")) { "Unsupported Home Grid metadata type" }
+                require(item.optString("target").length in 1..4096) { "Invalid Home Grid metadata target" }
+                require(item.optString("label").length in 1..200) { "Invalid Home Grid metadata label" }
+                require(item.optString("iconBase64").length <= 1_400_000) { "Home Grid icon is too large" }
+            }
         }
     }
 
@@ -376,6 +408,7 @@ object SidebarBackupModule {
         if (elementsJson != null) {
             result.put("elementsJson", elementsJson)
             result.put("elementMetadata", exportElementMetadata(context, elementsJson))
+            result.put("savedLinkIds", extractSavedLinkIds(elementsJson))
         }
         if (columns != null) result.put("columns", columns)
         if (modified != null) result.put("modified", modified)
@@ -404,6 +437,19 @@ object SidebarBackupModule {
             }
             widgets.toString()
         }.getOrDefault("[]")
+    }
+
+    private fun extractSavedLinkIds(elementsJson: String): JSONArray {
+        val output = JSONArray()
+        val elements = runCatching { JSONArray(elementsJson) }.getOrNull() ?: return output
+        val seen = mutableSetOf<String>()
+        for (i in 0 until elements.length()) {
+            val id = elements.optString(i)
+            if (!id.startsWith("link:")) continue
+            val uuid = id.substringAfter("link:").substringBefore(":")
+            if (uuid.isNotBlank() && seen.add(uuid)) output.put(uuid)
+        }
+        return output
     }
 
     private fun exportElementMetadata(context: Context, elementsJson: String): JSONArray {
@@ -455,7 +501,7 @@ object SidebarBackupModule {
         // source backup. This prevents stale legacy aliases on the destination from
         // silently repopulating the restored resident grid.
         if (isPresent("gridJson", homeGrid)) {
-            editor.putString(gridKey, homeGrid.optString("gridJson", "[]"))
+            editor.putString(gridKey, sanitizeWidgetIds(context, homeGrid.optString("gridJson", "[]")))
         } else {
             editor.putString(gridKey, "[]")
         }
@@ -482,6 +528,12 @@ object SidebarBackupModule {
         editor.putFloat("handle_${containerId}_sidebar_transparency", alpha.toFloat())
         check(editor.commit()) { "Could not persist resident Home Grid" }
         restoreElementMetadata(context, homeGrid.optJSONArray("elementMetadata") ?: JSONArray())
+        val savedLinks = homeGrid.optJSONArray("savedLinkIds") ?: JSONArray()
+        for (i in 0 until savedLinks.length()) {
+            val uuid = savedLinks.optString(i)
+            if (uuid.isNotBlank() && uuid.length <= 128)
+                ElementMetadataStore.addSavedLinkId(context, uuid)
+        }
     }
 
     private fun restoreElementMetadata(context: Context, metadata: JSONArray) {
