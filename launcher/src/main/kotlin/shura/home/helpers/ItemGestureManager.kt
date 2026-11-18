@@ -233,10 +233,14 @@ object ItemGestureManager {
         return HashMap(configs)
     }
 
-    fun restoreConfigs(context: Context, newConfigs: Map<Long, ItemGestureConfig>) {
+    fun restoreConfigs(
+        context: Context,
+        newConfigs: Map<Long, ItemGestureConfig>,
+        synchronous: Boolean = false
+    ) {
         configs.clear()
         configs.putAll(newConfigs)
-        saveToFileAsync(context)
+        if (synchronous) saveToFile(context) else saveToFileAsync(context)
         LogCatcher.log("ItemGestureManager", "Restored ${newConfigs.size} gesture configurations")
     }
 
@@ -277,29 +281,30 @@ object ItemGestureManager {
     }
 
     private fun saveToFileAsync(context: Context) {
-        ensureBackgroundThread {
-            try {
-                val file = getStorageFile(context)
-                val atomicFile = AtomicFile(file)
-                val rootJson = JSONObject()
-                for ((id, config) in configs) {
-                    rootJson.put(id.toString(), config.toJsonObject())
-                }
-                val bytes = rootJson.toString().toByteArray(Charsets.UTF_8)
-                var stream: java.io.FileOutputStream? = null
-                try {
-                    stream = atomicFile.startWrite()
-                    stream.write(bytes)
-                    atomicFile.finishWrite(stream)
-                } catch (e: Exception) {
-                    if (stream != null) {
-                        atomicFile.failWrite(stream)
-                    }
-                    throw e
-                }
-            } catch (e: Exception) {
-                LogCatcher.log("ItemGestureManager", "Failed to save gesture configs", e)
+        ensureBackgroundThread { saveToFile(context) }
+    }
+
+    private fun saveToFile(context: Context) {
+        try {
+            val file = getStorageFile(context)
+            val atomicFile = AtomicFile(file)
+            val rootJson = JSONObject()
+            for ((id, config) in configs) {
+                rootJson.put(id.toString(), config.toJsonObject())
             }
+            val bytes = rootJson.toString().toByteArray(Charsets.UTF_8)
+            var stream: java.io.FileOutputStream? = null
+            try {
+                stream = atomicFile.startWrite()
+                stream.write(bytes)
+                atomicFile.finishWrite(stream)
+            } catch (e: Exception) {
+                if (stream != null) atomicFile.failWrite(stream)
+                throw e
+            }
+        } catch (e: Exception) {
+            LogCatcher.log("ItemGestureManager", "Failed to save gesture configs", e)
+            throw e
         }
     }
 }
