@@ -431,7 +431,7 @@ object SidebarBackupModule {
                 val sourceId = suffix.substringBefore(":").toIntOrNull()
                 val existingHint = suffix.substringAfter(":", "")
                 val providerHint = sourceId?.takeIf { it >= 0 }?.let { widgetId ->
-                    appWidgetManager.getAppWidgetInfo(widgetId)?.provider?.flattenToString()
+                    runCatching { appWidgetManager.getAppWidgetInfo(widgetId)?.provider?.flattenToString() }.getOrNull()
                 } ?: existingHint
                 item.put("id", "widget:-1:${providerHint.take(255)}")
             }
