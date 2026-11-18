@@ -116,7 +116,7 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                     runCatching {
                         val input = context.contentResolver.openInputStream(uri)
                             ?: error("Could not open the selected backup")
-                        input.use { ModularBackupArchive.read(it) }
+                        input.use { ModularBackupArchive.read(it, context.packageName) }
                     }
                 }
                 busy = false
