@@ -414,7 +414,9 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
                 (context.resources.getDimension(R.dimen.icon_side_margin) * 0.22f).toInt().coerceAtLeast(2)
             isFirstDraw = true
             reflowGridItemsForNewSize(newRowCount, newColumnCount, newDockColumnCount)
-            gridItems.filter { it.type == ITEM_TYPE_WIDGET && !isBuiltInClockWidget(it.className) }.forEach {
+            gridItems.filter {
+                it.type == ITEM_TYPE_WIDGET && !isBuiltInClockWidget(it.className) && it.widgetId >= 0
+            }.forEach {
                 appWidgetHost.deleteAppWidgetId(it.widgetId)
             }
             widgetViews.forEach { removeView(it) }
