@@ -400,39 +400,43 @@ object BackupHelper {
                 // backup do not survive from the destination installation.
                 val launcherDao = db.AppLaunchersDao()
                 val packageManager = context.packageManager
-                launcherDao.resetAllAppOrders()
-                launcherDao.getAppLaunchers().forEach { app ->
-                    val systemTitle = runCatching {
-                        if (app.activityName.isNotBlank()) {
-                            packageManager.getActivityInfo(
-                                android.content.ComponentName(app.packageName, app.activityName),
-                                0
-                            ).loadLabel(packageManager).toString()
-                        } else {
-                            packageManager.getApplicationInfo(app.packageName, 0)
-                                .loadLabel(packageManager).toString()
-                        }
-                    }.getOrNull()
-                    if (!systemTitle.isNullOrBlank())
-                        launcherDao.updateAppTitle(systemTitle, app.packageName)
-                }
-                val drawerOrderArray = root.optJSONArray("app_drawer_order") ?: JSONArray()
-                for (index in 0 until drawerOrderArray.length()) {
-                    val orderItem = drawerOrderArray.getJSONObject(index)
-                    launcherDao.updateAppOrder(
-                        orderItem.getInt("order"),
-                        orderItem.getString("packageName"),
-                        orderItem.optString("activityName", "")
-                    )
-                }
-
                 val drawerRenamesJson = root.optJSONObject("drawer_renames")
                 if (drawerRenamesJson != null) {
+                    // Reset only when the backup actually contains the rename module;
+                    // older backups without this field must not erase destination names.
+                    launcherDao.getAppLaunchers().forEach { app ->
+                        val systemTitle = runCatching {
+                            if (app.activityName.isNotBlank()) {
+                                packageManager.getActivityInfo(
+                                    android.content.ComponentName(app.packageName, app.activityName),
+                                    0
+                                ).loadLabel(packageManager).toString()
+                            } else {
+                                packageManager.getApplicationInfo(app.packageName, 0)
+                                    .loadLabel(packageManager).toString()
+                            }
+                        }.getOrNull()
+                        if (!systemTitle.isNullOrBlank())
+                            launcherDao.updateAppTitle(systemTitle, app.packageName)
+                    }
                     val keys = drawerRenamesJson.keys()
                     while (keys.hasNext()) {
                         val pkg = keys.next()
                         val customTitle = drawerRenamesJson.getString(pkg)
                         launcherDao.updateAppTitle(customTitle, pkg)
+                    }
+                }
+
+                val drawerOrderArray = root.optJSONArray("app_drawer_order")
+                if (drawerOrderArray != null) {
+                    launcherDao.resetAllAppOrders()
+                    for (index in 0 until drawerOrderArray.length()) {
+                        val orderItem = drawerOrderArray.getJSONObject(index)
+                        launcherDao.updateAppOrder(
+                            orderItem.getInt("order"),
+                            orderItem.getString("packageName"),
+                            orderItem.optString("activityName", "")
+                        )
                     }
                 }
             }
