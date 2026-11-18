@@ -527,10 +527,13 @@ object BackupHelper {
         val grid = root.optJSONArray("grid_items") ?: error("Launcher grid data is missing")
         require(grid.length() <= 10000) { "Launcher backup has too many grid items" }
         val ids = mutableSetOf<Long>()
+        val itemsById = mutableMapOf<Long, JSONObject>()
         for (index in 0 until grid.length()) {
             val item = grid.optJSONObject(index) ?: error("Invalid Launcher grid item")
             val id = item.optLong("id", 0L)
             require(id > 0L && ids.add(id)) { "Invalid or duplicate Launcher item ID" }
+            require(item.optInt("type", -1) in 0..4) { "Invalid Launcher item type" }
+            itemsById[id] = item
             // -1 is the launcher's persisted sentinel for docked/size-derived
             // coordinates; preserve it rather than rejecting a valid dock item.
             require(item.optInt("left", -2) in -1..10000 && item.optInt("right", -2) in -1..10000) {
@@ -545,8 +548,15 @@ object BackupHelper {
             require(item.optString("class_name").length <= 512) { "Launcher class name is too long" }
             require(item.optString("title").length <= 200) { "Launcher item title is too long" }
             require(item.optString("icon_base64").length <= 1_400_000) { "Launcher item icon is too large" }
+            require(item.optString("shortcut_id").length <= 512) { "Launcher shortcut ID is too long" }
             if (item.has("parent_id") && !item.isNull("parent_id"))
                 require(item.optLong("parent_id", -1L) > 0L) { "Invalid Launcher folder parent ID" }
+        }
+        itemsById.values.forEach { item ->
+            if (!item.has("parent_id") || item.isNull("parent_id")) return@forEach
+            val parent = itemsById[item.getLong("parent_id")]
+            if (parent != null)
+                require(parent.optInt("type", -1) == 3) { "Launcher child item parent is not a folder" }
         }
 
         val gestures = root.optJSONObject("item_gestures") ?: JSONObject()
