@@ -1,6 +1,8 @@
 package com.example.feature.backup
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.os.Build
 import eu.faircode.netguard.ModularFirewallBackup
 import org.json.JSONObject
 import shura.home.helpers.BackupHelper
@@ -38,7 +40,25 @@ object ModularBackupManager {
             validateModule(module, payload)
             payloads[module] = payload
         }
-        ModularBackupArchive.write(output, com.example.BuildConfig.VERSION_NAME, payloads)
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            packageInfo.versionCode.toLong()
+        }
+        val buildType = if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            "debug"
+        } else {
+            "release"
+        }
+        ModularBackupArchive.write(
+            output,
+            context.packageName,
+            packageInfo.versionName ?: "unknown",
+            versionCode,
+            buildType,
+            payloads
+        )
     }
 
     fun inspect(input: ByteArrayInputStream): ModularBackupArchive.Parsed =
