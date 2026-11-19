@@ -170,17 +170,21 @@ fun LogKeeperScreen(onBack: () -> Unit) {
     var crashLogText by remember { mutableStateOf("Loading crash logs...") }
     var runningState by remember { mutableStateOf(RunningRuntimeState()) }
     var showClearDialog by remember { mutableStateOf(false) }
-    var isMiniAppFilterActive by remember { mutableStateOf(false) }
-    var isFirewallFilterActive by remember { mutableStateOf(false) }
+    var selectedTimeRange by remember { mutableStateOf("All") }
+    var selectedSubsystem by remember { mutableStateOf("All") }
+    var executionEvents by remember { mutableStateOf(emptyList<LogKeeper.ExecutionEvent>()) }
+    var showActiveSubsystems by remember { mutableStateOf(false) }
 
     fun loadLogs() {
         scope.launch {
             val diag = withContext(Dispatchers.IO) { LogKeeper.getDiagnosticLogs(context) }
             val crash = withContext(Dispatchers.IO) { LogKeeper.getCrashLogs(context) }
             val running = withContext(Dispatchers.IO) { loadRunningState(context, diag) }
+            val executions = withContext(Dispatchers.IO) { LogKeeper.getExecutionEvents(context) }
             diagnosticLogText = diag
             crashLogText = crash
             runningState = running
+            executionEvents = executions
         }
     }
 
@@ -191,29 +195,21 @@ fun LogKeeperScreen(onBack: () -> Unit) {
     val rawLogContent = when (selectedTab) {
         0 -> diagnosticLogText
         1 -> crashLogText
-        else -> formatRunningSummary(runningState)
+        2 -> formatRunningSummary(runningState)
+        else -> formatExecutionSummary(executionEvents)
     }
 
-    val currentLogContent = if (selectedTab == 2) {
-        rawLogContent
-    } else if (!isMiniAppFilterActive && !isFirewallFilterActive) {
+    val currentLogContent = if (selectedTab >= 2) {
         rawLogContent
     } else {
-        val matchingBlocks = FloatingMiniAppLogFilter.splitIntoBlocks(rawLogContent).filter { block ->
-            (isMiniAppFilterActive && FloatingMiniAppLogFilter.isMiniAppLogEntry(block)) ||
-                (isFirewallFilterActive && FirewallLogFilter.isFirewallLogEntry(block))
-        }
-        if (matchingBlocks.isEmpty()) {
-            if (isFirewallFilterActive && !isMiniAppFilterActive) FirewallLogFilter.EMPTY_STATE_MESSAGE
-            else if (isMiniAppFilterActive && !isFirewallFilterActive) FloatingMiniAppLogFilter.EMPTY_STATE_MESSAGE
-            else "No matching logs found."
-        } else matchingBlocks.joinToString("\n\n")
+        filterLogText(rawLogContent, selectedTimeRange, selectedSubsystem)
     }
 
     val currentSubTitle = when (selectedTab) {
         0 -> LogKeeper.FILE_DIAGNOSTIC_LOG
         1 -> LogKeeper.FILE_CRASH_LOG
-        else -> "Runtime & Lifecycle Diagnostics"
+        2 -> "Runtime — currently active"
+        else -> "Execution history"
     }
 
     Scaffold(
@@ -256,9 +252,9 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                     }
                     IconButton(
                         onClick = { showClearDialog = true },
-                        modifier = Modifier.testTag("log_keeper_clear_button")
+                        modifier = Modifier.testTag(if (selectedTab == 3) "log_keeper_clear_execution_button" else "log_keeper_clear_button")
                     ) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Clear Logs")
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = if (selectedTab == 3) "Clear Execution History" else "Clear Logs")
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -295,12 +291,18 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                     text = { Text("Running", fontWeight = FontWeight.Medium) },
                     modifier = Modifier.testTag("tab_running")
                 )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = { Text("History", fontWeight = FontWeight.Medium) },
+                    modifier = Modifier.testTag("tab_execution_history")
+                )
             }
 
             if (selectedTab == 2) {
-                // Running Tab UI (Processes, Active Services, Lifecycle Events)
                 RunningTabContent(
                     state = runningState,
+                    executionEvents = executionEvents,
                     onCopySummary = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("LogKeeper_Running", formatRunningSummary(runningState))
@@ -308,40 +310,40 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                         Toast.makeText(context, "Copied runtime summary to clipboard", Toast.LENGTH_SHORT).show()
                     }
                 )
+            } else if (selectedTab == 3) {
+                ExecutionHistoryTab(events = executionEvents)
             } else {
-                // Diagnostic & Crash Log Toolbar & Filter
+                // Vian Board-style time and subsystem filter pills.
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FilterChip(
-                            selected = isMiniAppFilterActive,
-                            onClick = { isMiniAppFilterActive = !isMiniAppFilterActive },
-                            label = { Text("Floating Mini-apps", fontSize = 12.sp) },
-                            leadingIcon = if (isMiniAppFilterActive) {
-                                {
-                                    Icon(Icons.Default.Check, contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize))
-                                }
-                            } else null,
-                            modifier = Modifier.testTag("filter_floating_mini_apps")
-                        )
-                        FilterChip(
-                            selected = isFirewallFilterActive,
-                            onClick = { isFirewallFilterActive = !isFirewallFilterActive },
-                            label = { Text("Firewall", fontSize = 12.sp) },
-                            leadingIcon = if (isFirewallFilterActive) {
-                                {
-                                    Icon(Icons.Default.Check, contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize))
-                                }
-                            } else null,
-                            modifier = Modifier.testTag("filter_firewall_logs")
-                        )
+                        listOf("All", "1h", "6h", "12h", "24h").forEach { range ->
+                            FilterChip(
+                                selected = selectedTimeRange == range,
+                                onClick = { selectedTimeRange = range },
+                                label = { Text(range, fontSize = 12.sp) },
+                                modifier = Modifier.testTag("filter_time_$range")
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("All", "Core", "Launcher", "Floating Mini-apps", "Firewall").forEach { subsystem ->
+                            FilterChip(
+                                selected = selectedSubsystem == subsystem,
+                                onClick = { selectedSubsystem = subsystem },
+                                label = { Text(subsystem, fontSize = 12.sp) },
+                                modifier = Modifier.testTag("filter_subsystem_${subsystem.replace(" ", "_")}")
+                            )
+                        }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         OutlinedButton(
@@ -358,38 +360,23 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                     }
                 }
 
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                if (selectedTab == 0 && executionEvents.isNotEmpty()) {
+                    ActiveSubsystemsCard(
+                        events = executionEvents,
+                        expanded = showActiveSubsystems,
+                        onToggle = { showActiveSubsystems = !showActiveSubsystems }
                     )
-                ) {
-                    val verticalScroll = rememberScrollState()
-                    val horizontalScroll = rememberScrollState()
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp)
-                    ) {
-                        SelectionContainer {
-                            Text(
-                                text = currentLogContent,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(verticalScroll)
-                                    .horizontalScroll(horizontalScroll)
-                                    .testTag("log_text_content")
-                            )
-                        }
-                    }
                 }
+                LogKeeperLogList(
+                    raw = currentLogContent,
+                    emptyMessage = when (selectedTab) {
+                        1 -> "No crash reports match the selected filters."
+                        else -> if (selectedTimeRange == "All" && selectedSubsystem == "All")
+                            "No logs recorded. System is running cleanly."
+                        else "No logs for $selectedSubsystem in the selected timeframe."
+                    },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -397,7 +384,11 @@ fun LogKeeperScreen(onBack: () -> Unit) {
     }
 
     if (showClearDialog) {
-        val clearTitle = if (selectedTab == 1) "Clear Crash Reports?" else "Clear Diagnostic Logs?"
+        val clearTitle = when (selectedTab) {
+            1 -> "Clear Crash Reports?"
+            3 -> "Clear Execution History?"
+            else -> "Clear Diagnostic Logs?"
+        }
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text(clearTitle) },
@@ -408,10 +399,10 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                         showClearDialog = false
                         scope.launch {
                             withContext(Dispatchers.IO) {
-                                if (selectedTab == 1) {
-                                    LogKeeper.clearCrashLogs(context)
-                                } else {
-                                    LogKeeper.clearDiagnosticLogs(context)
+                                when (selectedTab) {
+                                    1 -> LogKeeper.clearCrashLogs(context)
+                                    3 -> LogKeeper.clearExecutionLogs(context)
+                                    else -> LogKeeper.clearDiagnosticLogs(context)
                                 }
                             }
                             loadLogs()
@@ -435,6 +426,7 @@ fun LogKeeperScreen(onBack: () -> Unit) {
 @Composable
 fun RunningTabContent(
     state: RunningRuntimeState,
+    executionEvents: List<LogKeeper.ExecutionEvent>,
     onCopySummary: () -> Unit
 ) {
     Column(
@@ -511,7 +503,11 @@ fun RunningTabContent(
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (proc.isMain) "Resident Daemon (com.example)" else "On-Demand UI (com.example:heavy)",
+                                text = when (proc.name) {
+                    "Main Process" -> "Sidebar resident process (default)"
+                    "Home Process" -> "Android-managed launcher process (:home)"
+                    else -> "On-demand UI process (:heavy)"
+                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -528,6 +524,64 @@ fun RunningTabContent(
                                     text = "PID ${proc.pid} • ${proc.importance}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Structured execution tracking is separate from inferred text-based lifecycle history.
+            val completedIds = executionEvents.filter {
+                it.event != "STARTED" && it.event != "OVERLAP"
+            }.map { it.id }.toSet()
+            val openExecutions = executionEvents.filter { it.event == "STARTED" && it.id !in completedIds }
+            item {
+                Text(
+                    text = "Tracked Operations (${openExecutions.size})",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (openExecutions.isEmpty()) {
+                item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                        Text(
+                            "No tracked operations currently have an open execution record.",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                items(openExecutions.sortedByDescending { it.timestampMillis }) { execution ->
+                    val processPresent = state.processes.any { it.pid == execution.pid && it.isRunning }
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    execution.component + " / " + execution.operation,
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                StatusPill(
+                                    text = if (processPresent) "OPEN" else "STALE / UNKNOWN",
+                                    containerColor = if (processPresent) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
+                                    contentColor = if (processPresent) Color(0xFF2E7D32) else Color(0xFFE65100)
+                                )
+                            }
+                            Text(
+                                "${execution.process} • PID ${execution.pid} • ${execution.thread}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (!processPresent) {
+                                Text(
+                                    "No completion event was recorded and this PID is not currently visible. It may have been stopped or killed.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -583,7 +637,11 @@ fun RunningTabContent(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 StatusPill(
-                                    text = if (service.isMainProcess) "Main Process" else "Heavy Process",
+                                    text = when {
+                                        service.isMainProcess -> "Main Process"
+                                        service.processName.endsWith(":home") -> "Home Process"
+                                        else -> "Heavy Process"
+                                    },
                                     containerColor = if (service.isMainProcess) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
                                     contentColor = if (service.isMainProcess) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
                                 )
@@ -603,100 +661,6 @@ fun RunningTabContent(
                                 TimePill(text = "Started: ${service.startTimeFormatted}")
                                 TimePill(text = "Uptime: ${service.durationFormatted}")
                             }
-                        }
-                    }
-                }
-            }
-
-            // Section 3: Lifecycle History
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Lifecycle & Runtime History (${state.lifecycleEvents.size})",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-            }
-
-            if (state.lifecycleEvents.isEmpty()) {
-                item {
-                    OutlinedCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "No lifecycle events recorded yet in diagnostic logs.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(14.dp)
-                        )
-                    }
-                }
-            } else {
-                items(state.lifecycleEvents) { event ->
-                    OutlinedCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = event.component,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    StatusPill(
-                                        text = event.process,
-                                        containerColor = if (event.isMainProcess) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
-                                        contentColor = if (event.isMainProcess) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
-                                    )
-                                    val (bg, fg) = getEventTypeColors(event.eventType)
-                                    StatusPill(
-                                        text = event.eventType,
-                                        containerColor = bg,
-                                        contentColor = fg
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TimePill(text = event.timestamp)
-                                if (event.durationText != null) {
-                                    StatusPill(
-                                        text = "Duration: ${event.durationText}",
-                                        containerColor = Color(0xFFFFF8E1),
-                                        contentColor = Color(0xFFF57F17)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Text(
-                                text = event.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                softWrap = true,
-                                lineHeight = 16.sp
-                            )
                         }
                     }
                 }
@@ -746,6 +710,101 @@ fun TimePill(text: String) {
     }
 }
 
+
+/** Filters timestamped log blocks without parsing stack-trace continuation lines as separate events. */
+fun filterLogText(raw: String, timeRange: String, subsystem: String, nowMillis: Long = System.currentTimeMillis()): String {
+    val cutoff = when (timeRange) {
+        "1h" -> nowMillis - 60L * 60L * 1000L
+        "6h" -> nowMillis - 6L * 60L * 60L * 1000L
+        "12h" -> nowMillis - 12L * 60L * 60L * 1000L
+        "24h" -> nowMillis - 24L * 60L * 60L * 1000L
+        else -> Long.MIN_VALUE
+    }
+    val blocks = FloatingMiniAppLogFilter.splitIntoBlocks(raw)
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    val filtered = blocks.filter { block ->
+        val firstLine = block.lineSequence().firstOrNull().orEmpty()
+        val timestampText = if (firstLine.startsWith("[")) {
+            firstLine.substringAfter("[", "").substringBefore("]")
+        } else {
+            block.lineSequence().firstOrNull { it.startsWith("Timestamp:") }
+                ?.substringAfter("Timestamp:")?.trim().orEmpty()
+        }
+        if (cutoff != Long.MIN_VALUE) {
+            val timestamp = try { formatter.parse(timestampText)?.time } catch (_: Exception) { null }
+            if (timestamp == null || timestamp < cutoff) return@filter false
+        }
+        val parts = firstLine.split("] [")
+        val component = if (parts.size >= 4) {
+            parts[3].substringBefore("]").removePrefix("ERROR:")
+        } else if (block.contains("UNCAUGHT EXCEPTION CRASH REPORT")) {
+            "CRASH"
+        } else ""
+        when (subsystem) {
+            "Core" -> component in setOf("LogKeeper", "Lifecycle", "StartupDiagnostics", "Process", "Execution", "CRASH") ||
+                component.startsWith("Core") || block.contains("com.example.core.")
+            "Launcher" -> component.contains("launcher", true) || component.contains("home", true) ||
+                component in setOf("MainActivity", "AllAppsFragment", "LauncherSettings") ||
+                block.contains("shura.home.")
+            "Floating Mini-apps" -> FloatingMiniAppLogFilter.isMiniAppLogEntry(block)
+            "Firewall" -> FirewallLogFilter.isFirewallLogEntry(block)
+            else -> true
+        }
+    }
+    return if (filtered.isEmpty()) "No matching logs found." else filtered.joinToString("\n\n")
+}
+fun formatExecutionSummary(events: List<LogKeeper.ExecutionEvent>): String {
+    if (events.isEmpty()) return "No structured execution events have been recorded yet.\nInstrumented operations will appear here with their start/end times and outcomes."
+    return events.sortedByDescending { it.timestampMillis }.joinToString("\n") {
+        val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date(it.timestampMillis))
+        "[$time] [${it.process}] [${it.event}] [${it.component}/${it.operation}] PID=${it.pid} Thread=${it.thread} ${it.detail}".trim()
+    }
+}
+
+@Composable
+fun ExecutionHistoryTab(events: List<LogKeeper.ExecutionEvent>) {
+    val ordered = remember(events) { events.sortedByDescending { it.timestampMillis } }
+    if (ordered.isEmpty()) {
+        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Text(
+                "No structured execution history yet. Activity lifecycle and explicitly instrumented operations will appear here.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(ordered) { event ->
+            OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(event.component + " / " + event.operation, fontWeight = FontWeight.SemiBold)
+                        StatusPill(
+                            text = event.event,
+                            containerColor = if (event.event == "FAILED" || event.event == "OVERLAP") Color(0xFFFFEBEE) else Color(0xFFE8F5E9),
+                            contentColor = if (event.event == "FAILED" || event.event == "OVERLAP") Color(0xFFC62828) else Color(0xFF2E7D32)
+                        )
+                    }
+                    Text(
+                        SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date(event.timestampMillis)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${event.process} • PID ${event.pid} • ${event.thread}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (event.detail.isNotBlank()) Text(event.detail, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
 fun getEventTypeColors(eventType: String): Pair<Color, Color> {
     return when (eventType) {
         "STARTED" -> Pair(Color(0xFFE8F5E9), Color(0xFF2E7D32))
@@ -765,6 +824,7 @@ fun loadRunningState(context: Context, diagnosticLogs: String): RunningRuntimeSt
     // 1. Check Processes
     val runningProcesses = am?.runningAppProcesses ?: emptyList()
     val mainProc = runningProcesses.firstOrNull { it.processName == context.packageName }
+    val homeProc = runningProcesses.firstOrNull { it.processName == "${context.packageName}:home" }
     val heavyProc = runningProcesses.firstOrNull { it.processName == "${context.packageName}:heavy" }
 
     val processesList = listOf(
@@ -775,6 +835,14 @@ fun loadRunningState(context: Context, diagnosticLogs: String): RunningRuntimeSt
             pid = mainProc?.pid ?: 0,
             importance = mainProc?.let { formatImportance(it.importance) } ?: "Not Running",
             isRunning = mainProc != null
+        ),
+        ActiveProcessItem(
+            name = "Home Process",
+            isMain = false,
+            isHeavy = false,
+            pid = homeProc?.pid ?: 0,
+            importance = homeProc?.let { formatImportance(it.importance) } ?: "Stopped / Idle",
+            isRunning = homeProc != null
         ),
         ActiveProcessItem(
             name = "Heavy Process",
@@ -797,7 +865,7 @@ fun loadRunningState(context: Context, diagnosticLogs: String): RunningRuntimeSt
 
         for (s in appServices) {
             val shortName = s.service.shortClassName.removePrefix(".")
-            val isMain = !s.process.endsWith(":heavy")
+            val isMain = s.process == context.packageName
             val uptimeMs = if (s.activeSince > 0) (nowElapsed - s.activeSince).coerceAtLeast(0L) else 0L
             val startWallMs = if (uptimeMs > 0) nowWall - uptimeMs else 0L
             val startTimeStr = if (startWallMs > 0) timeFormat.format(Date(startWallMs)) else "Active"
@@ -923,7 +991,11 @@ fun loadRunningState(context: Context, diagnosticLogs: String): RunningRuntimeSt
         eventsList.add(
             LifecycleEventItem(
                 timestamp = timestamp.substringAfter(" ").substringBeforeLast("."),
-                process = if (isMain) "Main" else "Heavy",
+                process = when {
+                    isMain -> "Main"
+                    process.endsWith(":home") -> "Home"
+                    else -> "Heavy"
+                },
                 isMainProcess = isMain,
                 thread = thread,
                 component = component,
