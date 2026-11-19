@@ -245,10 +245,13 @@ object LogKeeper {
             sb.append(sanitize(sw.toString())).append('\n')
         }
         val entry = sb.toString()
-        if (throwable == null) enqueue(FILE_DIAGNOSTIC_LOG, entry) else {
-            // Preserve exception details immediately; do not leave caught failures only in RAM.
-            appendToFile(context, FILE_DIAGNOSTIC_LOG, entry)
-            appendToFile(context, FILE_CRASH_LOG, entry)
+        if (throwable == null) {
+            enqueue(FILE_DIAGNOSTIC_LOG, entry)
+        } else {
+            // Caught exceptions are important but are not fatal: keep their normal path off the
+            // caller thread. If the bounded queue is saturated, fall back to a synchronous write.
+            enqueueImportant(FILE_DIAGNOSTIC_LOG, entry)
+            enqueueImportant(FILE_CRASH_LOG, entry)
         }
     }
 
@@ -285,6 +288,18 @@ object LogKeeper {
     private fun enqueue(fileName: String, text: String) {
         startWriterIfNeeded()
         if (!queue.offer(PendingWrite(fileName, text))) droppedEntries.incrementAndGet()
+    }
+
+    /** Keep caught exceptions asynchronous in normal operation; only saturate-to-disk on overflow. */
+    private fun enqueueImportant(fileName: String, text: String) {
+        startWriterIfNeeded()
+        if (queue.offer(PendingWrite(fileName, text))) return
+        val context = appContext
+        if (context != null) {
+            appendToFile(context, fileName, text)
+        } else {
+            droppedEntries.incrementAndGet()
+        }
     }
 
     /** All processes lock the same stable sidecar file, including while the log is compacted. */
