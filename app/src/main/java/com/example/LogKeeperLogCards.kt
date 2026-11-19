@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -123,7 +123,7 @@ fun LogKeeperLogList(raw: String, emptyMessage: String, modifier: Modifier = Mod
         modifier = modifier.testTag("log_entry_list"),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        items(entries.asReversed(), key = { it.key }) { entry -> LogKeeperLogCard(entry) }
+        itemsIndexed(entries.asReversed(), key = { index, entry -> "${entry.key}:$index" }) { _, entry -> LogKeeperLogCard(entry) }
     }
 }
 
