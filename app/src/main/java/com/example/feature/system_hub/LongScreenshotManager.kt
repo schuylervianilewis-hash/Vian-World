@@ -1,7 +1,5 @@
 package com.example.feature.system_hub
 
-import com.example.core.OverlayWindowRegistry
-
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.GestureDescription
@@ -354,7 +352,7 @@ class LongScreenshotManager(private val service: AccessibilityService) {
                     layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
                     layoutParams.y = initialY - (event.rawY - initialTouchY).toInt()
                     try {
-                        floatingView?.let { OverlayWindowRegistry.updateViewLayout(windowManager, it, layoutParams) }
+                        windowManager.updateViewLayout(floatingView, layoutParams)
                     } catch (_: Exception) {}
                     true
                 }
@@ -363,7 +361,7 @@ class LongScreenshotManager(private val service: AccessibilityService) {
         }
 
         try {
-            floatingView?.let { OverlayWindowRegistry.addView(service, windowManager, it, layoutParams) }
+            windowManager.addView(floatingView, layoutParams)
         } catch (e: Exception) {
             LogKeeper.logError(service, "LongScreenshotManager", "Error adding floatingView", e)
         }
@@ -373,7 +371,7 @@ class LongScreenshotManager(private val service: AccessibilityService) {
         floatingView?.let {
             try {
                 if (it.isAttachedToWindow) {
-                    OverlayWindowRegistry.removeView(windowManager, it)
+                    windowManager.removeView(it)
                 }
             } catch (_: Exception) {}
             floatingView = null

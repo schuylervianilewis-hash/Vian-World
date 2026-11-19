@@ -1,7 +1,5 @@
 package com.example.feature.system_hub
 
-import com.example.core.OverlayWindowRegistry
-
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -14,7 +12,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
-import android.provider.Settings
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -78,8 +75,6 @@ object PrivacyCurtainManager {
 
     fun enable(context: Context) {
         if (isEnabled) return
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(context)) return
 
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
         windowManager = wm
@@ -104,7 +99,7 @@ object PrivacyCurtainManager {
 
         buildPanels(context)
         buildControls(context)
-        addViewsToWindowManager(context)
+        addViewsToWindowManager()
 
         isEnabled = true
     }
@@ -118,7 +113,7 @@ object PrivacyCurtainManager {
         fun safeRemove(view: View?) {
             if (view != null && wm != null) {
                 try {
-                    OverlayWindowRegistry.removeView(wm, view)
+                    wm.removeView(view)
                 } catch (_: Throwable) {}
             }
         }
@@ -328,14 +323,14 @@ object PrivacyCurtainManager {
         }
     }
 
-    private fun addViewsToWindowManager(context: Context) {
+    private fun addViewsToWindowManager() {
         val wm = windowManager ?: return
 
         try {
-            topPanel?.let { OverlayWindowRegistry.addView(context, wm, it, createPanelParams(0, 0, screenWidth, windowRect.top)) }
-            bottomPanel?.let { OverlayWindowRegistry.addView(context, wm, it, createPanelParams(0, windowRect.bottom, screenWidth, screenHeight - windowRect.bottom)) }
-            leftPanel?.let { OverlayWindowRegistry.addView(context, wm, it, createPanelParams(0, windowRect.top, windowRect.left, windowRect.height())) }
-            rightPanel?.let { OverlayWindowRegistry.addView(context, wm, it, createPanelParams(windowRect.right, windowRect.top, screenWidth - windowRect.right, windowRect.height())) }
+            wm.addView(topPanel, createPanelParams(0, 0, screenWidth, windowRect.top))
+            wm.addView(bottomPanel, createPanelParams(0, windowRect.bottom, screenWidth, screenHeight - windowRect.bottom))
+            wm.addView(leftPanel, createPanelParams(0, windowRect.top, windowRect.left, windowRect.height()))
+            wm.addView(rightPanel, createPanelParams(windowRect.right, windowRect.top, screenWidth - windowRect.right, windowRect.height()))
 
             // Pill sits slightly above or below the window
             val pillParams = createInteractiveParams(
@@ -344,7 +339,7 @@ object PrivacyCurtainManager {
                 width = WindowManager.LayoutParams.WRAP_CONTENT,
                 height = WindowManager.LayoutParams.WRAP_CONTENT
             )
-            controlPill?.let { OverlayWindowRegistry.addView(context, wm, it, pillParams) }
+            wm.addView(controlPill, pillParams)
 
             // Resize handle at bottom-right
             val handleParams = createInteractiveParams(
@@ -353,7 +348,7 @@ object PrivacyCurtainManager {
                 width = 36,
                 height = 36
             )
-            resizeHandle?.let { OverlayWindowRegistry.addView(context, wm, it, handleParams) }
+            wm.addView(resizeHandle, handleParams)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -364,23 +359,23 @@ object PrivacyCurtainManager {
 
         try {
             topPanel?.let {
-                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(0, 0, screenWidth, windowRect.top))
+                wm.updateViewLayout(it, createPanelParams(0, 0, screenWidth, windowRect.top))
             }
             bottomPanel?.let {
-                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(0, windowRect.bottom, screenWidth, max(0, screenHeight - windowRect.bottom)))
+                wm.updateViewLayout(it, createPanelParams(0, windowRect.bottom, screenWidth, max(0, screenHeight - windowRect.bottom)))
             }
             leftPanel?.let {
-                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(0, windowRect.top, windowRect.left, windowRect.height()))
+                wm.updateViewLayout(it, createPanelParams(0, windowRect.top, windowRect.left, windowRect.height()))
             }
             rightPanel?.let {
-                OverlayWindowRegistry.updateViewLayout(wm, it, createPanelParams(windowRect.right, windowRect.top, max(0, screenWidth - windowRect.right), windowRect.height()))
+                wm.updateViewLayout(it, createPanelParams(windowRect.right, windowRect.top, max(0, screenWidth - windowRect.right), windowRect.height()))
             }
             controlPill?.let {
                 val pillY = if (windowRect.top > 54) windowRect.top - 46 else windowRect.bottom + 8
-                OverlayWindowRegistry.updateViewLayout(wm, it, createInteractiveParams(windowRect.left + 8, pillY, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT))
+                wm.updateViewLayout(it, createInteractiveParams(windowRect.left + 8, pillY, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT))
             }
             resizeHandle?.let {
-                OverlayWindowRegistry.updateViewLayout(wm, it, createInteractiveParams(windowRect.right - 36, windowRect.bottom - 36, 36, 36))
+                wm.updateViewLayout(it, createInteractiveParams(windowRect.right - 36, windowRect.bottom - 36, 36, 36))
             }
         } catch (e: Exception) {
             e.printStackTrace()

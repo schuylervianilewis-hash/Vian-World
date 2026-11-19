@@ -173,6 +173,7 @@ fun LogKeeperScreen(onBack: () -> Unit) {
     var selectedTimeRange by remember { mutableStateOf("All") }
     var selectedSubsystem by remember { mutableStateOf("All") }
     var executionEvents by remember { mutableStateOf(emptyList<LogKeeper.ExecutionEvent>()) }
+    var showActiveSubsystems by remember { mutableStateOf(false) }
 
     fun loadLogs() {
         scope.launch {
@@ -359,38 +360,23 @@ fun LogKeeperScreen(onBack: () -> Unit) {
                     }
                 }
 
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                if (selectedTab == 0 && executionEvents.isNotEmpty()) {
+                    ActiveSubsystemsCard(
+                        events = executionEvents,
+                        expanded = showActiveSubsystems,
+                        onToggle = { showActiveSubsystems = !showActiveSubsystems }
                     )
-                ) {
-                    val verticalScroll = rememberScrollState()
-                    val horizontalScroll = rememberScrollState()
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp)
-                    ) {
-                        SelectionContainer {
-                            Text(
-                                text = currentLogContent,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(verticalScroll)
-                                    .horizontalScroll(horizontalScroll)
-                                    .testTag("log_text_content")
-                            )
-                        }
-                    }
                 }
+                LogKeeperLogList(
+                    raw = currentLogContent,
+                    emptyMessage = when (selectedTab) {
+                        1 -> "No crash reports match the selected filters."
+                        else -> if (selectedTimeRange == "All" && selectedSubsystem == "All")
+                            "No logs recorded. System is running cleanly."
+                        else "No logs for $selectedSubsystem in the selected timeframe."
+                    },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

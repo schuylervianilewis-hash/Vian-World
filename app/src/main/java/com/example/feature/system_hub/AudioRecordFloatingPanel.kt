@@ -1,7 +1,5 @@
 package com.example.feature.system_hub
 
-import com.example.core.OverlayWindowRegistry
-
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
@@ -118,7 +116,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
         setupDrag()
 
         try {
-            floatingView?.let { OverlayWindowRegistry.addView(context, windowManager, it, params) }
+            windowManager.addView(floatingView, params)
             startNewRecording()
         } catch (e: Exception) {
             Log.e("AudioRecordPanel", "Failed to add floating view", e)
@@ -193,7 +191,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
                         params.x = initialX + dx.toInt()
                         params.y = initialY + dy.toInt()
                         try {
-                            OverlayWindowRegistry.updateViewLayout(windowManager, root, params)
+                            windowManager.updateViewLayout(root, params)
                         } catch (e: Exception) {}
                     }
                     isDragging
@@ -352,7 +350,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
         if (params != null && root != null) {
             params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             try {
-                OverlayWindowRegistry.updateViewLayout(windowManager, root, params)
+                windowManager.updateViewLayout(root, params)
             } catch (e: Exception) {}
         }
 
@@ -400,7 +398,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
         if (params != null && root != null) {
             params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             try {
-                OverlayWindowRegistry.updateViewLayout(windowManager, root, params)
+                windowManager.updateViewLayout(root, params)
             } catch (e: Exception) {}
         }
     }
@@ -433,7 +431,7 @@ class AudioRecordFloatingPanel private constructor(private val context: Context)
 
         if (floatingView != null) {
             try {
-                floatingView?.let { OverlayWindowRegistry.removeView(windowManager, it) }
+                windowManager.removeView(floatingView)
             } catch (e: Exception) {}
             floatingView = null
         }

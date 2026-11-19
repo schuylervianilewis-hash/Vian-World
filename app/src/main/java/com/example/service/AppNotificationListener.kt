@@ -10,12 +10,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class AppNotificationListener : NotificationListenerService() {
-    private var logKeeperExecutionToken: String? = null
 
     override fun onListenerConnected() {
         super.onListenerConnected()
         instance = this
-        logKeeperExecutionToken = LogKeeper.beginExecution(this, "Notification", "NotificationListener")
         Log.d("AppNotificationListener", "Listener connected")
         LogKeeper.writeLog("Notification", "NotificationListenerService connected")
         refreshLauncherBadgeCounts()
@@ -25,8 +23,6 @@ class AppNotificationListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         instance = null
-        logKeeperExecutionToken?.let { LogKeeper.finishExecution(this, it, "COMPLETED", "Listener disconnected") }
-        logKeeperExecutionToken = null
         Log.d("AppNotificationListener", "Listener disconnected")
         LogKeeper.writeLog("Notification", "NotificationListenerService disconnected")
         shura.home.services.NotificationBadgeService.clear(applicationContext)

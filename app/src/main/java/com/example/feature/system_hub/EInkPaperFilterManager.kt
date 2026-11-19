@@ -1,7 +1,5 @@
 package com.example.feature.system_hub
 
-import com.example.core.OverlayWindowRegistry
-
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Color
@@ -101,13 +99,7 @@ object EInkPaperFilterManager {
                 }
             }
 
-            val added = filterView?.let {
-                OverlayWindowRegistry.addView(context, windowManager, it, params)
-            } == true
-            if (!added) {
-                filterView = null
-                return
-            }
+            windowManager.addView(filterView, params)
             isEnabled = true
             persistState(context, true)
             LogKeeper.writeLog(TAG, "E-Ink Paper filter enabled successfully")
@@ -128,7 +120,7 @@ object EInkPaperFilterManager {
         try {
             filterView?.let { view ->
                 val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                OverlayWindowRegistry.removeView(windowManager, view)
+                windowManager.removeView(view)
             }
             LogKeeper.writeLog(TAG, "E-Ink Paper filter disabled successfully")
         } catch (e: Exception) {

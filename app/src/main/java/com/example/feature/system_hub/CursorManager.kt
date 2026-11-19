@@ -1,7 +1,5 @@
 package com.example.feature.system_hub
 
-import com.example.core.OverlayWindowRegistry
-
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
@@ -90,10 +88,10 @@ class CursorManager(
 
         LogKeeper.writeLog("Cursor", "Stopped virtual cursor")
 
-        pointerView?.let { OverlayWindowRegistry.removeView(windowManager, it) }
-        clickRippleView?.let { OverlayWindowRegistry.removeView(windowManager, it) }
-        controlView?.let { OverlayWindowRegistry.removeView(windowManager, it) }
-        trackpadView?.let { OverlayWindowRegistry.removeView(windowManager, it) }
+        pointerView?.let { try { windowManager?.removeView(it) } catch (_: Exception) {} }
+        clickRippleView?.let { try { windowManager?.removeView(it) } catch (_: Exception) {} }
+        controlView?.let { try { windowManager?.removeView(it) } catch (_: Exception) {} }
+        trackpadView?.let { try { windowManager?.removeView(it) } catch (_: Exception) {} }
 
         pointerView = null
         clickRippleView = null
@@ -121,7 +119,7 @@ class CursorManager(
         }
 
         try {
-            windowManager?.let { wm -> pointerView?.let { OverlayWindowRegistry.addView(service, wm, it, params) } }
+            windowManager?.addView(pointerView, params)
         } catch (e: Exception) {
             LogKeeper.logError(service, "Cursor", "Error adding pointerView", e)
         }
@@ -155,7 +153,7 @@ class CursorManager(
         }
 
         try {
-            windowManager?.let { wm -> clickRippleView?.let { OverlayWindowRegistry.addView(service, wm, it, params) } }
+            windowManager?.addView(clickRippleView, params)
         } catch (e: Exception) {
             LogKeeper.logError(service, "Cursor", "Error adding clickRippleView", e)
         }
@@ -236,7 +234,7 @@ class CursorManager(
 
         controlView = layout
         try {
-            windowManager?.let { wm -> controlView?.let { OverlayWindowRegistry.addView(service, wm, it, params) } }
+            windowManager?.addView(controlView, params)
         } catch (e: Exception) {
             LogKeeper.logError(service, "Cursor", "Error adding controlView", e)
         }
@@ -375,7 +373,7 @@ class CursorManager(
         )
 
         try {
-            windowManager?.let { wm -> trackpadView?.let { OverlayWindowRegistry.addView(service, wm, it, params) } }
+            windowManager?.addView(trackpadView, params)
         } catch (e: Exception) {
             LogKeeper.logError(service, "Cursor", "Error adding trackpadView", e)
         }
@@ -408,7 +406,7 @@ class CursorManager(
         }
 
         try {
-            windowManager?.let { wm -> trackpadView?.let { OverlayWindowRegistry.updateViewLayout(wm, it, params) } }
+            windowManager?.updateViewLayout(trackpadView, params)
         } catch (_: Exception) {}
     }
 
@@ -417,7 +415,7 @@ class CursorManager(
         params.x = pointerX.toInt()
         params.y = pointerY.toInt()
         try {
-            windowManager?.let { wm -> pointerView?.let { OverlayWindowRegistry.updateViewLayout(wm, it, params) } }
+            windowManager?.updateViewLayout(pointerView, params)
         } catch (_: Exception) {}
 
         clickRippleView?.let { ripple ->
@@ -427,7 +425,7 @@ class CursorManager(
             rParams.x = (pointerX - sizePx / 2f).toInt()
             rParams.y = (pointerY - sizePx / 2f).toInt()
             try {
-                windowManager?.let { wm -> OverlayWindowRegistry.updateViewLayout(wm, ripple, rParams) }
+                windowManager?.updateViewLayout(ripple, rParams)
             } catch (_: Exception) {}
         }
     }
@@ -529,7 +527,7 @@ class CursorManager(
             params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         }
         try {
-            OverlayWindowRegistry.updateViewLayout(wm, view, params)
+            wm.updateViewLayout(view, params)
         } catch (_: Exception) {}
     }
 

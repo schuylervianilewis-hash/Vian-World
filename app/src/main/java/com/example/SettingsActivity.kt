@@ -31,7 +31,6 @@ import androidx.compose.ui.platform.testTag
 import com.example.core.HandleService
 import com.example.core.LogKeeper
 import com.example.feature.settings.NetSpeedSettingsScreen
-import com.example.feature.settings.OverlayExclusionsSettingsScreen
 import com.example.feature.backup.BackupRestoreScreen
 import com.example.feature.settings.PermissionManagerScreen
 import com.example.feature.settings.ScreenCapSettingsScreen
@@ -120,9 +119,6 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onBack = { navigateBack() }
             )
         }
-        currentRoute == "overlay_exclusions" -> {
-            OverlayExclusionsSettingsScreen(onBack = { navigateBack() })
-        }
         currentRoute == "permissions" -> {
             PermissionManagerScreen(
                 onContinue = { navigateBack() },
@@ -146,7 +142,6 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
             MainSettingsScreen(
                 onNavigateToHandles = { navigateTo("handles") },
                 onNavigateToNetSpeed = { navigateTo("netspeed") },
-                onNavigateToOverlayExclusions = { navigateTo("overlay_exclusions") },
                 onNavigateToCallRecorder = { navigateTo("call_recorder") },
                 onNavigateToScreenCap = { navigateTo("screencap") },
                 onNavigateToPermissions = { navigateTo("permissions") },
@@ -163,7 +158,6 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
 fun MainSettingsScreen(
     onNavigateToHandles: () -> Unit,
     onNavigateToNetSpeed: () -> Unit,
-    onNavigateToOverlayExclusions: () -> Unit,
     onNavigateToCallRecorder: () -> Unit,
     onNavigateToScreenCap: () -> Unit,
     onNavigateToPermissions: () -> Unit,
@@ -197,15 +191,6 @@ fun MainSettingsScreen(
                     modifier = Modifier
                         .clickable { onNavigateToHandles() }
                         .testTag("settings_item_handles")
-                )
-                HorizontalDivider()
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text("Overlay Exclusions") },
-                    supportingContent = { Text("Choose which apps can show Vian visual overlays") },
-                    modifier = Modifier.clickable { onNavigateToOverlayExclusions() }
-                        .testTag("settings_item_overlay_exclusions")
                 )
                 HorizontalDivider()
             }

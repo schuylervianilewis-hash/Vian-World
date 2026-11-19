@@ -1,13 +1,10 @@
 package com.example.feature.system_hub
 
-import com.example.core.OverlayWindowRegistry
-
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.view.View
 import android.view.WindowManager
-import android.provider.Settings
 import android.widget.FrameLayout
 
 object BlueLightFilterManager {
@@ -26,8 +23,6 @@ object BlueLightFilterManager {
 
     private fun enable(context: Context) {
         if (isEnabled) return
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(context)) return
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
         filterView = FrameLayout(context).apply {
@@ -47,13 +42,7 @@ object BlueLightFilterManager {
         )
         
         try {
-            val added = filterView?.let {
-                OverlayWindowRegistry.addView(context, windowManager, it, params)
-            } == true
-            if (!added) {
-                filterView = null
-                return
-            }
+            windowManager.addView(filterView, params)
             isEnabled = true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -65,7 +54,7 @@ object BlueLightFilterManager {
         filterView?.let {
             try {
                 val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                OverlayWindowRegistry.removeView(windowManager, it)
+                windowManager.removeView(it)
             } catch (e: Exception) {
                 e.printStackTrace()
             }

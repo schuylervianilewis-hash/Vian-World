@@ -19,6 +19,7 @@ import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
@@ -49,6 +50,8 @@ object LogKeeper {
     private val droppedEntries = AtomicLong(0)
     private val executionLock = Any()
     private val activeExecutions = ConcurrentHashMap<String, ExecutionEvent>()
+    private val recentExecutionEvents = ArrayDeque<ExecutionEvent>()
+    private const val MAX_RECENT_EXECUTION_EVENTS = 256
     private val sensitiveValuePatterns = listOf(
         Regex("(?i)(authorization\\s*[:=]\\s*)(?:bearer\\s+)?[^\\s,;]+"),
         Regex("(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+"),
@@ -375,23 +378,34 @@ object LogKeeper {
 
     fun finishExecution(context: Context, executionId: String, outcome: String = "COMPLETED", detail: String = "") {
         if (executionId.isBlank()) return
-        val start = activeExecutions.remove(executionId)
+        // Ignore duplicate/late finish callbacks instead of recording misleading "unknown" events.
+        val start = synchronized(executionLock) { activeExecutions.remove(executionId) } ?: return
         val safeOutcome = outcome.uppercase(java.util.Locale.US).take(32)
         writeExecutionEvent(context, ExecutionEvent(
-            executionId, start?.component ?: "unknown", start?.operation ?: "unknown",
-            start?.process ?: getProcessName(context), start?.pid ?: Process.myPid(),
-            Thread.currentThread().name, System.currentTimeMillis(), safeOutcome, detail.take(500)
+            executionId, start.component, start.operation, start.process, start.pid,
+            Thread.currentThread().name, System.currentTimeMillis(), safeOutcome, sanitize(detail).take(500)
         ))
     }
 
-    fun getExecutionEvents(context: Context): List<ExecutionEvent> =
-        (readExecutionEvents(context) + activeExecutions.values).distinctBy { "${it.id}:${it.event}:${it.timestampMillis}" }
+    fun getExecutionEvents(context: Context): List<ExecutionEvent> {
+        val recent = synchronized(executionLock) {
+            recentExecutionEvents.toList() + activeExecutions.values
+        }
+        return (readExecutionEvents(context) + recent)
+            .distinctBy { "${it.id}:${it.event}:${it.timestampMillis}" }
+            .sortedByDescending { it.timestampMillis }
+    }
 
     private fun writeExecutionEvent(context: Context, event: ExecutionEvent) {
+        synchronized(executionLock) {
+            recentExecutionEvents.addLast(event)
+            while (recentExecutionEvents.size > MAX_RECENT_EXECUTION_EVENTS) recentExecutionEvents.removeFirst()
+        }
+        val safeDetail = sanitize(event.detail).replace("|", "_").replace("\n", " ")
         val line = listOf(
             event.id, event.component.replace("|", "_"), event.operation.replace("|", "_"),
             event.process.replace("|", "_"), event.pid.toString(), event.thread.replace("|", "_"),
-            event.timestampMillis.toString(), event.event, event.detail.replace("|", "_").replace("\n", " ")
+            event.timestampMillis.toString(), event.event, safeDetail
         ).joinToString("|") + "\n"
         enqueue(FILE_EXECUTION_LOG, line)
     }
@@ -432,7 +446,10 @@ object LogKeeper {
         clearDiagnosticLogs(context)
         clearCrashLogs(context)
     }
-    fun clearExecutionLogs(context: Context) = deleteLogFile(context, FILE_EXECUTION_LOG)
+    fun clearExecutionLogs(context: Context) {
+        synchronized(executionLock) { recentExecutionEvents.clear() }
+        deleteLogFile(context, FILE_EXECUTION_LOG)
+    }
 
     @Synchronized
     private fun deleteLogFile(context: Context, fileName: String) {

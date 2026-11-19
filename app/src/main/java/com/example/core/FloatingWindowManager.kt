@@ -29,7 +29,6 @@ class FloatingWindowManager private constructor(context: Context) {
 
     private val windows = LinkedHashMap<String, FloatingWindow>()
     private val zOrderedWindowIds = mutableListOf<String>()
-    private val suppressedVisibleWindowIds = linkedSetOf<String>()
 
     var focusedWindowId: String? = null
         private set
@@ -70,7 +69,6 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun unregisterWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        suppressedVisibleWindowIds.remove(windowId)
 
         // Detach children
         for (child in getChildren(windowId)) {
@@ -275,7 +273,6 @@ class FloatingWindowManager private constructor(context: Context) {
 
     private fun refreshOverlayZOrder(window: FloatingWindow) {
         val view = window.getView() ?: return
-        if (!canDrawOverlays()) return
         try {
             windowManager.removeViewImmediate(view)
             windowManager.addView(view, window.layoutParams)
@@ -337,12 +334,7 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun showWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        if (!canDrawOverlays()) {
-            if (OverlayAccessPolicy.isForegroundExcluded(appContext)) {
-                suppressedVisibleWindowIds.add(windowId)
-            }
-            return false
-        }
+
         if (!window.isAttached && !attachOverlay(windowId)) return false
 
         val container = window.getView() ?: return false
@@ -364,7 +356,6 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun hideWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        suppressedVisibleWindowIds.remove(windowId)
         window.getView()?.visibility = View.GONE
 
         val oldState = window.state
@@ -381,49 +372,10 @@ class FloatingWindowManager private constructor(context: Context) {
         return true
     }
 
-    /**
-     * Restores one previously visible window without recursively showing its children.
-     * Each child is restored separately only if it was visible before suppression.
-     */
-    private fun restoreSuppressedWindow(windowId: String): Boolean {
-        val window = windows[windowId] ?: return false
-        if (!window.isAttached && !attachOverlay(windowId)) {
-            suppressedVisibleWindowIds.add(windowId)
-            return false
-        }
-        val container = window.getView() ?: return false
-        container.visibility = View.VISIBLE
-        window.isFolded = false
-        window.notifyStateChanged(window.state, WindowState.VISIBLE)
-        window.onShow()
-        bringToFront(windowId)
-        return true
-    }
-
-    /** Detach managed overlays while remembering only those that were visible. */
-    @Synchronized
-    fun setOverlaySuppressed(shouldSuppress: Boolean) {
-        if (shouldSuppress) {
-            windows.values.toList().forEach { window ->
-                if (window.isAttached) {
-                    if (window.getView()?.visibility == View.VISIBLE) {
-                        suppressedVisibleWindowIds.add(window.windowId)
-                    }
-                    detachOverlay(window.windowId)
-                }
-            }
-        } else {
-            val restoreIds = suppressedVisibleWindowIds.toList()
-            suppressedVisibleWindowIds.clear()
-            restoreIds.forEach { restoreSuppressedWindow(it) }
-        }
-    }
-
     // Dormant Folding & Memory Trim (Historical Reference: RECEIPTS_008 & 009)
     @Synchronized
     fun foldWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        suppressedVisibleWindowIds.remove(windowId)
         if (window.isFolded) return true
 
         val view = window.getView()
@@ -449,7 +401,6 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun unfoldWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        if (!canDrawOverlays()) return false
         if (!window.isFolded) return true
 
         window.isFolded = false
@@ -536,8 +487,13 @@ class FloatingWindowManager private constructor(context: Context) {
         )
     }
 
-    private fun canDrawOverlays(): Boolean =
-        OverlayAccessPolicy.canShowApplicationOverlays(appContext)
+    private fun canDrawOverlays(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(appContext)
+        } else {
+            true
+        }
+    }
 
     companion object {
         private const val TAG = "FloatingWindowManager"
@@ -549,10 +505,6 @@ class FloatingWindowManager private constructor(context: Context) {
             return instance ?: synchronized(this) {
                 instance ?: FloatingWindowManager(context).also { instance = it }
             }
-        }
-
-        fun setOverlaySuppressedIfInitialized(suppressed: Boolean) {
-            instance?.setOverlaySuppressed(suppressed)
         }
     }
 }

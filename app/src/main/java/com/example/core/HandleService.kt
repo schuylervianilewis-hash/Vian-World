@@ -29,7 +29,6 @@ import eu.faircode.netguard.ShieldNotificationFactory
  */
 class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListener {
 
-    private var logKeeperExecutionToken: String? = null
     private lateinit var handleManager: HandleManager
     private lateinit var notificationManager: NotificationManager
 
@@ -45,7 +44,6 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     private var serviceStartTime: Long = System.currentTimeMillis()
     private var isFirstSpeedCallback = true
     private var isQueryingTodayData = false
-    private var overlaySuppressed = false
 
     private var cachedTodayDataFormatted: String = "--"
     private var lastDailyQueryTimestamp: Long = 0L
@@ -80,11 +78,9 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 }
                 ACTION_RELOAD_HANDLES -> {
                     LogKeeper.logLifecycle(context, "HandleService", "RELOAD_HANDLES", "Reloading handles on configuration change")
-                    applyOverlayAccessPolicy()
-                }
-                OverlayAccessPolicy.ACTION_POLICY_CHANGED -> {
-                    OverlayAccessPolicy.applyBroadcast(this@HandleService, intent)
-                    applyOverlayAccessPolicy()
+                    if (isScreenOn && Settings.canDrawOverlays(this@HandleService)) {
+                        attachHandles()
+                    }
                 }
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
                     LogKeeper.logLifecycle(context, "HandleService", "ACTION_SYNC_PREF", "Syncing preferences from Heavy process")
@@ -152,7 +148,6 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onCreate() {
         super.onCreate()
-        logKeeperExecutionToken = LogKeeper.beginExecution(this, "Service", "HandleService")
         serviceStartTime = System.currentTimeMillis()
         LogKeeper.logLifecycle(this, "HandleService", "CREATED")
 
@@ -232,7 +227,6 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(ACTION_RELOAD_HANDLES)
-            addAction(OverlayAccessPolicy.ACTION_POLICY_CHANGED)
             addAction(OverlaySyncManager.ACTION_SYNC_PREF)
         }
         ContextCompat.registerReceiver(
@@ -244,7 +238,9 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         prefs.registerOnSharedPreferenceChangeListener(this)
 
         handleManager = HandleManager.getInstance(this)
-        applyOverlayAccessPolicy()
+        if (isScreenOn && Settings.canDrawOverlays(this)) {
+            attachHandles()
+        }
         val callRecorder = CallRecorderManager.getInstance(this)
         if (callRecorder.shouldListen()) {
             callRecorder.startListening()
@@ -274,18 +270,18 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
         if (intent == null) {
             LogKeeper.logLifecycle(this, "HandleService", "SERVICE_RECREATED_STICKY", "Recreated by Android framework after process termination (START_STICKY)")
-            applyOverlayAccessPolicy()
+            if (isScreenOn && Settings.canDrawOverlays(this)) {
+                attachHandles()
+            }
         } else {
             when (intent.action) {
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
                     handleSyncPrefIntent(intent)
                 }
                 ACTION_RELOAD_HANDLES -> {
-                    applyOverlayAccessPolicy()
-                }
-                OverlayAccessPolicy.ACTION_POLICY_CHANGED -> {
-                    OverlayAccessPolicy.applyBroadcast(this, intent)
-                    applyOverlayAccessPolicy()
+                    if (isScreenOn && Settings.canDrawOverlays(this)) {
+                        attachHandles()
+                    }
                 }
                 else -> {
                     if (isScreenOn && Settings.canDrawOverlays(this)) {
@@ -516,22 +512,12 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         }
     }
 
-    private fun applyOverlayAccessPolicy() {
-        overlaySuppressed = OverlayAccessPolicy.isForegroundExcluded(this)
-        OverlayWindowRegistry.setSuppressed(overlaySuppressed)
-        FloatingWindowManager.getInstance(this).setOverlaySuppressed(overlaySuppressed)
-        if (overlaySuppressed) {
-            detachHandles()
-        } else if (isScreenOn && Settings.canDrawOverlays(this)) {
-            attachHandles()
-        }
-    }
-
     private fun attachHandles() {
+        // Remove existing attached views
         detachHandles()
 
-        if (!OverlayAccessPolicy.canShowApplicationOverlays(this)) {
-            LogKeeper.log(this, "HandleService", "attachHandles skipped: overlay permission missing or current app excluded")
+        if (!Settings.canDrawOverlays(this)) {
+            LogKeeper.log(this, "HandleService", "attachHandles skipped: SYSTEM_ALERT_WINDOW permission not granted")
             return
         }
 
@@ -611,8 +597,6 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onDestroy() {
         super.onDestroy()
-        logKeeperExecutionToken?.let { LogKeeper.finishExecution(this, it, "COMPLETED", "Service destroyed") }
-        logKeeperExecutionToken = null
         LogKeeper.logLifecycle(this, "HandleService", "DESTROYED")
         val shieldPrefs = getSharedPreferences(packageName + "_preferences", Context.MODE_PRIVATE)
         val shieldEnabled = shieldPrefs.getBoolean("enabled", false)
