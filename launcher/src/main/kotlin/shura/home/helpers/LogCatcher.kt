@@ -132,18 +132,29 @@ object LogCatcher {
     }
 
 
-    /** Manual fixed-width timestamp parser; avoids per-line SimpleDateFormat and Calendar creation. */
+    /** Manual fixed-width parser; avoids per-line SimpleDateFormat, Calendar and substring allocations. */
     private fun parseTimestampMillis(value: String): Long? {
         if (value.length != 23 || value[4] != '-' || value[7] != '-' ||
             value[10] != ' ' || value[13] != ':' || value[16] != ':' || value[19] != '.') return null
+
+        fun number(from: Int, count: Int): Int? {
+            var result = 0
+            for (index in from until from + count) {
+                val digit = value[index] - '0'
+                if (digit !in 0..9) return null
+                result = result * 10 + digit
+            }
+            return result
+        }
+
         return try {
-            val year = value.substring(0, 4).toInt()
-            val month = value.substring(5, 7).toInt()
-            val day = value.substring(8, 10).toInt()
-            val hour = value.substring(11, 13).toInt()
-            val minute = value.substring(14, 16).toInt()
-            val second = value.substring(17, 19).toInt()
-            val millis = value.substring(20, 23).toInt()
+            val year = number(0, 4) ?: return null
+            val month = number(5, 2) ?: return null
+            val day = number(8, 2) ?: return null
+            val hour = number(11, 2) ?: return null
+            val minute = number(14, 2) ?: return null
+            val second = number(17, 2) ?: return null
+            val millis = number(20, 3) ?: return null
             LocalDateTime.of(year, month, day, hour, minute, second, millis * 1_000_000)
                 .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         } catch (_: Exception) {
