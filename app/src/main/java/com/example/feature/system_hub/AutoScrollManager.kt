@@ -1,5 +1,7 @@
 package com.example.feature.system_hub
 
+import com.example.core.OverlayWindowRegistry
+
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
@@ -216,7 +218,7 @@ class AutoScrollManager(private val service: AccessibilityService) {
                     layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
                     layoutParams.y = initialY - (event.rawY - initialTouchY).toInt()
                     try {
-                        windowManager.updateViewLayout(floatingView, layoutParams)
+                        floatingView?.let { OverlayWindowRegistry.updateViewLayout(windowManager, it, layoutParams) }
                     } catch (_: Exception) {}
                     true
                 }
@@ -225,7 +227,7 @@ class AutoScrollManager(private val service: AccessibilityService) {
         }
 
         try {
-            windowManager.addView(floatingView, layoutParams)
+            floatingView?.let { OverlayWindowRegistry.addView(service, windowManager, it, layoutParams) }
         } catch (e: Exception) {
             LogKeeper.logError(service, "AutoScrollManager", "Error adding floatingView", e)
         }
@@ -235,7 +237,7 @@ class AutoScrollManager(private val service: AccessibilityService) {
         floatingView?.let {
             try {
                 if (it.isAttachedToWindow) {
-                    windowManager.removeView(it)
+                    OverlayWindowRegistry.removeView(windowManager, it)
                 }
             } catch (_: Exception) {}
             floatingView = null

@@ -25,6 +25,7 @@ import com.example.core.ipc.IpcResult
  */
 class HeavyFloatingHostService : Service() {
 
+    private var logKeeperExecutionToken: String? = null
     private lateinit var host: HeavyFloatingHost
     private lateinit var ipcHost: HeavyProcessHost
     private var startHandler: HeavyCommandHandler? = null
@@ -33,6 +34,7 @@ class HeavyFloatingHostService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        logKeeperExecutionToken = LogKeeper.beginExecution(this, "Service", "HeavyFloatingHostService")
         host = HeavyFloatingHost.getInstance(this)
         ipcHost = HeavyProcessHost.getInstance(this)
 
@@ -245,6 +247,8 @@ class HeavyFloatingHostService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        logKeeperExecutionToken?.let { LogKeeper.finishExecution(this, it, "COMPLETED", "Service destroyed") }
+        logKeeperExecutionToken = null
         LogKeeper.log(this, "HeavyFloatingHostService", "HEAVY_SERVICE_DESTROY timestamp=${System.currentTimeMillis()}")
         startHandler?.let { ipcHost.unregisterCommandHandler(HeavyCommandType.START_OPERATION, it) }
         pauseHandler?.let { ipcHost.unregisterCommandHandler(HeavyCommandType.PAUSE_OPERATION, it) }

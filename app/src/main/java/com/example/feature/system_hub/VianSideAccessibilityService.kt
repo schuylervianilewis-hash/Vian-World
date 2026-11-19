@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import com.example.core.LogKeeper
+import com.example.core.OverlayAccessPolicy
 import com.example.feature.system_hub.accessibility.AccessibilityActionRegistry
 import com.example.feature.system_hub.accessibility.AccessibilityActionResult
 
@@ -44,6 +45,7 @@ open class VianSideAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         LogKeeper.writeLog(TAG, "Service connected")
+        OverlayAccessPolicy.updateForegroundPackage(this, rootInActiveWindow?.packageName?.toString())
         try {
             val filter = android.content.IntentFilter(com.example.core.OverlaySyncManager.ACTION_SYNC_PREF)
             androidx.core.content.ContextCompat.registerReceiver(
@@ -57,6 +59,18 @@ open class VianSideAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val eventPackage = event.packageName?.toString()
+            // Prefer the package which emitted the window-state event. If it is Vian's
+            // own overlay window, use the active root to identify the app underneath it.
+            val foregroundPackage = if (!eventPackage.isNullOrBlank() &&
+                eventPackage != packageName) {
+                eventPackage
+            } else {
+                rootInActiveWindow?.packageName?.toString() ?: eventPackage
+            }
+            OverlayAccessPolicy.updateForegroundPackage(this, foregroundPackage)
+        }
 
         if (isForceStopping) {
             val rootNode = rootInActiveWindow ?: return
