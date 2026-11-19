@@ -7,73 +7,163 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.util.Log
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.PrintWriter
 import java.io.StringWriter
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.UUID
+import java.util.WeakHashMap
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * LogKeeper: Zero-PII Multi-Process Diagnostic & Crash Logger.
- * Writes diagnostic logs to LiteReader_Log.txt and crash logs to LiteReader_CrashLog.txt
- * inside context.filesDir.
- * Fully multi-process safe using OS FileChannel file locks.
- * Strictly Zero-PII: No user content, no credentials, no private data.
+ * Shared, process-aware diagnostic and crash logger.
+ * Ordinary diagnostics use a bounded asynchronous queue. Fatal crash records are synchronous.
+ * The stable lock file coordinates appends/rotation across default, :home and :heavy processes.
  */
 object LogKeeper {
     private const val TAG = "LogKeeper"
     const val FILE_DIAGNOSTIC_LOG = "LiteReader_Log.txt"
     const val FILE_CRASH_LOG = "LiteReader_CrashLog.txt"
+    const val FILE_EXECUTION_LOG = "LiteReader_ExecutionLog.txt"
+    private const val MAX_LOG_SIZE = 256 * 1024L
+    private const val QUEUE_CAPACITY = 512
+    private const val MAX_EXECUTION_LOG_SIZE = 256 * 1024L
 
-    private const val MAX_LOG_SIZE = 256 * 1024 // 256 KB max per log file
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val timestampFormatter = DateTimeFormatter
+        .ofPattern("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+        .withZone(ZoneId.systemDefault())
+    private val queue = ArrayBlockingQueue<PendingWrite>(QUEUE_CAPACITY)
+    private val workerStarted = AtomicBoolean(false)
+    private val initialized = AtomicBoolean(false)
+    private val droppedEntries = AtomicLong(0)
+    private val executionLock = Any()
+    private val activeExecutions = ConcurrentHashMap<String, ExecutionEvent>()
+    private val sensitiveValuePatterns = listOf(
+        Regex("(?i)(authorization\\s*[:=]\\s*)(?:bearer\\s+)?[^\\s,;]+"),
+        Regex("(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+"),
+        Regex("(?i)((?:password|passwd|token|secret|api[_-]?key|access[_-]?key)\\s*[:=]\\s*)[^\\s,;&]+"),
+        Regex("(?i)([?&](?:token|key|password|secret|auth)=)[^&\\s]+")
+    )
 
-    @Volatile
-    private var isMasterEnabled = true
+    @Volatile private var isMasterEnabled = true
+    @Volatile private var cachedProcessName: String? = null
+    @Volatile private var appContext: Context? = null
 
-    @Volatile
-    private var cachedProcessName: String? = null
+    private data class PendingWrite(val fileName: String, val text: String)
 
-    @Volatile
-    private var appContext: Context? = null
+    data class ExecutionEvent(
+        val id: String,
+        val component: String,
+        val operation: String,
+        val process: String,
+        val pid: Int,
+        val thread: String,
+        val timestampMillis: Long,
+        val event: String,
+        val detail: String = ""
+    )
 
     fun init(context: Context) {
         val app = context.applicationContext
         appContext = app
-        cachedProcessName = getProcessName(context)
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            logCrash(context, thread.name, throwable)
-            logLifecycle(context, "Process", "UNCAUGHT_CRASH", "Uncaught exception in thread '${thread.name}': ${throwable.javaClass.name}")
-            try {
-                MainProcessRecovery.handleProcessCrash(context, thread.name, throwable)
-            } catch (e: Exception) {
-                // Ensure failure in recovery scheduling never blocks fatal crash reporting
-            }
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
-        log(context, "LogKeeper", "Initialized logger in process: $cachedProcessName")
+        cachedProcessName = getProcessName(app)
+        startWriterIfNeeded()
 
+        // App.onCreate runs once per process, but guard against accidental repeated init calls.
+        if (!initialized.compareAndSet(false, true)) return
+
+        val current = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                logCrash(app, thread.name, throwable)
+                logLifecycle(app, "Process", "UNCAUGHT_CRASH",
+                    "Uncaught exception in thread '${thread.name}': ${throwable.javaClass.name}")
+                try {
+                    MainProcessRecovery.handleProcessCrash(app, thread.name, throwable)
+                } catch (_: Exception) {
+                    // Crash recording must not depend on recovery scheduling.
+                }
+            } finally {
+                current?.uncaughtException(thread, throwable)
+            }
+        }
+
+        log(app, "LogKeeper", "Initialized logger in process: $cachedProcessName")
         if (app is Application) {
+            val activityTokens = WeakHashMap<Activity, String>()
             app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                    logLifecycle(activity, activity.javaClass.simpleName, "CREATED")
+                }
                 override fun onActivityStarted(activity: Activity) {
-                    log(activity, "Lifecycle", "Activity started: ${activity.javaClass.simpleName}")
+                    logLifecycle(activity, activity.javaClass.simpleName, "STARTED")
+                    val token = beginExecution(app, "Activity", activity.javaClass.simpleName, allowConcurrent = true)
+                    synchronized(activityTokens) { activityTokens[activity] = token }
                 }
                 override fun onActivityResumed(activity: Activity) {}
                 override fun onActivityPaused(activity: Activity) {}
                 override fun onActivityStopped(activity: Activity) {
-                    log(activity, "Lifecycle", "Activity stopped: ${activity.javaClass.simpleName}")
+                    logLifecycle(activity, activity.javaClass.simpleName, "STOPPED")
+                    val token = synchronized(activityTokens) { activityTokens.remove(activity) }
+                    if (token != null) finishExecution(app, token, "COMPLETED", "Activity stopped")
                 }
                 override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
                 override fun onActivityDestroyed(activity: Activity) {
-                    log(activity, "Lifecycle", "Activity destroyed: ${activity.javaClass.simpleName}")
+                    logLifecycle(activity, activity.javaClass.simpleName, "DESTROYED")
+                    val token = synchronized(activityTokens) { activityTokens.remove(activity) }
+                    if (token != null) finishExecution(app, token, "COMPLETED", "Activity destroyed")
                 }
             })
         }
     }
+
+    private fun startWriterIfNeeded() {
+        if (!workerStarted.compareAndSet(false, true)) return
+        Thread({
+            while (true) {
+                try {
+                    val batch = ArrayList<PendingWrite>(64)
+                    batch.add(queue.take())
+                    queue.drainTo(batch, 63)
+                    val grouped = LinkedHashMap<String, StringBuilder>()
+                    for (pending in batch) {
+                        grouped.getOrPut(pending.fileName) { StringBuilder() }.append(pending.text)
+                    }
+                    val dropped = droppedEntries.getAndSet(0)
+                    if (dropped > 0) {
+                        grouped.getOrPut(FILE_DIAGNOSTIC_LOG) { StringBuilder() }
+                            .append("[${now()}] [${cachedProcessName ?: "unknown"}] [LogKeeperWriter] [LogKeeper] Dropped $dropped diagnostic entries because the bounded queue was full.\\n")
+                    }
+                    val context = pendingContext()
+                    for ((fileName, contents) in grouped) appendToFile(context, fileName, contents.toString())
+                } catch (interrupted: InterruptedException) {
+                    // This worker is process-lifetime infrastructure; continue unless the process exits.
+                    Thread.currentThread().interrupt()
+                    return@Thread
+                } catch (error: Exception) {
+                    Log.e(TAG, "Asynchronous log write failed", error)
+                }
+            }
+        }, "Vian-LogWriter").apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+            start()
+        }
+    }
+
+    private fun pendingContext(): Context =
+        appContext ?: throw IllegalStateException("LogKeeper is not initialized")
 
     fun setMasterEnabled(enabled: Boolean) {
         isMasterEnabled = enabled
@@ -103,7 +193,7 @@ object LogKeeper {
                 val pid = Process.myPid()
                 val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
                 am?.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: "pid-$pid"
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 "unknown"
             }
         }
@@ -112,66 +202,59 @@ object LogKeeper {
     }
 
     fun writeLog(tag: String, message: String) {
-        Log.d(tag, message)
-        appContext?.let { ctx ->
-            log(ctx, tag, message)
-        }
+        val safe = sanitize(message)
+        Log.d(tag, safe)
+        appContext?.let { log(it, tag, safe) }
     }
 
-    /**
-     * Records a lifecycle event (started, stopped, restarted, etc.) to the diagnostic log.
-     */
+    /** Skip regex passes for ordinary text; redact likely credential-bearing strings when hints exist. */
+    fun sanitize(value: String): String {
+        if (!(value.contains("://") || value.contains('/') || value.contains('.') ||
+                value.contains('=') || value.contains(':'))) return value
+        var safe = value
+        for (pattern in sensitiveValuePatterns) {
+            safe = pattern.replace(safe) { match -> match.groupValues[1] + "[REDACTED]" }
+        }
+        return safe
+    }
+
     fun logLifecycle(context: Context, component: String, event: String, details: String = "") {
         val msg = if (details.isNotEmpty()) "$event - $details" else event
         log(context, "Lifecycle", "[$component] $msg")
     }
 
-    /**
-     * Records a standard diagnostic or telemetry log entry to LiteReader_Log.txt
-     */
     fun log(context: Context, component: String, message: String) {
         if (!isLoggingAllowed(context)) return
-        val process = getProcessName(context)
-        val thread = Thread.currentThread().name
-        val timestamp = dateFormat.format(Date())
-        val logLine = "[$timestamp] [$process] [$thread] [$component] $message\n"
-        appendToFile(context, FILE_DIAGNOSTIC_LOG, logLine)
+        val line = "[${now()}] [${getProcessName(context)}] [${Thread.currentThread().name}] [$component] ${sanitize(message)}\n"
+        enqueue(FILE_DIAGNOSTIC_LOG, line)
     }
 
-    /**
-     * Records an error or caught exception to LiteReader_Log.txt (and LiteReader_CrashLog.txt if throwable is present).
-     */
     fun logError(context: Context, component: String, message: String, throwable: Throwable? = null) {
         if (!isLoggingAllowed(context)) return
+        val timestamp = now()
         val process = getProcessName(context)
         val thread = Thread.currentThread().name
-        val timestamp = dateFormat.format(Date())
-
         val sb = StringBuilder()
-        sb.append("[$timestamp] [$process] [$thread] [ERROR:$component] $message\n")
+        sb.append("[$timestamp] [$process] [$thread] [ERROR:$component] ${sanitize(message)}\n")
         if (throwable != null) {
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            sb.append(sw.toString()).append("\n")
+            sb.append(sanitize(sw.toString())).append('\n')
         }
         val entry = sb.toString()
-        appendToFile(context, FILE_DIAGNOSTIC_LOG, entry)
-        if (throwable != null) {
+        if (throwable == null) enqueue(FILE_DIAGNOSTIC_LOG, entry) else {
+            // Preserve exception details immediately; do not leave caught failures only in RAM.
+            appendToFile(context, FILE_DIAGNOSTIC_LOG, entry)
             appendToFile(context, FILE_CRASH_LOG, entry)
         }
     }
 
-    /**
-     * Records an uncaught crash to LiteReader_CrashLog.txt and LiteReader_Log.txt.
-     */
     fun logCrash(context: Context, threadName: String, throwable: Throwable) {
-        if (!isLoggingAllowed(context)) return
         try {
+            val timestamp = now()
             val process = getProcessName(context)
-            val timestamp = dateFormat.format(Date())
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-
             val record = """
                 ================================================================
                 === UNCAUGHT EXCEPTION CRASH REPORT ===
@@ -179,127 +262,186 @@ object LogKeeper {
                 Process: $process
                 Thread: $threadName
                 Exception: ${throwable.javaClass.name}
-                Message: ${throwable.message ?: "No message"}
+                Message: ${sanitize(throwable.message ?: "No message")}
                 StackTrace:
-                ${sw}
+                ${sanitize(sw.toString())}
                 ================================================================
-                
+
             """.trimIndent()
-
+            // Fatal records bypass the queue so they survive immediate process termination.
             appendToFile(context, FILE_CRASH_LOG, record)
-            appendToFile(context, FILE_DIAGNOSTIC_LOG, "[$timestamp] [$process] [$threadName] [CRASH] ${throwable.javaClass.name}: ${throwable.message}\n")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to record crash log", e)
+            appendToFile(context, FILE_DIAGNOSTIC_LOG,
+                "[$timestamp] [$process] [$threadName] [CRASH] ${throwable.javaClass.name}: ${sanitize(throwable.message ?: "No message")}\n")
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to record crash log", error)
         }
     }
 
-    /**
-     * Thread-safe and cross-process safe file append using OS FileChannel locks.
-     */
-    @Synchronized
+    private fun now(): String = timestampFormatter.format(Instant.now())
+
+    private fun enqueue(fileName: String, text: String) {
+        startWriterIfNeeded()
+        if (!queue.offer(PendingWrite(fileName, text))) droppedEntries.incrementAndGet()
+    }
+
+    /** All processes lock the same stable sidecar file, including while the log is compacted. */
     private fun appendToFile(context: Context, fileName: String, text: String) {
+        val logFile = File(context.filesDir, fileName)
+        val lockFile = File(context.filesDir, "$fileName.lock")
         try {
-            val logFile = File(context.filesDir, fileName)
-            // Trim if file exceeds MAX_LOG_SIZE
-            if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {
-                try {
-                    val existingText = logFile.readText()
-                    val halfIndex = existingText.length / 2
-                    val trimmed = "[... logs truncated ...]\n" + existingText.substring(halfIndex)
-                    logFile.writeText(trimmed)
-                } catch (e: Exception) {
-                    logFile.delete()
-                }
-            }
-
-            FileOutputStream(logFile, true).use { fos ->
-                val channel = fos.channel
-                var lock: java.nio.channels.FileLock? = null
-                try {
-                    lock = channel.lock()
-                    fos.write(text.toByteArray(Charsets.UTF_8))
-                    fos.flush()
-                } finally {
-                    try {
-                        lock?.release()
-                    } catch (ignored: Exception) {}
-                }
-            }
-
-            // Also mirror to download-accessible location so logs are visible without root/app-private access
-            try {
-                val downloadsDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
-                if (downloadsDir != null) {
-                    val mirrorFile = File(downloadsDir, fileName)
-                    FileOutputStream(mirrorFile, true).use { fos ->
-                        fos.write(text.toByteArray(Charsets.UTF_8))
-                        fos.flush()
+            FileOutputStream(lockFile, true).use { lockStream ->
+                lockStream.channel.lock().use {
+                    if (logFile.exists() && logFile.length() + text.toByteArray(Charsets.UTF_8).size > MAX_LOG_SIZE) {
+                        compactFile(logFile, MAX_LOG_SIZE / 2)
+                    }
+                    FileOutputStream(logFile, true).use { output ->
+                        output.write(text.toByteArray(Charsets.UTF_8))
+                        output.flush()
+                        if (fileName == FILE_CRASH_LOG) output.fd.sync()
                     }
                 }
-            } catch (ignored: Exception) {}
-
-            try {
-                val publicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                if (publicDir != null && publicDir.exists() && publicDir.canWrite()) {
-                    val pubFile = File(publicDir, fileName)
-                    FileOutputStream(pubFile, true).use { fos ->
-                        fos.write(text.toByteArray(Charsets.UTF_8))
-                        fos.flush()
-                    }
-                }
-            } catch (ignored: Exception) {}
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write to $fileName", e)
+            }
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to append $fileName", error)
         }
     }
 
-    fun getDiagnosticLogs(context: Context): String {
-        return readLogFile(context, FILE_DIAGNOSTIC_LOG)
+    /** Stream the newest tail to a temporary file; never read the full log into a String. */
+    private fun compactFile(source: File, targetBytes: Long) {
+        val temp = File(source.parentFile, source.name + ".compact")
+        try {
+            val length = source.length()
+            val start = (length - targetBytes).coerceAtLeast(0L)
+            BufferedInputStream(FileInputStream(source)).use { input ->
+                var remaining = start
+                while (remaining > 0L) {
+                    val skipped = input.skip(remaining)
+                    if (skipped <= 0L) {
+                        if (input.read() == -1) break
+                        remaining--
+                    } else remaining -= skipped
+                }
+                // Drop a partial first line so the retained file starts at a record boundary.
+                if (start > 0L) while (true) {
+                    val b = input.read()
+                    if (b == -1 || b == '\n'.code) break
+                }
+                BufferedOutputStream(FileOutputStream(temp, false)).use { output ->
+                    output.write("[... logs truncated ...]\n".toByteArray(Charsets.UTF_8))
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                    output.flush()
+                }
+            }
+            try {
+                Files.move(temp.toPath(), source.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: Exception) {
+                Files.move(temp.toPath(), source.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } catch (error: Exception) {
+            temp.delete()
+            Log.e(TAG, "Failed to compact ${source.name}", error)
+        }
     }
 
-    fun getCrashLogs(context: Context): String {
-        return readLogFile(context, FILE_CRASH_LOG)
+    /** Start a tracked execution. This records observation only; concurrency policy stays with the caller. */
+    fun beginExecution(
+        context: Context,
+        component: String,
+        operation: String,
+        allowConcurrent: Boolean = false
+    ): String {
+        val id = UUID.randomUUID().toString()
+        val event = ExecutionEvent(id, component, operation, getProcessName(context),
+            Process.myPid(), Thread.currentThread().name, System.currentTimeMillis(), "STARTED")
+        synchronized(executionLock) {
+            val active = activeExecutions.values.filter {
+                it.component == component && it.operation == operation && it.pid == event.pid
+            }
+            if (active.isNotEmpty() && !allowConcurrent) {
+                writeExecutionEvent(context, event.copy(event = "OVERLAP",
+                    detail = "Concurrent execution already active; count=${active.size}"))
+            }
+            activeExecutions[id] = event
+            writeExecutionEvent(context, event)
+        }
+        return id
     }
 
-    fun getLogs(context: Context): String {
-        return getDiagnosticLogs(context)
+    fun finishExecution(context: Context, executionId: String, outcome: String = "COMPLETED", detail: String = "") {
+        if (executionId.isBlank()) return
+        val start = activeExecutions.remove(executionId)
+        val safeOutcome = outcome.uppercase(java.util.Locale.US).take(32)
+        writeExecutionEvent(context, ExecutionEvent(
+            executionId, start?.component ?: "unknown", start?.operation ?: "unknown",
+            start?.process ?: getProcessName(context), start?.pid ?: Process.myPid(),
+            Thread.currentThread().name, System.currentTimeMillis(), safeOutcome, detail.take(500)
+        ))
     }
 
-    private fun readLogFile(context: Context, fileName: String): String {
+    fun getExecutionEvents(context: Context): List<ExecutionEvent> =
+        (readExecutionEvents(context) + activeExecutions.values).distinctBy { "${it.id}:${it.event}:${it.timestampMillis}" }
+
+    private fun writeExecutionEvent(context: Context, event: ExecutionEvent) {
+        val line = listOf(
+            event.id, event.component.replace("|", "_"), event.operation.replace("|", "_"),
+            event.process.replace("|", "_"), event.pid.toString(), event.thread.replace("|", "_"),
+            event.timestampMillis.toString(), event.event, event.detail.replace("|", "_").replace("\n", " ")
+        ).joinToString("|") + "\n"
+        enqueue(FILE_EXECUTION_LOG, line)
+    }
+
+    private fun readExecutionEvents(context: Context): List<ExecutionEvent> {
+        val file = File(context.filesDir, FILE_EXECUTION_LOG)
+        if (!file.exists()) return emptyList()
         return try {
-            val file = File(context.filesDir, fileName)
-            if (file.exists() && file.length() > 0L) {
-                file.readText()
-            } else {
-                "No records in $fileName."
+            file.useLines { lines ->
+                lines.mapNotNull { line ->
+                    val p = line.split('|', limit = 9)
+                    if (p.size < 8) null else try {
+                        ExecutionEvent(p[0], p[1], p[2], p[3], p[4].toInt(),
+                            p[5], p[6].toLong(), p[7], p.getOrElse(8) { "" })
+                    } catch (_: Exception) { null }
+                }.toList()
             }
-        } catch (e: Exception) {
-            "Error reading $fileName: ${e.message}"
-        }
+        } catch (_: Exception) { emptyList() }
     }
 
-    fun clearDiagnosticLogs(context: Context) {
-        deleteLogFile(context, FILE_DIAGNOSTIC_LOG)
+    private fun hasMatchingFinish(context: Context, id: String): Boolean =
+        readExecutionEvents(context).any { it.id == id && it.event != "STARTED" }
+
+    fun getDiagnosticLogs(context: Context): String = readLogFile(context, FILE_DIAGNOSTIC_LOG)
+    fun getCrashLogs(context: Context): String = readLogFile(context, FILE_CRASH_LOG)
+    fun getLogs(context: Context): String = getDiagnosticLogs(context)
+
+    private fun readLogFile(context: Context, fileName: String): String = try {
+        val file = File(context.filesDir, fileName)
+        if (file.exists() && file.length() > 0L) file.readText() else "No records in $fileName."
+    } catch (error: Exception) {
+        "Error reading $fileName: ${error.message}"
     }
 
-    fun clearCrashLogs(context: Context) {
-        deleteLogFile(context, FILE_CRASH_LOG)
-    }
-
+    fun clearDiagnosticLogs(context: Context) = deleteLogFile(context, FILE_DIAGNOSTIC_LOG)
+    fun clearCrashLogs(context: Context) = deleteLogFile(context, FILE_CRASH_LOG)
     fun clearLogs(context: Context) {
         clearDiagnosticLogs(context)
         clearCrashLogs(context)
     }
+    fun clearExecutionLogs(context: Context) = deleteLogFile(context, FILE_EXECUTION_LOG)
 
     private fun deleteLogFile(context: Context, fileName: String) {
         try {
-            val file = File(context.filesDir, fileName)
-            if (file.exists()) {
-                file.delete()
+            FileOutputStream(File(context.filesDir, "$fileName.lock"), true).use { lockStream ->
+                lockStream.channel.lock().use {
+                    File(context.filesDir, fileName).delete()
+                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to clear $fileName", e)
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to clear $fileName", error)
         }
     }
 }
-

@@ -29,6 +29,7 @@ import eu.faircode.netguard.ShieldNotificationFactory
  */
 class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListener {
 
+    private var logKeeperExecutionToken: String? = null
     private lateinit var handleManager: HandleManager
     private lateinit var notificationManager: NotificationManager
 
@@ -151,6 +152,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onCreate() {
         super.onCreate()
+        logKeeperExecutionToken = LogKeeper.beginExecution(this, "Service", "HandleService")
         serviceStartTime = System.currentTimeMillis()
         LogKeeper.logLifecycle(this, "HandleService", "CREATED")
 
@@ -609,6 +611,8 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onDestroy() {
         super.onDestroy()
+        logKeeperExecutionToken?.let { LogKeeper.finishExecution(this, it, "COMPLETED", "Service destroyed") }
+        logKeeperExecutionToken = null
         LogKeeper.logLifecycle(this, "HandleService", "DESTROYED")
         val shieldPrefs = getSharedPreferences(packageName + "_preferences", Context.MODE_PRIVATE)
         val shieldEnabled = shieldPrefs.getBoolean("enabled", false)

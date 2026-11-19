@@ -8,6 +8,9 @@ import android.provider.MediaStore
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 
@@ -34,6 +37,9 @@ object LogCatcher {
         fun clearLogs()
         fun setEnabled(enabled: Boolean)
     }
+
+    private val displayFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.US)
+        .withZone(ZoneId.systemDefault())
 
     @Volatile
     private var backend: Backend? = null
@@ -68,8 +74,6 @@ object LogCatcher {
         val raw = getRawLogs()
         if (raw.isBlank()) return emptyList()
 
-        val parser = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-        val display = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
         val entries = ArrayList<LogEntry>()
         var timestampMillis = 0L
         var timestampDisplay = ""
@@ -106,11 +110,11 @@ object LogCatcher {
                         remaining = remaining.substring(fieldEnd + 2)
                     }
                     if (fields.size == 3) {
-                        val parsed = try { parser.parse(line.substring(1, timestampEnd)) } catch (_: Exception) { null }
+                        val parsed = parseTimestampMillis(line.substring(1, timestampEnd))
                         if (parsed != null) {
                             flush()
-                            timestampMillis = parsed.time
-                            timestampDisplay = display.format(Date(timestampMillis))
+                            timestampMillis = parsed
+                            timestampDisplay = displayFormatter.format(java.time.Instant.ofEpochMilli(timestampMillis))
                             tag = fields[2].removePrefix("ERROR:")
                             message = remaining
                             return@forEach
@@ -125,6 +129,26 @@ object LogCatcher {
         }
         flush()
         return entries.asReversed()
+    }
+
+
+    /** Manual fixed-width timestamp parser; avoids per-line SimpleDateFormat and Calendar creation. */
+    private fun parseTimestampMillis(value: String): Long? {
+        if (value.length != 23 || value[4] != '-' || value[7] != '-' ||
+            value[10] != ' ' || value[13] != ':' || value[16] != ':' || value[19] != '.') return null
+        return try {
+            val year = value.substring(0, 4).toInt()
+            val month = value.substring(5, 7).toInt()
+            val day = value.substring(8, 10).toInt()
+            val hour = value.substring(11, 13).toInt()
+            val minute = value.substring(14, 16).toInt()
+            val second = value.substring(17, 19).toInt()
+            val millis = value.substring(20, 23).toInt()
+            LocalDateTime.of(year, month, day, hour, minute, second, millis * 1_000_000)
+                .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun dumpLogsToDownloadFolder(
@@ -143,28 +167,33 @@ object LogCatcher {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val fileName = "vian_world_logs_" + stamp + ".txt"
 
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                }
-                val uri = context.contentResolver.insert(
-                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    values
-                ) ?: return saveFallback(context, fileName, content)
-                context.contentResolver.openOutputStream(uri)?.use {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = try {
+                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            } catch (_: Exception) {
+                null
+            } ?: return saveFallback(context, fileName, content)
+
+            return try {
+                val output = context.contentResolver.openOutputStream(uri)
+                    ?: throw IllegalStateException("Unable to open exported log")
+                output.use {
                     it.write(content.toByteArray(Charsets.UTF_8))
                     it.flush()
-                } ?: return false
+                }
                 true
-            } else {
+            } catch (_: Exception) {
+                // Remove a partially-created public item before falling back, avoiding duplicate exports.
+                try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
                 saveFallback(context, fileName, content)
             }
-        } catch (_: Exception) {
-            saveFallback(context, fileName, content)
         }
+        return saveFallback(context, fileName, content)
     }
 
     private fun saveFallback(context: Context, fileName: String, content: String): Boolean {
