@@ -738,20 +738,28 @@ fun filterLogText(raw: String, timeRange: String, subsystem: String, nowMillis: 
     val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     val filtered = blocks.filter { block ->
         val firstLine = block.lineSequence().firstOrNull().orEmpty()
+        val timestampText = if (firstLine.startsWith("[")) {
+            firstLine.substringAfter("[", "").substringBefore("]")
+        } else {
+            block.lineSequence().firstOrNull { it.startsWith("Timestamp:") }
+                ?.substringAfter("Timestamp:")?.trim().orEmpty()
+        }
         if (cutoff != Long.MIN_VALUE) {
-            val end = firstLine.indexOf("] ")
-            val timestamp = if (firstLine.startsWith("[") && end > 1) {
-                try { formatter.parse(firstLine.substring(1, end))?.time } catch (_: Exception) { null }
-            } else null
+            val timestamp = try { formatter.parse(timestampText)?.time } catch (_: Exception) { null }
             if (timestamp == null || timestamp < cutoff) return@filter false
         }
         val parts = firstLine.split("] [")
-        val component = parts.getOrNull(3)?.substringBefore("]")?.removePrefix("ERROR:").orEmpty()
+        val component = if (parts.size >= 4) {
+            parts[3].substringBefore("]").removePrefix("ERROR:")
+        } else if (block.contains("UNCAUGHT EXCEPTION CRASH REPORT")) {
+            "CRASH"
+        } else ""
         when (subsystem) {
-            "Core" -> component in setOf("LogKeeper", "Lifecycle", "StartupDiagnostics", "Process", "Execution") ||
-                component.startsWith("Core")
+            "Core" -> component in setOf("LogKeeper", "Lifecycle", "StartupDiagnostics", "Process", "Execution", "CRASH") ||
+                component.startsWith("Core") || block.contains("com.example.core.")
             "Launcher" -> component.contains("launcher", true) || component.contains("home", true) ||
-                component in setOf("MainActivity", "AllAppsFragment", "LauncherSettings")
+                component in setOf("MainActivity", "AllAppsFragment", "LauncherSettings") ||
+                block.contains("shura.home.")
             "Floating Mini-apps" -> FloatingMiniAppLogFilter.isMiniAppLogEntry(block)
             "Firewall" -> FirewallLogFilter.isFirewallLogEntry(block)
             else -> true
@@ -759,7 +767,6 @@ fun filterLogText(raw: String, timeRange: String, subsystem: String, nowMillis: 
     }
     return if (filtered.isEmpty()) "No matching logs found." else filtered.joinToString("\n\n")
 }
-
 fun formatExecutionSummary(events: List<LogKeeper.ExecutionEvent>): String {
     if (events.isEmpty()) return "No structured execution events have been recorded yet.\nInstrumented operations will appear here with their start/end times and outcomes."
     return events.sortedByDescending { it.timestampMillis }.joinToString("\n") {

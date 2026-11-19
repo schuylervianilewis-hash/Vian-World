@@ -36,4 +36,21 @@ class LogKeeperFilterTest {
         assertTrue(filtered.contains("recent event"))
         assertTrue(!filtered.contains("old event"))
     }
+    @Test
+    fun crashReportTimestampIsUsedByTimeFilters() {
+        val now = formatter.parse("2026-11-20 10:00:00.000")!!.time
+        val raw = """
+            ================================================================
+            === UNCAUGHT EXCEPTION CRASH REPORT ===
+            Timestamp: 2026-11-20 09:45:00.000
+            Process: com.example
+            Thread: main
+            Exception: java.lang.IllegalStateException
+            ================================================================
+        """.trimIndent()
+
+        val filtered = filterLogText(raw, "1h", "Core", now)
+        assertTrue(filtered.contains("UNCAUGHT EXCEPTION CRASH REPORT"))
+    }
+
 }
