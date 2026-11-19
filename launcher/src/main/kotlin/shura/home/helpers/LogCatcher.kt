@@ -188,9 +188,9 @@ object LogCatcher {
                 }
                 true
             } catch (_: Exception) {
-                // Remove a partially-created public item before falling back, avoiding duplicate exports.
-                try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
-                saveFallback(context, fileName, content)
+                // Never create a second copy unless the partial public item was actually removed.
+                val removed = try { context.contentResolver.delete(uri, null, null) > 0 } catch (_: Exception) { false }
+                if (removed) saveFallback(context, fileName, content) else false
             }
         }
         return saveFallback(context, fileName, content)
