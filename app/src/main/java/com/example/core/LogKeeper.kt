@@ -285,6 +285,7 @@ object LogKeeper {
     }
 
     /** All processes lock the same stable sidecar file, including while the log is compacted. */
+    @Synchronized
     private fun appendToFile(context: Context, fileName: String, text: String) {
         val logFile = File(context.filesDir, fileName)
         val lockFile = File(context.filesDir, "$fileName.lock")
@@ -433,6 +434,7 @@ object LogKeeper {
     }
     fun clearExecutionLogs(context: Context) = deleteLogFile(context, FILE_EXECUTION_LOG)
 
+    @Synchronized
     private fun deleteLogFile(context: Context, fileName: String) {
         try {
             FileOutputStream(File(context.filesDir, "$fileName.lock"), true).use { lockStream ->
