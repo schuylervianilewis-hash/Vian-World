@@ -8,6 +8,7 @@ on:
       - integration/firewall-sidebar-launcher
       - integration/firewall-upstream-sync-20261118
       - 'feature/**'
+      - 'fix/**'
   pull_request:
     branches:
       - main
