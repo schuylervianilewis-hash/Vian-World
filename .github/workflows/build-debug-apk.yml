@@ -8,10 +8,12 @@ on:
       - integration/firewall-sidebar-launcher
       - integration/firewall-upstream-sync-20261118
       - 'feature/**'
+      - 'fix/**'
   pull_request:
     branches:
       - main
       - fix/shared-launcher-app-icon-20261120
+      - feature/log-keeper-runtime-20261120
   workflow_dispatch:
 
 concurrency:

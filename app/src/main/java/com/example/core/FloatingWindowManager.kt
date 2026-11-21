@@ -545,6 +545,8 @@ class FloatingWindowManager private constructor(context: Context) {
         @Volatile
         private var instance: FloatingWindowManager? = null
 
+        fun getInitializedInstance(): FloatingWindowManager? = instance
+
         fun getInstance(context: Context): FloatingWindowManager {
             return instance ?: synchronized(this) {
                 instance ?: FloatingWindowManager(context).also { instance = it }

@@ -47,6 +47,12 @@ object LogKeeper {
     private val queue = ArrayBlockingQueue<PendingWrite>(QUEUE_CAPACITY)
     private val workerStarted = AtomicBoolean(false)
     private val initialized = AtomicBoolean(false)
+    private val crashHandlerInstalled = AtomicBoolean(false)
+    private val recentDiagnosticLines = ArrayDeque<String>()
+    private val recentDiagnosticLock = Any()
+    private const val MAX_RECENT_DIAGNOSTIC_LINES = 200
+    private const val MAX_RECENT_DIAGNOSTIC_BYTES = 64 * 1024
+    private var recentDiagnosticBytes = 0
     private val droppedEntries = AtomicLong(0)
     private val executionLock = Any()
     private val activeExecutions = ConcurrentHashMap<String, ExecutionEvent>()
@@ -77,30 +83,31 @@ object LogKeeper {
         val detail: String = ""
     )
 
+    fun installEarlyCrashHandler(context: Context) {
+        val app = context.applicationContext
+        appContext = app
+        cachedProcessName = getProcessName(app)
+        if (!crashHandlerInstalled.compareAndSet(false, true)) return
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                logCrash(app, thread.name, throwable)
+                try { MainProcessRecovery.handleProcessCrash(app, thread.name, throwable) } catch (_: Exception) { }
+            } finally {
+                previous?.uncaughtException(thread, throwable)
+            }
+        }
+    }
+
     fun init(context: Context) {
         val app = context.applicationContext
         appContext = app
         cachedProcessName = getProcessName(app)
-        startWriterIfNeeded()
+        // Writer starts lazily on first queued diagnostic; fatal capture is already installed.
+        installEarlyCrashHandler(app)
 
         // App.onCreate runs once per process, but guard against accidental repeated init calls.
         if (!initialized.compareAndSet(false, true)) return
-
-        val current = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                logCrash(app, thread.name, throwable)
-                logLifecycle(app, "Process", "UNCAUGHT_CRASH",
-                    "Uncaught exception in thread '${thread.name}': ${throwable.javaClass.name}")
-                try {
-                    MainProcessRecovery.handleProcessCrash(app, thread.name, throwable)
-                } catch (_: Exception) {
-                    // Crash recording must not depend on recovery scheduling.
-                }
-            } finally {
-                current?.uncaughtException(thread, throwable)
-            }
-        }
 
         log(app, "LogKeeper", "Initialized logger in process: $cachedProcessName")
         if (app is Application) {
@@ -229,6 +236,7 @@ object LogKeeper {
     fun log(context: Context, component: String, message: String) {
         if (!isLoggingAllowed(context)) return
         val line = "[${now()}] [${getProcessName(context)}] [${Thread.currentThread().name}] [$component] ${sanitize(message)}\n"
+        rememberDiagnosticLine(line)
         enqueue(FILE_DIAGNOSTIC_LOG, line)
     }
 
@@ -245,6 +253,7 @@ object LogKeeper {
             sb.append(sanitize(sw.toString())).append('\n')
         }
         val entry = sb.toString()
+        rememberDiagnosticLine(entry)
         if (throwable == null) {
             enqueue(FILE_DIAGNOSTIC_LOG, entry)
         } else {
@@ -261,6 +270,7 @@ object LogKeeper {
             val process = getProcessName(context)
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
+            val recentContext = synchronized(recentDiagnosticLock) { recentDiagnosticLines.joinToString(separator = "") }
             val record = """
                 ================================================================
                 === UNCAUGHT EXCEPTION CRASH REPORT ===
@@ -269,6 +279,8 @@ object LogKeeper {
                 Thread: $threadName
                 Exception: ${throwable.javaClass.name}
                 Message: ${sanitize(throwable.message ?: "No message")}
+                Recent same-process context (up to $MAX_RECENT_DIAGNOSTIC_LINES entries):
+                ${recentContext.ifBlank { "No buffered diagnostic events were captured before the crash." }}
                 StackTrace:
                 ${sanitize(sw.toString())}
                 ================================================================
@@ -280,6 +292,18 @@ object LogKeeper {
                 "[$timestamp] [$process] [$threadName] [CRASH] ${throwable.javaClass.name}: ${sanitize(throwable.message ?: "No message")}\n")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to record crash log", error)
+        }
+    }
+
+    private fun rememberDiagnosticLine(line: String) {
+        val boundedLine = if (line.length > 4096) line.take(4096) + " [line truncated]\\n" else line
+        synchronized(recentDiagnosticLock) {
+            recentDiagnosticLines.addLast(boundedLine)
+            recentDiagnosticBytes += boundedLine.length
+            while (recentDiagnosticLines.size > MAX_RECENT_DIAGNOSTIC_LINES ||
+                recentDiagnosticBytes > MAX_RECENT_DIAGNOSTIC_BYTES) {
+                recentDiagnosticBytes -= recentDiagnosticLines.removeFirst().length
+            }
         }
     }
 

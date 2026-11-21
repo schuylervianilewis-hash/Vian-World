@@ -22,6 +22,11 @@ import shura.home.helpers.LogCatcher
  */
 class App : FossifyApp() {
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        LogKeeper.installEarlyCrashHandler(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -148,10 +153,10 @@ class App : FossifyApp() {
                 // The launcher owns its own Home lifecycle/cache cleanup.
             }
             isProcess(":heavy") -> {
-                com.example.feature.floating.HeavyFloatingHost.getInstance(this).onTrimMemory(level)
+                com.example.feature.floating.HeavyFloatingHost.getInitializedInstance()?.onTrimMemory(level)
             }
             else -> {
-                FloatingWindowManager.getInstance(this).onTrimMemory(level)
+                FloatingWindowManager.getInitializedInstance()?.onTrimMemory(level)
             }
         }
     }
