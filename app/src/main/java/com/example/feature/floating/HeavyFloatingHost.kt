@@ -404,6 +404,8 @@ class HeavyFloatingHost private constructor(private val context: Context) {
         @Volatile
         private var instance: HeavyFloatingHost? = null
 
+        fun getInitializedInstance(): HeavyFloatingHost? = instance
+
         fun getInstance(context: Context): HeavyFloatingHost {
             return instance ?: synchronized(this) {
                 instance ?: HeavyFloatingHost(context.applicationContext).also { instance = it }
