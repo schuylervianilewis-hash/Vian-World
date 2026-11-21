@@ -8,6 +8,7 @@ on:
       - integration/firewall-sidebar-launcher
       - integration/firewall-upstream-sync-20261118
       - 'feature/**'
+      - 'recovery/pre-logkeeper-with-current-icon-20261121'
   pull_request:
     branches:
       - main
