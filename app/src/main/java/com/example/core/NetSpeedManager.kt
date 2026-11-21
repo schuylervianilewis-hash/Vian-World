@@ -36,9 +36,8 @@ class NetSpeedManager(
     private val tickRunnable = object : Runnable {
         override fun run() {
             if (!isRunning) return
-            if (isScreenOn) {
-                calculateSpeed()
-            }
+            if (!isScreenOn) return
+            calculateSpeed()
             handler.postDelayed(this, 1000L)
         }
     }
@@ -49,7 +48,7 @@ class NetSpeedManager(
         lastRxBytes = TrafficStats.getTotalRxBytes()
         lastTxBytes = TrafficStats.getTotalTxBytes()
         lastTimestamp = System.currentTimeMillis()
-        handler.postDelayed(tickRunnable, 1000L)
+        if (isScreenOn) handler.postDelayed(tickRunnable, 1000L)
     }
 
     fun stop() {
@@ -59,11 +58,18 @@ class NetSpeedManager(
 
     fun setScreenState(screenOn: Boolean) {
         this.isScreenOn = screenOn
-        if (screenOn && isRunning) {
-            // Reset base sample counters so we don't calculate a huge artificial spike after sleeping
+        if (!screenOn) {
+            // Do not leave a one-second wakeup loop running while the device is locked.
+            handler.removeCallbacks(tickRunnable)
+            return
+        }
+        if (isRunning) {
+            // Reset base sample counters so we don't calculate a huge artificial spike after sleeping.
             lastRxBytes = TrafficStats.getTotalRxBytes()
             lastTxBytes = TrafficStats.getTotalTxBytes()
             lastTimestamp = System.currentTimeMillis()
+            handler.removeCallbacks(tickRunnable)
+            handler.postDelayed(tickRunnable, 1000L)
         }
     }
 

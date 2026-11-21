@@ -51,6 +51,8 @@ object LogKeeper {
     private val recentDiagnosticLines = ArrayDeque<String>()
     private val recentDiagnosticLock = Any()
     private const val MAX_RECENT_DIAGNOSTIC_LINES = 200
+    private const val MAX_RECENT_DIAGNOSTIC_BYTES = 64 * 1024
+    private var recentDiagnosticBytes = 0
     private val droppedEntries = AtomicLong(0)
     private val executionLock = Any()
     private val activeExecutions = ConcurrentHashMap<String, ExecutionEvent>()
@@ -294,9 +296,14 @@ object LogKeeper {
     }
 
     private fun rememberDiagnosticLine(line: String) {
+        val boundedLine = if (line.length > 4096) line.take(4096) + " [line truncated]\\n" else line
         synchronized(recentDiagnosticLock) {
-            recentDiagnosticLines.addLast(line)
-            while (recentDiagnosticLines.size > MAX_RECENT_DIAGNOSTIC_LINES) recentDiagnosticLines.removeFirst()
+            recentDiagnosticLines.addLast(boundedLine)
+            recentDiagnosticBytes += boundedLine.length
+            while (recentDiagnosticLines.size > MAX_RECENT_DIAGNOSTIC_LINES ||
+                recentDiagnosticBytes > MAX_RECENT_DIAGNOSTIC_BYTES) {
+                recentDiagnosticBytes -= recentDiagnosticLines.removeFirst().length
+            }
         }
     }
 
