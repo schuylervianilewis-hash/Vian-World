@@ -54,7 +54,7 @@ object SidebarBackupV2 {
     private val handleIdPattern = Regex("^handle_[1-9][0-9]{0,2}$")
     private val pageIdPattern = Regex("^[a-zA-Z0-9_.:-]{1,128}$")
     private val pageTypePattern = Regex("^[a-zA-Z0-9_]{1,64}$")
-    private val actionPattern = Regex("^[a-zA-Z0-9_:-]{1,512}$")
+    private val actionPattern = Regex("^[a-zA-Z0-9_.:-]{1,512}$")
     private val gestureSet = HandleGestures.ALL.toSet()
     private val safeIconNamePattern = Regex("^[a-zA-Z0-9._-]{1,256}\\.webp$")
 
@@ -1274,17 +1274,6 @@ object SidebarBackupV2 {
         val editor = prefs.edit()
         keys.forEach(editor::remove)
         check(editor.commit()) { "Could not clear stale Sidebar page data" }
-    }
-
-    private fun restoreAppTrackerWhitelistWithContext(
-        context: Context,
-        prefs: SharedPreferences,
-        whitelist: JSONArray,
-        exactRollback: Boolean
-    ) {
-        val incoming = (0 until whitelist.length()).map { whitelist.optString(it) }.filter { it.isNotBlank() }.toSet()
-        val current = if (exactRollback) emptySet() else prefs.getStringSet("app_tracker_whitelist_cache", emptySet())?.toSet().orEmpty()
-        OverlaySyncManager.syncStringSet(context, "app_tracker_whitelist_cache", current + incoming)
     }
 
     private fun safeFileName(value: String): String =
