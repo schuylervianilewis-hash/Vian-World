@@ -386,6 +386,25 @@ object SidebarBackupV2 {
         source: String,
         manager: AppWidgetManager = AppWidgetManager.getInstance(context)
     ): String {
+        if (source.startsWith("folder:")) {
+            val parts = source.split(":", limit = 3)
+            if (parts.size >= 3) {
+                val rewritten = runCatching {
+                    val folder = JSONObject(parts[2])
+                    val items = folder.optJSONArray("items")
+                    if (items != null) {
+                        val sanitized = JSONArray()
+                        for (index in 0 until items.length()) {
+                            sanitized.put(sanitizeWidgetElementId(context, items.optString(index), manager))
+                        }
+                        folder.put("items", sanitized)
+                    }
+                    "folder:${parts[1]}:${folder}"
+                }.getOrNull()
+                if (rewritten != null) return rewritten
+            }
+            return source
+        }
         if (!source.startsWith("widget:")) return source
         val suffix = source.removePrefix("widget:")
         val widgetId = suffix.substringBefore(":").toIntOrNull()
