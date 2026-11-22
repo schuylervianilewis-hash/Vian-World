@@ -43,6 +43,8 @@ import com.example.feature.sidebar.WidgetsGridPageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -78,37 +80,52 @@ class HeavyPageHostManager private constructor(private val context: Context) {
 
             if (type == "SYNC_BULK_FILE") {
                 val path = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_FILE_PATH)
-                    ?: error("Bulk preference sync file path is missing")
-                runCatching {
-                    com.example.core.OverlaySyncManager.applyBulkFile(context, prefName, path)
-                }.onFailure {
-                    android.util.Log.e("HeavyPageHostManager", "Could not apply bulk preference sync file", it)
+                val pending = goAsync()
+                if (path.isNullOrBlank()) {
+                    pending.finish()
+                    return
                 }
-            } else {
-                val prefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
-                val editor = prefs.edit()
-                when (type) {
-                    "STRING" -> editor.putString(key, value)
-                    "INT" -> editor.putInt(key, value.toIntOrNull() ?: 0)
-                    "BOOLEAN" -> editor.putBoolean(key, value.toBoolean())
-                    "FLOAT" -> editor.putFloat(key, value.toFloatOrNull() ?: 0f)
-                    "STRING_SET" -> {
-                        val set = if (value.isEmpty()) emptySet() else value.split("|||").toSet()
-                        editor.putStringSet(key, set)
+                hostScope.launch {
+                    try {
+                        val applied = withContext(Dispatchers.IO) {
+                            runCatching {
+                                com.example.core.OverlaySyncManager.applyBulkFile(context, prefName, path)
+                            }.onFailure {
+                                android.util.Log.e("HeavyPageHostManager", "Could not apply bulk preference sync file", it)
+                            }.getOrDefault(false)
+                        }
+                        if (applied) refreshActiveEmbeddedPages()
+                    } finally {
+                        pending.finish()
                     }
-                    "REMOVE" -> editor.remove(key)
                 }
-                editor.commit()
+                return
             }
 
-            if (type == "SYNC_BULK_FILE" || type == "RELOAD_ALL" ||
-                key.contains("app_tracker") || key.contains("whitelist")) {
-                mainHandler.post {
-                    for (holder in activeEmbeddedHosts.values) {
-                        (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
-                    }
+            val prefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            when (type) {
+                "STRING" -> editor.putString(key, value)
+                "INT" -> editor.putInt(key, value.toIntOrNull() ?: 0)
+                "BOOLEAN" -> editor.putBoolean(key, value.toBoolean())
+                "FLOAT" -> editor.putFloat(key, value.toFloatOrNull() ?: 0f)
+                "STRING_SET" -> {
+                    val set = if (value.isEmpty()) emptySet() else value.split("|||").toSet()
+                    editor.putStringSet(key, set)
                 }
+                "REMOVE" -> editor.remove(key)
             }
+            editor.commit()
+
+            if (type == "RELOAD_ALL" || key.contains("app_tracker") || key.contains("whitelist")) {
+                refreshActiveEmbeddedPages()
+            }
+        }
+    }
+
+    private fun refreshActiveEmbeddedPages() {
+        for (holder in activeEmbeddedHosts.values) {
+            (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
         }
     }
 
