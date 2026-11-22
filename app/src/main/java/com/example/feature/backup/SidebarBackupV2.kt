@@ -973,11 +973,13 @@ object SidebarBackupV2 {
             bulkRemovals.add(key)
             return
         }
-        val value = if (present) setting.opt("value") else defaultValue
-        require(value is String || value is Boolean || value is Int || value is Double || value is Float) {
+        val rawValue = if (present) setting.opt("value") else defaultValue
+        val value = if (rawValue is Double) rawValue.toFloat() else rawValue
+        require(value is String || value is Boolean || value is Int || value is Float) {
             "Unsupported Sidebar setting value for $name"
         }
         bulkValues[key] = value
+        bulkRemovals.remove(key)
         bulkRemovals.remove(key)
     }
 
