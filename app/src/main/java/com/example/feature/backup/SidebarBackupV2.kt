@@ -14,7 +14,6 @@ import com.example.core.SidebarPage
 import com.example.data.AppDatabase
 import com.example.data.SchedulerTask
 import com.example.feature.element.ElementPlacement
-import com.example.feature.element.ElementPlacementManager
 import com.example.feature.sidebar.ElementMetadata
 import com.example.feature.sidebar.ElementMetadataStore
 import com.example.util.HandleEdge
@@ -215,9 +214,12 @@ object SidebarBackupV2 {
         primaryContainerId: String,
         page: SidebarPage
     ): JSONObject {
-        val placements = ElementPlacementManager.getInstance(context).getElementsForPage(containerId, page.pageId)
+        val placementKey = HandleManager.getContainerPageElementsKey(containerId, page.pageId)
+        val placementsRaw = prefs.getString(placementKey, null)
+        val placements = if (placementsRaw == null) JSONArray() else JSONArray(placementsRaw)
         val placementJson = JSONArray()
-        placements.forEach { placement ->
+        for (index in 0 until placements.length()) {
+            val placement = ElementPlacement.fromJson(placements.getJSONObject(index))
             val safeAction = sanitizeWidgetElementId(context, placement.actionKey)
             placementJson.put(placement.copy(actionKey = safeAction).toJson())
         }
@@ -328,6 +330,7 @@ object SidebarBackupV2 {
             .put("pageId", page.pageId)
             .put("pageType", page.pageType)
             .put("kind", kind)
+            .put("elementsPresent", placementsRaw != null)
             .put("elements", placementJson)
             .put("data", data)
     }
@@ -775,14 +778,17 @@ object SidebarBackupV2 {
 
     private fun validatePageContent(record: JSONObject, page: SidebarPage) {
         val elements = record.optJSONArray("elements") ?: error("Page element placements are missing")
+        val elementsPresent = record.optBoolean("elementsPresent", false)
+        if (!elementsPresent) require(elements.length() == 0) { "Absent page elements cannot contain records" }
         require(elements.length() <= MAX_PAGE_ELEMENTS) { "Too many elements on a Sidebar page" }
         for (i in 0 until elements.length()) {
             val item = elements.optJSONObject(i) ?: error("Invalid page element placement")
             require(item.optString("placementId").length in 1..256) { "Invalid placement ID" }
             require(item.optString("containerId") == record.optString("containerId")) { "Placement container mismatch" }
             require(item.optString("pageId") == page.pageId) { "Placement page mismatch" }
-            require(actionPattern.matches(item.optString("actionKey"))) { "Invalid page element action" }
-            require(item.optInt("position", -1) in 0..MAX_PAGE_ELEMENTS) { "Invalid page element position" }
+            val placement = ElementPlacement.fromJson(item)
+            require(actionPattern.matches(placement.actionKey)) { "Invalid page element action" }
+            require(placement.position in 0..MAX_PAGE_ELEMENTS) { "Invalid page element position" }
             require(item.optString("customTitle").length <= 200) { "Custom element title is too long" }
             require(item.optString("customIconUri").length <= 4096) { "Custom element icon reference is too long" }
             val config = item.optJSONObject("config") ?: JSONObject()
@@ -1066,7 +1072,7 @@ object SidebarBackupV2 {
                     warnings.add("Android widget positions/provider hints were preserved; widget instances must be rebound on this device.")
                 }
                 restoredPlacements += placements.size
-                restoredGridItems += restorePageData(containerId, currentPage, record, bulkValues, bulkRemovals)
+                restoredGridItems += restorePageData(context, containerId, currentPage, record, bulkValues, bulkRemovals)
                 restoredPages++
             }
             restoredContainers++
@@ -1198,6 +1204,7 @@ object SidebarBackupV2 {
     }
 
     private fun restorePageData(
+        context: Context,
         containerId: String,
         page: SidebarPage,
         record: JSONObject,
@@ -1207,6 +1214,22 @@ object SidebarBackupV2 {
         val data = record.optJSONObject("data") ?: JSONObject()
         val pageId = page.pageId
         var restoredItems = 0
+        val placementsPresent = record.optBoolean("elementsPresent", false)
+        val placements = record.optJSONArray("elements") ?: JSONArray()
+        val placementsKey = HandleManager.getContainerPageElementsKey(containerId, pageId)
+        if (placementsPresent) {
+            val sanitizedPlacements = JSONArray()
+            for (index in 0 until placements.length()) {
+                val placement = ElementPlacement.fromJson(placements.getJSONObject(index))
+                val safeAction = sanitizeWidgetElementId(context, placement.actionKey)
+                sanitizedPlacements.put(placement.copy(actionKey = safeAction).toJson())
+            }
+            bulkValues[placementsKey] = sanitizedPlacements.toString()
+            bulkRemovals.remove(placementsKey)
+        } else {
+            bulkValues.remove(placementsKey)
+            bulkRemovals.add(placementsKey)
+        }
         when (record.optString("kind")) {
             "hybrid_grid" -> {
                 val gridPresent = data.optBoolean("gridJsonPresent", false)
