@@ -64,7 +64,7 @@ private val backupModuleChoices = listOf(
     BackupModuleChoice(
         ModularBackupArchive.MODULE_SIDEBAR,
         "Sidebar",
-        "All handles and gestures, page names and placements, plus the resident Home Grid."
+        "All handles and gestures, every container and full page configuration, page elements, Hybrid/Apps/Widgets Grid content, supported element metadata and icons, Scheduler reminders and App Tracker whitelist."
     )
 )
 
@@ -243,7 +243,7 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                             }
                         }
                         Text(
-                            "Not included: WireGuard profiles or secrets, floating mini-app data, Reader content, PWA packages, other Sidebar page customisation, or App Lock credentials. Android widgets may need rebinding; pinned shortcut IDs and biometric enrollment are device-specific.",
+                            "Not included: WireGuard profiles or secrets, floating mini-app and Reader/EPUB content, PWA package/site data, App Lock credentials and biometric enrollment, pinned shortcut IDs, and live system state. Android widget positions/provider hints are preserved, but widgets must be rebound on this device.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -264,8 +264,10 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                                             parsedArchive = null
                                             restoreSelection = emptySet()
                                             val restored = "Restored: ${it.restoredModules.joinToString(", ")}."
-                                            if (it.warnings.isEmpty()) restored
-                                            else restored + " Warnings: " + it.warnings.take(5).joinToString(" ")
+                                            val details = it.details.joinToString(" ")
+                                            val warningText = if (it.warnings.isEmpty()) "" else
+                                                " Warnings: " + it.warnings.take(8).joinToString(" ")
+                                            listOf(restored, details, warningText).filter { part -> part.isNotBlank() }.joinToString(" ")
                                         },
                                         onFailure = { "Restore failed: ${it.message ?: "unknown error"}" }
                                     )
