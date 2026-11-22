@@ -64,6 +64,23 @@ class SidebarBackupV2Test {
     }
 
     @Test
+    fun acceptsPersistedContainerForGestureThatDoesNotCurrentlyOpenSidebar() {
+        val payload = validPayload()
+        val containers = payload.getJSONArray("containers")
+        val inactive = JSONObject(containers.getJSONObject(0).toString())
+        val containerId = HandleManager.getContainerId("handle_1", HandleGestures.TAP)
+        inactive.put("gesture", HandleGestures.TAP)
+        inactive.put("containerId", containerId)
+        val pageContent = inactive.getJSONArray("pageContent")
+        for (index in 0 until pageContent.length()) {
+            pageContent.getJSONObject(index).put("containerId", containerId)
+        }
+        containers.put(inactive)
+
+        SidebarBackupV2.validate(payload)
+    }
+
+    @Test
     fun validatesPageElementPlacementInItsOriginalContainer() {
         val payload = validPayload()
         val container = payload.getJSONArray("containers").getJSONObject(0)
