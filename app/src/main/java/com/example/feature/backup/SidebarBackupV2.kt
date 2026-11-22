@@ -165,6 +165,7 @@ object SidebarBackupV2 {
     private fun exportHandleSettings(prefs: SharedPreferences, index: String): JSONObject {
         return JSONObject()
             .put("columns", readSetting(prefs, "handle_${index}_columns", "handle_${index}_columns", false))
+            .put("legacyEdge", readSetting(prefs, "handle_${index}_edge", "handle_${index}_edge", false))
             .put("sidebarColor", readSetting(prefs, "handle_${index}_sidebar_color", "handle_${index}_sidebar_color", false))
             .put("sidebarTransparency", readSetting(prefs, "handle_${index}_sidebar_transparency", "handle_${index}_sidebar_transparency", false))
     }
@@ -608,6 +609,10 @@ object SidebarBackupV2 {
     private fun validateHandleSettings(settings: JSONObject) {
         val columns = settings.optJSONObject("columns") ?: error("Handle columns setting is missing")
         if (columns.optBoolean("present")) require(columns.optInt("value", -1) in 1..12) { "Invalid handle columns" }
+        val legacyEdge = settings.optJSONObject("legacyEdge") ?: error("Handle legacy edge setting is missing")
+        if (legacyEdge.optBoolean("present")) require(legacyEdge.optString("value").lowercase() in setOf("left", "right")) {
+            "Invalid legacy handle edge"
+        }
         val color = settings.optJSONObject("sidebarColor") ?: error("Handle color setting is missing")
         if (color.optBoolean("present")) require(
             color.optString("value").length <= 32 && runCatching { Color.parseColor(color.optString("value")) }.isSuccess
@@ -664,6 +669,7 @@ object SidebarBackupV2 {
 
             val settings = item.getJSONObject("settings")
             restoreSetting(settings, "columns", "handle_${index}_columns", bulkValues, bulkRemovals)
+            restoreSetting(settings, "legacyEdge", "handle_${index}_edge", bulkValues, bulkRemovals)
             restoreSetting(settings, "sidebarColor", "handle_${index}_sidebar_color", bulkValues, bulkRemovals)
             restoreSetting(settings, "sidebarTransparency", "handle_${index}_sidebar_transparency", bulkValues, bulkRemovals)
         }
