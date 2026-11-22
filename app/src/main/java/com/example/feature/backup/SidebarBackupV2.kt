@@ -963,13 +963,20 @@ object SidebarBackupV2 {
         val warnings = linkedSetOf<String>()
         val manager = HandleManager.getInstance(context)
         val pageManager = PageManager.getInstance(context)
-        val primaryContainerId = manager.getFirstHandlePrimaryContainerId()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val bulkValues = linkedMapOf<String, Any>()
         val bulkRemovals = linkedSetOf<String>()
         val previousHandleIds = manager.getHandleIds().toSet()
         val previousPrefKeys = prefs.all.keys.toSet()
         val backupHandles = payload.getJSONArray("handles")
+        val backupPrimaryHandle = (0 until backupHandles.length())
+            .map { backupHandles.getJSONObject(it) }
+            .first { it.getString("id") == "handle_1" }
+        val backupPrimaryGestures = backupPrimaryHandle.getJSONObject("gestures")
+        val primaryGesture = HandleGestures.ALL.first {
+            backupPrimaryGestures.optString(it) == HandleManager.ACTION_OPEN_SIDEBAR
+        }
+        val primaryContainerId = HandleManager.getContainerId("handle_1", primaryGesture)
         val backupHandleActions = (0 until backupHandles.length()).associate { index ->
             val handle = backupHandles.getJSONObject(index)
             handle.getString("id") to handle
@@ -978,7 +985,7 @@ object SidebarBackupV2 {
         val backupContainerIds = (0 until backupContainers.length()).map {
             backupContainers.getJSONObject(it).getString("containerId")
         }.toSet()
-        val previousContainerIds = currentContainerIds(manager)
+        val previousContainerIds = currentContainerIds(manager, prefs)
 
         restoreHandleConfigs(
             payload.getJSONArray("handles"),
