@@ -1451,8 +1451,8 @@ object SidebarBackupV2 {
         }.toSet()
 
     private fun clearContainerData(
-        prefs: SharedPreferences,
         containerId: String,
+        existingKeys: Set<String>,
         bulkRemovals: MutableSet<String>
     ) {
         val prefixes = listOf(
@@ -1461,12 +1461,10 @@ object SidebarBackupV2 {
             "wg_${containerId}_",
             "sidebar_apps_${containerId}_"
         )
-        prefs.all.keys.filter { key ->
-            key == HandleManager.getContainerPagesKey(containerId) ||
-                key == HandleManager.getContainerSelectedPageKey(containerId) ||
-                key == HandleManager.getContainerOpeningFaceKey(containerId) ||
-                prefixes.any(key::startsWith)
-        }.forEach(bulkRemovals::add)
+        bulkRemovals.add(HandleManager.getContainerPagesKey(containerId))
+        bulkRemovals.add(HandleManager.getContainerSelectedPageKey(containerId))
+        bulkRemovals.add(HandleManager.getContainerOpeningFaceKey(containerId))
+        existingKeys.filter { key -> prefixes.any(key::startsWith) }.forEach(bulkRemovals::add)
     }
 
     private fun clearPageData(
