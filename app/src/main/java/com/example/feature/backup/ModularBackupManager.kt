@@ -16,7 +16,13 @@ import java.io.OutputStream
 data class BackupRestoreReport(
     val restoredModules: List<String>,
     val rollbackAttempted: Boolean = false,
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    val details: List<String> = emptyList()
+)
+
+private data class ModuleRestoreOutcome(
+    val warnings: List<String> = emptyList(),
+    val details: List<String> = emptyList()
 )
 
 /**
@@ -86,13 +92,16 @@ object ModularBackupManager {
 
         val attempted = mutableListOf<String>()
         val warnings = mutableListOf<String>()
+        val details = mutableListOf<String>()
         try {
             // Stable ordering makes restore and rollback behavior deterministic.
             selectedModules.sorted().forEach { module ->
                 attempted.add(module)
-                warnings.addAll(applyModule(context, module, archive.modules.getValue(module)))
+                val outcome = applyModule(context, module, archive.modules.getValue(module))
+                warnings.addAll(outcome.warnings)
+                details.addAll(outcome.details)
             }
-            return BackupRestoreReport(restoredModules = attempted, warnings = warnings)
+            return BackupRestoreReport(restoredModules = attempted, warnings = warnings, details = details)
         } catch (failure: Throwable) {
             val rollbackErrors = mutableListOf<String>()
             attempted.asReversed().forEach { module ->
@@ -142,7 +151,7 @@ object ModularBackupManager {
         module: String,
         payload: JSONObject,
         exactRollback: Boolean = false
-    ): List<String> =
+    ): ModuleRestoreOutcome =
         when (module) {
             ModularBackupArchive.MODULE_LAUNCHER -> {
                 val warnings = launcherWarnings(context, payload)
@@ -150,12 +159,14 @@ object ModularBackupManager {
                 check(BackupHelper.importBackup(context, ByteArrayInputStream(bytes))) {
                     "Launcher restore failed"
                 }
-                warnings
+                ModuleRestoreOutcome(warnings = warnings)
             }
             ModularBackupArchive.MODULE_FIREWALL ->
-                ModularFirewallBackup.restore(context, payload)
-            ModularBackupArchive.MODULE_SIDEBAR ->
-                SidebarBackupModule.restore(context, payload, exactRollback)
+                ModuleRestoreOutcome(warnings = ModularFirewallBackup.restore(context, payload))
+            ModularBackupArchive.MODULE_SIDEBAR -> {
+                val result = SidebarBackupModule.restoreDetailed(context, payload, exactRollback)
+                ModuleRestoreOutcome(warnings = result.warnings, details = result.details)
+            }
             else -> error("Unsupported backup module: $module")
         }
 
