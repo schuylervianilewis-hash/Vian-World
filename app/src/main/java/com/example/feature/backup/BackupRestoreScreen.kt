@@ -243,7 +243,7 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                             }
                         }
                         Text(
-                            "Not included: WireGuard profiles or secrets, floating mini-app runtime data, Reader/EPUB content, PWA package/site data, App Lock credentials and biometric enrollment, pinned shortcut IDs, active notifications and media sessions. Android widget positions/provider hints are preserved, but widget instances must be rebound on this device.",
+                            "Not included: WireGuard profiles or secrets, floating mini-app runtime data, Reader/EPUB content, PWA package/site data, App Lock credentials and biometric enrollment, Notification History records or its pending buffer, pinned shortcut IDs, active notifications and media sessions. Export Notification History separately from its screen. Android widget positions/provider hints are preserved, but widget instances must be rebound on this device.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
