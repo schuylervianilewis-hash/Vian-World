@@ -1580,7 +1580,7 @@ object SidebarBackupV2 {
         val imported = runBlocking {
             val dao = AppDatabase.getDatabase(context).schedulerTaskDao()
             val current = dao.getAllTasks().first()
-            if (exactRollback) {
+            val importedCount = if (exactRollback) {
                 current.forEach { dao.delete(it) }
                 tasks.forEach { dao.insert(it) }
                 tasks.size
@@ -1620,7 +1620,7 @@ object SidebarBackupV2 {
                     "Scheduler restore read-back is missing one or more tasks"
                 }
             }
-            count
+            importedCount
         }
 
         val tagsPresent = scheduler.optBoolean("tagsPresent", false)
