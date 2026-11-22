@@ -150,6 +150,19 @@ class SidebarAppsManager(
         }
     }
 
+    private val iconUpdateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            iconCache.evictAll()
+            com.example.core.IconCacheManager.invalidateMemoryCache()
+            coroutineScope.launch {
+                loadActiveApps()
+                withContext(Dispatchers.Main) {
+                    notifyUpdated()
+                }
+            }
+        }
+    }
+
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         val isRelevant = if (key == prefKey) {
             true
@@ -166,7 +179,13 @@ class SidebarAppsManager(
             false
         }
 
-        if (isRelevant) {
+        val metadataChanged = key?.startsWith("elem_meta_") == true
+        if (metadataChanged) {
+            invalidateIcon(key!!.removePrefix("elem_meta_"))
+            iconCache.evictAll()
+        }
+
+        if (isRelevant || metadataChanged) {
             coroutineScope.launch {
                 loadActiveApps()
                 withContext(Dispatchers.Main) {
@@ -180,6 +199,14 @@ class SidebarAppsManager(
         try {
             prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         } catch (e: Exception) {}
+        try {
+            val filter = IntentFilter("com.example.UPDATE_SIDEBAR_ICONS")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(iconUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(iconUpdateReceiver, filter)
+            }
+        } catch (_: Exception) {}
         coroutineScope.launch(Dispatchers.IO) {
             ElementMetadataStore.migrateLegacyElements(context)
         }
@@ -189,6 +216,9 @@ class SidebarAppsManager(
         try {
             prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         } catch (e: Exception) {}
+        try {
+            context.unregisterReceiver(iconUpdateReceiver)
+        } catch (_: Exception) {}
         iconCache.evictAll()
         updateListeners.clear()
         activeItems = emptyList()
