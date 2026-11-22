@@ -61,7 +61,7 @@ object ElementMetadataStore {
     private const val TAG = "ElementMetadataStore"
     private const val PREFS_NAME = "FloatingReaderPrefs"
     private const val PREF_KEY_PREFIX = "elem_meta_"
-    private const val MIGRATION_KEY = "element_metadata_migrated_v2"
+    private const val MIGRATION_KEY = "element_metadata_migrated_v3"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun get(context: Context, id: String): ElementMetadata? {
@@ -363,7 +363,7 @@ object ElementMetadataStore {
 
             for ((key, value) in allPrefs) {
                 if (value is String) {
-                    if (key.startsWith("sidebar_apps") || key.endsWith("_apps") || key.startsWith("hg_")) {
+                    if (key.startsWith("sidebar_apps") || key.endsWith("_apps") || key.startsWith("hg_") || key.startsWith("wg_")) {
                         extractIdsFromJsonArray(value)
                     } else if (key.startsWith("handle_") && key.contains("_page_") && key.endsWith("_elements")) {
                         extractIdsFromPlacementJson(value)
