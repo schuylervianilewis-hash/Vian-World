@@ -1338,13 +1338,14 @@ object SidebarBackupV2 {
                 val gridPresent = data.optBoolean("gridJsonPresent", false)
                 val grid = if (gridPresent) sanitizeWidgetGridJsonForRestore(data.optString("gridJson", "[]")) else "[]"
                 val columns = if (data.optBoolean("columnsPresent", false)) data.optInt("columns", 4) else 4
+                val widgetElementsKnown = data.has("widgetElementsJsonPresent") || data.has("widgetElementsJson")
                 val widgetElementsPresent = data.optBoolean("widgetElementsJsonPresent", false)
                 val widgetElements = if (widgetElementsPresent) {
                     sanitizeWidgetElementArrayForRestore(data.optString("widgetElementsJson", "[]"))
                 } else "[]"
                 val gridItemCount = runCatching { JSONArray(grid).length() }.getOrDefault(0)
-                val elementCount = runCatching { JSONArray(widgetElements).length() }.getOrDefault(0)
-                restoredItems += maxOf(gridItemCount, elementCount)
+                val elementCount = if (widgetElementsKnown) runCatching { JSONArray(widgetElements).length() }.getOrDefault(0) else 0
+                restoredItems += if (widgetElementsKnown) maxOf(gridItemCount, elementCount) else gridItemCount
                 val gridKey = "handle_${containerId}_widgets_grid_${pageId}"
                 val columnsKey = "handle_${containerId}_widgets_grid_cols_${pageId}"
                 val widgetElementsKey = "wg_${containerId}_${pageId}"
@@ -1352,9 +1353,11 @@ object SidebarBackupV2 {
                 bulkValues[columnsKey] = columns
                 bulkRemovals.remove(gridKey)
                 bulkRemovals.remove(columnsKey)
-                // Explicit empty arrays prevent global legacy wg_<pageId> data leaking into this container.
-                bulkValues[widgetElementsKey] = widgetElements
-                bulkRemovals.remove(widgetElementsKey)
+                if (widgetElementsKnown) {
+                    // Explicit empty arrays prevent global legacy wg_<pageId> data leaking into this container.
+                    bulkValues[widgetElementsKey] = widgetElements
+                    bulkRemovals.remove(widgetElementsKey)
+                }
             }
             "apps" -> {
                 val appsPresent = data.optBoolean("appsJsonPresent", false)
