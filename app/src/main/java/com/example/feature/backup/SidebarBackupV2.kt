@@ -83,10 +83,11 @@ object SidebarBackupV2 {
 
         handles.forEach { handle ->
             HandleGestures.ALL.forEach gestureLoop@ { gesture ->
-                if (handle.getActionForGesture(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
-                    return@gestureLoop
-                }
                 val containerId = HandleManager.getContainerId(handle.id, gesture)
+                if (
+                    handle.getActionForGesture(gesture) != HandleManager.ACTION_OPEN_SIDEBAR &&
+                    !containerHasStoredData(prefs, containerId)
+                ) return@gestureLoop
                 val stack = pageManager.getPageStack(containerId)
                 totalPages += stack.size
                 require(totalPages <= MAX_PAGES) { "Too many Sidebar pages to back up" }
@@ -544,10 +545,6 @@ object SidebarBackupV2 {
             require(handleIdPattern.matches(handleId) && gesture in gestureSet) { "Invalid container identity" }
             require(containerId == HandleManager.getContainerId(handleId, gesture)) { "Container identity mismatch" }
             require(seenContainers.add(containerId)) { "Duplicate Sidebar container" }
-            require(handleActions[handleId]?.get(gesture) == HandleManager.ACTION_OPEN_SIDEBAR) {
-                "Container gesture is not configured to open Sidebar"
-            }
-
             val pages = container.optJSONArray("pages") ?: error("Container page list is missing")
             val content = container.optJSONArray("pageContent") ?: error("Container page content is missing")
             totalPages += pages.length()
@@ -998,9 +995,8 @@ object SidebarBackupV2 {
             val gesture = container.getString("gesture")
             val containerId = container.getString("containerId")
             val handleJson = backupHandleActions[handleId]
-            val gestureActions = handleJson?.optJSONObject("gestures")
-            if (gestureActions?.optString(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
-                warnings.add("Skipped container $containerId: its saved gesture does not open Sidebar.")
+            if (handleJson == null) {
+                warnings.add("Skipped container $containerId: its handle is missing from the backup.")
                 continue
             }
 
@@ -1553,15 +1549,30 @@ object SidebarBackupV2 {
         bulkValues["app_tracker_whitelist_cache"] = current + incoming
     }
 
-    private fun currentContainerIds(manager: HandleManager): Set<String> =
+    private fun containerHasStoredData(prefs: SharedPreferences, containerId: String): Boolean {
+        if (
+            prefs.contains(HandleManager.getContainerPagesKey(containerId)) ||
+            prefs.contains(HandleManager.getContainerSelectedPageKey(containerId)) ||
+            prefs.contains(HandleManager.getContainerOpeningFaceKey(containerId))
+        ) return true
+        val prefixes = listOf(
+            "handle_${containerId}_",
+            "hg_${containerId}_",
+            "wg_${containerId}_",
+            "sidebar_apps_${containerId}_"
+        )
+        return prefs.all.keys.any { key -> prefixes.any(key::startsWith) }
+    }
+
+    private fun currentContainerIds(manager: HandleManager, prefs: SharedPreferences): Set<String> =
         manager.getHandleIds().flatMap { id ->
             HandleGestures.ALL.mapNotNull { gesture ->
                 val handle = manager.getHandle(id) ?: return@mapNotNull null
-                if (handle.getActionForGesture(gesture) == HandleManager.ACTION_OPEN_SIDEBAR) {
-                    HandleManager.getContainerId(id, gesture)
-                } else {
-                    null
-                }
+                val containerId = HandleManager.getContainerId(id, gesture)
+                if (
+                    handle.getActionForGesture(gesture) == HandleManager.ACTION_OPEN_SIDEBAR ||
+                    containerHasStoredData(prefs, containerId)
+                ) containerId else null
             }
         }.toSet()
 
