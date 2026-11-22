@@ -1307,13 +1307,9 @@ object SidebarBackupV2 {
                 bulkValues[columnsKey] = columns
                 bulkRemovals.remove(gridKey)
                 bulkRemovals.remove(columnsKey)
-                if (widgetElementsPresent) {
-                    bulkValues[widgetElementsKey] = widgetElements
-                    bulkRemovals.remove(widgetElementsKey)
-                } else {
-                    bulkValues.remove(widgetElementsKey)
-                    bulkRemovals.add(widgetElementsKey)
-                }
+                // Explicit empty arrays prevent global legacy wg_<pageId> data leaking into this container.
+                bulkValues[widgetElementsKey] = widgetElements
+                bulkRemovals.remove(widgetElementsKey)
             }
             "apps" -> {
                 val appsPresent = data.optBoolean("appsJsonPresent", false)
