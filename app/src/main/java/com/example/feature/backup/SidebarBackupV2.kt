@@ -1172,23 +1172,23 @@ object SidebarBackupV2 {
 
     private fun restoreSavedLinks(
         context: Context,
-        prefs: SharedPreferences,
         savedLinks: JSONArray,
-        exactRollback: Boolean
+        exactRollback: Boolean,
+        bulkValues: MutableMap<String, Any>
     ) {
         val existing = if (exactRollback) emptySet() else ElementMetadataStore.getSavedLinkIds(context).toSet()
         val restored = existing + (0 until savedLinks.length()).map { savedLinks.optString(it) }.filter { it.isNotBlank() }
         val array = JSONArray().apply { restored.sorted().forEach(::put) }
-        check(prefs.edit().putString("saved_link_uuids", array.toString()).commit()) {
-            "Could not restore Sidebar saved links"
-        }
+        bulkValues["saved_link_uuids"] = array.toString()
     }
 
     private fun restoreScheduler(
         context: Context,
         prefs: SharedPreferences,
         scheduler: JSONObject,
-        exactRollback: Boolean
+        exactRollback: Boolean,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>
     ): Int {
         val tasksJson = scheduler.getJSONArray("tasks")
         val tasks = (0 until tasksJson.length()).map { index ->
@@ -1240,21 +1240,20 @@ object SidebarBackupV2 {
                 .split(",").map { it.trim() }.filter { it.isNotEmpty() }
             val merged = (currentTags + incoming.split(",").map { it.trim() }.filter { it.isNotEmpty() })
                 .distinct()
-            OverlaySyncManager.syncString(context, "scheduler_tags", merged.joinToString(","))
+            bulkValues["scheduler_tags"] = merged.joinToString(",")
+            bulkRemovals.remove("scheduler_tags")
         } else if (exactRollback) {
-            OverlaySyncManager.syncRemove(context, "scheduler_tags")
+            bulkValues.remove("scheduler_tags")
+            bulkRemovals.add("scheduler_tags")
         }
         return imported
     }
 
-    private fun taskFingerprint(task: SchedulerTask): String =
-        listOf(task.title, task.note, task.timeMillis.toString(), task.tags, task.status).joinToString("\u0000")
-
     private fun restoreAppTrackerWhitelist(
-        context: Context,
         prefs: SharedPreferences,
         whitelist: JSONArray,
-        exactRollback: Boolean
+        exactRollback: Boolean,
+        bulkValues: MutableMap<String, Any>
     ) {
         val incoming = (0 until whitelist.length())
             .map { whitelist.optString(it) }
@@ -1265,7 +1264,7 @@ object SidebarBackupV2 {
         } else {
             prefs.getStringSet("app_tracker_whitelist_cache", emptySet())?.toSet().orEmpty()
         }
-        OverlaySyncManager.syncStringSet(context, "app_tracker_whitelist_cache", current + incoming)
+        bulkValues["app_tracker_whitelist_cache"] = current + incoming
     }
 
     private fun currentSidebarContainerIds(manager: HandleManager): Set<String> =
@@ -1278,24 +1277,31 @@ object SidebarBackupV2 {
             }
         }.toSet()
 
-    private fun clearContainerData(prefs: SharedPreferences, containerId: String) {
+    private fun clearContainerData(
+        prefs: SharedPreferences,
+        containerId: String,
+        bulkRemovals: MutableSet<String>
+    ) {
         val prefixes = listOf(
             "handle_${containerId}_",
             "hg_${containerId}_",
             "wg_${containerId}_",
             "sidebar_apps_${containerId}_"
         )
-        val editor = prefs.edit()
         prefs.all.keys.filter { key ->
             key == HandleManager.getContainerPagesKey(containerId) ||
                 key == HandleManager.getContainerSelectedPageKey(containerId) ||
                 key == HandleManager.getContainerOpeningFaceKey(containerId) ||
                 prefixes.any(key::startsWith)
-        }.forEach(editor::remove)
-        check(editor.commit()) { "Could not clear stale Sidebar container data" }
+        }.forEach(bulkRemovals::add)
     }
 
-    private fun clearPageData(prefs: SharedPreferences, containerId: String, pageId: String) {
+    private fun clearPageData(
+        prefs: SharedPreferences,
+        containerId: String,
+        pageId: String,
+        bulkRemovals: MutableSet<String>
+    ) {
         val keys = listOf(
             HandleManager.getContainerPageElementsKey(containerId, pageId),
             "handle_${containerId}_hybrid_grid_${pageId}",
@@ -1308,9 +1314,7 @@ object SidebarBackupV2 {
             "sidebar_apps_${containerId}_${pageId}",
             "handle_${containerId}_page_${pageId}_columns"
         )
-        val editor = prefs.edit()
-        keys.forEach(editor::remove)
-        check(editor.commit()) { "Could not clear stale Sidebar page data" }
+        keys.forEach(bulkRemovals::add)
     }
 
     private fun safeFileName(value: String): String =
