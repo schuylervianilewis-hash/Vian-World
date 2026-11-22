@@ -33,7 +33,7 @@ import java.io.File
  * whole application database.
  */
 object SidebarBackupV2 {
-    const val SCHEMA_VERSION = 2
+    const val SCHEMA_VERSION = 3
 
     private const val PREFS_NAME = "FloatingReaderPrefs"
     private const val MAX_HANDLES = 100
@@ -518,7 +518,7 @@ object SidebarBackupV2 {
     }
 
     fun validate(payload: JSONObject) {
-        require(payload.optInt("schemaVersion", -1) == SCHEMA_VERSION) { "Unsupported Sidebar backup schema" }
+        require(payload.optInt("schemaVersion", -1) in 2..SCHEMA_VERSION) { "Unsupported Sidebar backup schema" }
         require(payload.toString().toByteArray(Charsets.UTF_8).size <= MAX_PAYLOAD_BYTES) {
             "Sidebar backup payload exceeds the size limit"
         }
@@ -611,7 +611,11 @@ object SidebarBackupV2 {
         }
 
         validateGlobalSettings(payload.optJSONObject("globalSettings") ?: error("Global Sidebar settings are missing"))
-        validateNotificationFilters(payload.optJSONObject("notificationFilters") ?: error("Notification filters are missing"))
+        if (payload.has("notificationFilters")) {
+            validateNotificationFilters(payload.getJSONObject("notificationFilters"))
+        } else {
+            require(payload.optInt("schemaVersion") < 3) { "Notification filters are missing" }
+        }
         validateMetadata(payload.optJSONArray("elementMetadata") ?: JSONArray())
         validateCustomIcons(payload.optJSONArray("customIcons") ?: JSONArray())
         validateStringArray(payload.optJSONArray("savedLinkIds") ?: JSONArray(), 500, 128, "saved link")
@@ -815,7 +819,7 @@ object SidebarBackupV2 {
 
     private fun validatePageContent(record: JSONObject, page: SidebarPage) {
         val elements = record.optJSONArray("elements") ?: error("Page element placements are missing")
-        val elementsPresent = record.optBoolean("elementsPresent", false)
+        val elementsPresent = if (record.has("elementsPresent")) record.optBoolean("elementsPresent") else elements.length() > 0
         if (!elementsPresent) require(elements.length() == 0) { "Absent page elements cannot contain records" }
         require(elements.length() <= MAX_PAGE_ELEMENTS) { "Too many elements on a Sidebar page" }
         for (i in 0 until elements.length()) {
@@ -861,7 +865,11 @@ object SidebarBackupV2 {
             "widgets_grid" -> {
                 validateOptionalGrid(data, "gridJsonPresent", "gridJson")
                 validateOptionalInt(data, "columnsPresent", "columns", 1..12)
-                validateOptionalStringArray(data, "widgetElementsJsonPresent", "widgetElementsJson", MAX_GRID_ITEMS, 512)
+                if (data.has("widgetElementsJsonPresent") || data.has("widgetElementsJson")) {
+                    validateOptionalStringArray(data, "widgetElementsJsonPresent", "widgetElementsJson", MAX_GRID_ITEMS, 512)
+                } else {
+                    require(record.optInt("schemaVersion", 2) <= 2) { "Widgets Grid element IDs are missing" }
+                }
             }
             "apps" -> {
                 validateOptionalStringArray(data, "appsJsonPresent", "appsJson", MAX_GRID_ITEMS, 512)
@@ -1146,11 +1154,9 @@ object SidebarBackupV2 {
         if (payload.has("appTrackerWhitelist")) {
             restoreAppTrackerWhitelist(prefs, payload.getJSONArray("appTrackerWhitelist"), exactRollback, bulkValues)
         }
-        val notificationFilterCount = restoreNotificationFilters(
-            context,
-            payload.getJSONObject("notificationFilters"),
-            exactRollback
-        )
+        val notificationFilterCount = payload.optJSONObject("notificationFilters")?.let {
+            restoreNotificationFilters(context, it, exactRollback)
+        } ?: 0
 
         // One sync transaction updates Main and Heavy process preference caches, then refreshes
         // the active page once. This avoids a handle detach/reattach for every restored key.
