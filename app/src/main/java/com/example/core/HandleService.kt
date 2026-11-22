@@ -17,6 +17,12 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.MainActivity
 import com.example.R
 import com.example.feature.sidebar.SidebarManager
@@ -54,6 +60,8 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
     private var lastLiveLoggedUnit = ""
     private var lastLiveLogTimestamp = 0L
 
+    private val bulkSyncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -88,7 +96,9 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
                     val type = intent.getStringExtra(OverlaySyncManager.EXTRA_TYPE) ?: ""
                     val useBroadcastFallback = intent.getBooleanExtra(OverlaySyncManager.EXTRA_BULK_FALLBACK, false)
-                    if (type != "SYNC_BULK_FILE" || useBroadcastFallback) {
+                    if (type == "SYNC_BULK_FILE") {
+                        if (useBroadcastFallback) scheduleBulkSync(intent, goAsync())
+                    } else {
                         LogKeeper.logLifecycle(context, "HandleService", "ACTION_SYNC_PREF", "Syncing preferences from Heavy process")
                         handleSyncPrefIntent(intent)
                     }
@@ -280,7 +290,11 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         } else {
             when (intent.action) {
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
-                    handleSyncPrefIntent(intent)
+                    if (intent.getStringExtra(OverlaySyncManager.EXTRA_TYPE) == "SYNC_BULK_FILE") {
+                        scheduleBulkSync(intent)
+                    } else {
+                        handleSyncPrefIntent(intent)
+                    }
                 }
                 ACTION_RELOAD_HANDLES -> {
                     applyOverlayAccessPolicy()
@@ -471,6 +485,35 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         ShieldNotificationFactory.createNotificationChannel(this)
     }
 
+    private fun scheduleBulkSync(
+        intent: Intent,
+        pendingResult: BroadcastReceiver.PendingResult? = null
+    ) {
+        val prefName = intent.getStringExtra(OverlaySyncManager.EXTRA_PREF_NAME) ?: "FloatingReaderPrefs"
+        val path = intent.getStringExtra(OverlaySyncManager.EXTRA_BULK_FILE_PATH)
+        if (path.isNullOrBlank()) {
+            pendingResult?.finish()
+            return
+        }
+        bulkSyncScope.launch {
+            try {
+                val applied = runCatching {
+                    OverlaySyncManager.applyBulkFile(this@HandleService, prefName, path)
+                }.onFailure {
+                    android.util.Log.e("HandleService", "Could not apply bulk preference sync file", it)
+                }.getOrDefault(false)
+                if (applied) {
+                    withContext(Dispatchers.Main) {
+                        SidebarManager.getInstance(this@HandleService).refreshPages()
+                        if (isScreenOn && Settings.canDrawOverlays(this@HandleService)) attachHandles()
+                    }
+                }
+            } finally {
+                pendingResult?.finish()
+            }
+        }
+    }
+
     private fun handleSyncPrefIntent(intent: Intent) {
         val key = intent.getStringExtra(OverlaySyncManager.EXTRA_KEY) ?: ""
         val value = intent.getStringExtra(OverlaySyncManager.EXTRA_VALUE) ?: ""
@@ -628,6 +671,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onDestroy() {
         super.onDestroy()
+        bulkSyncScope.cancel()
         LogKeeper.logLifecycle(this, "HandleService", "DESTROYED")
         val shieldPrefs = getSharedPreferences(packageName + "_preferences", Context.MODE_PRIVATE)
         val shieldEnabled = shieldPrefs.getBoolean("enabled", false)
