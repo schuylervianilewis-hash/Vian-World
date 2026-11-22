@@ -64,6 +64,45 @@ class SidebarBackupV2Test {
     }
 
     @Test
+    fun validatesPageElementPlacementInItsOriginalContainer() {
+        val payload = validPayload()
+        val container = payload.getJSONArray("containers").getJSONObject(0)
+        val pageContent = container.getJSONArray("pageContent").getJSONObject(0)
+        pageContent.put("elementsPresent", true)
+        pageContent.getJSONArray("elements").put(
+            JSONObject()
+                .put("placementId", "placement_1")
+                .put("containerId", container.getString("containerId"))
+                .put("pageId", "default_hybrid")
+                .put("actionKey", "app:com.example.app")
+                .put("position", 0)
+                .put("config", JSONObject())
+        )
+
+        SidebarBackupV2.validate(payload)
+    }
+
+    @Test
+    fun rejectsPageElementPlacementFromAnotherContainer() {
+        val payload = validPayload()
+        val container = payload.getJSONArray("containers").getJSONObject(0)
+        val pageContent = container.getJSONArray("pageContent").getJSONObject(0)
+        pageContent.put("elementsPresent", true)
+        pageContent.getJSONArray("elements").put(
+            JSONObject()
+                .put("placementId", "placement_1")
+                .put("containerId", "handle_2_swipe_left")
+                .put("pageId", "default_hybrid")
+                .put("actionKey", "app:com.example.app")
+                .put("position", 0)
+                .put("config", JSONObject())
+        )
+
+        val failure = runCatching { SidebarBackupV2.validate(payload) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
     fun rejectsContainerContentThatDoesNotMatchItsPage() {
         val payload = validPayload()
         val container = payload.getJSONArray("containers").getJSONObject(0)
@@ -121,6 +160,7 @@ class SidebarBackupV2Test {
             .put("pageId", page.pageId)
             .put("pageType", page.pageType)
             .put("kind", "hybrid_grid")
+            .put("elementsPresent", false)
             .put("elements", JSONArray())
             .put("data", pageData)
 
