@@ -62,7 +62,7 @@ object OverlaySyncManager {
         removals: Set<String> = emptySet(),
         prefName: String = "FloatingReaderPrefs"
     ) {
-        require(values.size + removals.size <= 10000) { "Too many preference updates in one batch" }
+        require(values.size + removals.size <= 25000) { "Too many preference updates in one batch" }
         require((values.keys + removals).all { it.isNotBlank() && it.length <= 512 }) {
             "Invalid preference key in bulk sync"
         }
@@ -129,10 +129,11 @@ object OverlaySyncManager {
         val syncDir = File(context.cacheDir, "sidebar_pref_sync").canonicalFile
         val file = File(path).canonicalFile
         require(file.parentFile == syncDir && file.isFile) { "Invalid bulk preference sync file" }
+        require(file.length() <= 32L * 1024L * 1024L) { "Bulk preference sync file is too large" }
         val payload = JSONObject(file.readText(Charsets.UTF_8))
         require(payload.optString("prefName") == prefName) { "Bulk preference file target mismatch" }
         val values = payload.optJSONObject("values") ?: error("Bulk preference values are missing")
-        require(values.length() <= 10000) { "Too many bulk preference values" }
+        require(values.length() <= 25000) { "Too many bulk preference values" }
         val editor = context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit()
         val keys = values.keys()
         while (keys.hasNext()) {
@@ -154,7 +155,7 @@ object OverlaySyncManager {
             }
         }
         val removals = payload.optJSONArray("removals") ?: JSONArray()
-        require(removals.length() <= 10000) { "Too many bulk preference removals" }
+        require(removals.length() <= 25000) { "Too many bulk preference removals" }
         for (index in 0 until removals.length()) {
             val key = removals.getString(index)
             require(key.isNotBlank() && key.length <= 512) { "Invalid bulk preference removal key" }
