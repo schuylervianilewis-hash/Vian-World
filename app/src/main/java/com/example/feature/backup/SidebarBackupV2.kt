@@ -849,19 +849,27 @@ object SidebarBackupV2 {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val bulkValues = linkedMapOf<String, Any>()
         val bulkRemovals = linkedSetOf<String>()
+        val previousHandleIds = manager.getHandleIds().toSet()
+        val previousPrefKeys = prefs.all.keys.toSet()
         val backupContainers = payload.getJSONArray("containers")
         val backupContainerIds = (0 until backupContainers.length()).map {
             backupContainers.getJSONObject(it).getString("containerId")
         }.toSet()
         val previousContainerIds = currentContainerIds(manager)
 
-        SidebarBackupModule.restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
-        restoreHandleSettings(payload.getJSONArray("handles"), bulkValues, bulkRemovals)
+        restoreHandleConfigs(
+            payload.getJSONArray("handles"),
+            previousHandleIds,
+            previousPrefKeys,
+            exactRollback,
+            bulkValues,
+            bulkRemovals
+        )
         restoreGlobalSettings(payload.getJSONObject("globalSettings"), bulkValues, bulkRemovals)
 
         if (exactRollback) {
             previousContainerIds.filterNot { it in backupContainerIds }
-                .forEach { clearContainerData(prefs, it, bulkRemovals) }
+                .forEach { clearContainerData(it, previousPrefKeys, bulkRemovals) }
         }
 
         var restoredContainers = 0
@@ -874,13 +882,12 @@ object SidebarBackupV2 {
             val handleId = container.getString("handleId")
             val gesture = container.getString("gesture")
             val containerId = container.getString("containerId")
-            val handle = manager.getHandle(handleId)
-            if (handle == null) {
-                warnings.add("Skipped container $containerId: its handle is unavailable.")
-                continue
-            }
-            if (handle.getActionForGesture(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
-                warnings.add("Skipped container $containerId: its saved gesture no longer opens Sidebar.")
+            val handleJson = (0 until payload.getJSONArray("handles").length())
+                .map { payload.getJSONArray("handles").getJSONObject(it) }
+                .firstOrNull { it.optString("id") == handleId }
+            val gestureActions = handleJson?.optJSONObject("gestures")
+            if (gestureActions?.optString(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
+                warnings.add("Skipped container $containerId: its saved gesture does not open Sidebar.")
                 continue
             }
 
