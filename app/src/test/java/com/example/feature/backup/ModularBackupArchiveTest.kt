@@ -33,7 +33,7 @@ class ModularBackupArchiveTest {
         assertEquals("debug", parsed.buildType)
         assertEquals(setOf("launcher", "sidebar"), parsed.modules.keys)
         assertEquals(2, parsed.modules.getValue("launcher").getInt("schema_version"))
-        assertEquals(2, parsed.moduleSchemaVersions.getValue("sidebar"))
+        assertEquals(3, parsed.moduleSchemaVersions.getValue("sidebar"))
     }
 
     @Test
