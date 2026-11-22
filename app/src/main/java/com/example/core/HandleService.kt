@@ -506,6 +506,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                     withContext(Dispatchers.Main) {
                         SidebarManager.getInstance(this@HandleService).refreshPages()
                         if (isScreenOn && Settings.canDrawOverlays(this@HandleService)) attachHandles()
+                        sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(packageName))
                     }
                 }
             } finally {
