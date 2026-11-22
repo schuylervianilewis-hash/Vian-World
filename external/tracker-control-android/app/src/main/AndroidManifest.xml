@@ -195,6 +195,7 @@
 
         <activity
             android:name="net.kollnig.missioncontrol.ActivityWireGuardProfiles"
+            android:theme="@style/AppTheme"
             android:configChanges="orientation|screenSize"
             android:label="@string/setting_wg_profile_manage"
             android:parentActivityName="eu.faircode.netguard.ActivitySettings">
