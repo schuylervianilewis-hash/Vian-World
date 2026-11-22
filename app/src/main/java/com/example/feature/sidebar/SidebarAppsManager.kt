@@ -179,13 +179,7 @@ class SidebarAppsManager(
             false
         }
 
-        val metadataChanged = key?.startsWith("elem_meta_") == true
-        if (metadataChanged) {
-            invalidateIcon(key!!.removePrefix("elem_meta_"))
-            iconCache.evictAll()
-        }
-
-        if (isRelevant || metadataChanged) {
+        if (isRelevant) {
             coroutineScope.launch {
                 loadActiveApps()
                 withContext(Dispatchers.Main) {
