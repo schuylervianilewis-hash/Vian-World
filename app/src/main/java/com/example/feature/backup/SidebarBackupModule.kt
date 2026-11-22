@@ -22,7 +22,7 @@ import java.security.MessageDigest
 /**
  * Sidebar backup boundary.
  *
- * Exports schema v2 through [SidebarBackupV2], including every configured container,
+ * Exports schema v3 through [SidebarBackupV2], including every configured container,
  * complete page configuration, page-scoped placements and allowlisted page content.
  * The retained v1 reader restores older archives without weakening their validation.
  */
