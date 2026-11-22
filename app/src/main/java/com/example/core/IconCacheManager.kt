@@ -378,6 +378,14 @@ object IconCacheManager {
         }
     }
 
+    /**
+     * Invalidates in-memory icon bitmaps after backup restore replaces icon files.
+     * Disk caches are left intact; subsequent lookups reload the updated file.
+     */
+    fun invalidateMemoryCache() {
+        memoryCache.evictAll()
+    }
+
     fun clearAll(context: Context) {
         memoryCache.evictAll()
         val dir = getCacheDir(context)
