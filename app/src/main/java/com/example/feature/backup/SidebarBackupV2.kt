@@ -682,8 +682,18 @@ object SidebarBackupV2 {
         if (exactRollback) {
             previousHandleIds.filterNot { it in backupIds }.forEach { staleId ->
                 val index = staleId.removePrefix("handle_")
-                val prefix = "handle_${index}_"
-                previousPrefKeys.filter { it.startsWith(prefix) }.forEach { key ->
+                val baseKeys = listOf(
+                    "handle_name_$index",
+                    "handle_enabled_$index",
+                    "handle_edge_$index",
+                    "handle_pos_$index",
+                    "handle_width_$index",
+                    "handle_height_$index",
+                    "handle_color_$index",
+                    "handle_shape_$index",
+                    "handle_alpha_$index"
+                )
+                (baseKeys + previousPrefKeys.filter { it.startsWith("handle_${index}_") }).forEach { key ->
                     bulkValues.remove(key)
                     bulkRemovals.add(key)
                 }
