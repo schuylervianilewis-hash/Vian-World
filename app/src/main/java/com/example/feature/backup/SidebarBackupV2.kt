@@ -1296,8 +1296,9 @@ object SidebarBackupV2 {
                 val widgetElements = if (widgetElementsPresent) {
                     sanitizeWidgetElementArrayForRestore(data.optString("widgetElementsJson", "[]"))
                 } else "[]"
-                restoredItems += runCatching { JSONArray(grid).length() }.getOrDefault(0)
-                restoredItems += runCatching { JSONArray(widgetElements).length() }.getOrDefault(0)
+                val gridItemCount = runCatching { JSONArray(grid).length() }.getOrDefault(0)
+                val elementCount = runCatching { JSONArray(widgetElements).length() }.getOrDefault(0)
+                restoredItems += maxOf(gridItemCount, elementCount)
                 val gridKey = "handle_${containerId}_widgets_grid_${pageId}"
                 val columnsKey = "handle_${containerId}_widgets_grid_cols_${pageId}"
                 val widgetElementsKey = "wg_${containerId}_${pageId}"
