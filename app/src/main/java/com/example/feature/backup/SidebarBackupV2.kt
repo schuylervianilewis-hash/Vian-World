@@ -71,7 +71,12 @@ object SidebarBackupV2 {
         require(handles.isNotEmpty() && handles.size <= MAX_HANDLES) { "Invalid Sidebar handle count" }
 
         val handlesJson = JSONArray()
-        handles.forEach { handlesJson.put(SidebarBackupModule.handleToJson(it)) }
+        handles.forEach { handle ->
+            val item = SidebarBackupModule.handleToJson(handle)
+            val index = handle.id.removePrefix("handle_")
+            item.put("settings", exportHandleSettings(prefs, index))
+            handlesJson.put(item)
+        }
 
         val primaryContainerId = handleManager.getFirstHandlePrimaryContainerId()
         val containersJson = JSONArray()
@@ -155,6 +160,13 @@ object SidebarBackupV2 {
         }
         validate(payload)
         return payload
+    }
+
+    private fun exportHandleSettings(prefs: SharedPreferences, index: String): JSONObject {
+        return JSONObject()
+            .put("columns", readSetting(prefs, "handle_${index}_columns", "handle_${index}_columns", false))
+            .put("sidebarColor", readSetting(prefs, "handle_${index}_sidebar_color", "handle_${index}_sidebar_color", false))
+            .put("sidebarTransparency", readSetting(prefs, "handle_${index}_sidebar_transparency", "handle_${index}_sidebar_transparency", false))
     }
 
     private fun exportContainerSettings(
@@ -478,6 +490,7 @@ object SidebarBackupV2 {
             require(item.optInt("alphaPercent", 14) in 0..100) { "Invalid handle alpha" }
             require(runCatching { HandleEdge.valueOf(item.optString("edge")) }.isSuccess) { "Invalid handle edge" }
             require(runCatching { HandleShape.valueOf(item.optString("shape")) }.isSuccess) { "Invalid handle shape" }
+            validateHandleSettings(item.optJSONObject("settings") ?: error("Handle settings are missing"))
             val gestures = item.optJSONObject("gestures") ?: error("Handle gestures are missing")
             val actions = linkedMapOf<String, String>()
             HandleGestures.ALL.forEach { gesture ->
@@ -590,6 +603,34 @@ object SidebarBackupV2 {
         if (width.optBoolean("present")) require(width.optInt("value", -1) in 0..2000) { "Invalid Sidebar width" }
         val columns = settings.optJSONObject("columns") ?: error("Sidebar columns setting is missing")
         if (columns.optBoolean("present")) require(columns.optInt("value", -1) in 1..12) { "Invalid Sidebar columns" }
+    }
+
+    private fun validateHandleSettings(settings: JSONObject) {
+        val columns = settings.optJSONObject("columns") ?: error("Handle columns setting is missing")
+        if (columns.optBoolean("present")) require(columns.optInt("value", -1) in 1..12) { "Invalid handle columns" }
+        val color = settings.optJSONObject("sidebarColor") ?: error("Handle color setting is missing")
+        if (color.optBoolean("present")) require(
+            color.optString("value").length <= 32 && runCatching { Color.parseColor(color.optString("value")) }.isSuccess
+        ) { "Invalid handle color" }
+        val transparency = settings.optJSONObject("sidebarTransparency") ?: error("Handle transparency setting is missing")
+        if (transparency.optBoolean("present")) require(transparency.optDouble("value", -1.0) in 0.0..1.0) {
+            "Invalid handle transparency"
+        }
+    }
+
+    private fun restoreHandleSettings(
+        handles: JSONArray,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>
+    ) {
+        for (index in 0 until handles.length()) {
+            val item = handles.getJSONObject(index)
+            val handleIndex = item.getString("id").removePrefix("handle_")
+            val settings = item.getJSONObject("settings")
+            restoreSetting(settings, "columns", "handle_${handleIndex}_columns", bulkValues, bulkRemovals)
+            restoreSetting(settings, "sidebarColor", "handle_${handleIndex}_sidebar_color", bulkValues, bulkRemovals)
+            restoreSetting(settings, "sidebarTransparency", "handle_${handleIndex}_sidebar_transparency", bulkValues, bulkRemovals)
+        }
     }
 
     private fun validateGlobalSettings(settings: JSONObject) {
@@ -815,6 +856,7 @@ object SidebarBackupV2 {
         val previousContainerIds = currentSidebarContainerIds(manager)
 
         SidebarBackupModule.restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
+        restoreHandleSettings(payload.getJSONArray("handles"), bulkValues, bulkRemovals)
         restoreGlobalSettings(payload.getJSONObject("globalSettings"), bulkValues, bulkRemovals)
 
         if (exactRollback) {
