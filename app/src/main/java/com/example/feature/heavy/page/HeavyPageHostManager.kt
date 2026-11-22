@@ -94,7 +94,12 @@ class HeavyPageHostManager private constructor(private val context: Context) {
                                 android.util.Log.e("HeavyPageHostManager", "Could not apply bulk preference sync file", it)
                             }.getOrDefault(false)
                         }
-                        if (applied) refreshActiveEmbeddedPages()
+                        if (applied) {
+                            refreshActiveEmbeddedPages()
+                            context.sendBroadcast(
+                                Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName)
+                            )
+                        }
                     } finally {
                         pending.finish()
                     }
