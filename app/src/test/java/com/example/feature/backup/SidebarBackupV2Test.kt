@@ -105,6 +105,7 @@ class SidebarBackupV2Test {
             .put("alphaPercent", 14)
             .put("settings", JSONObject()
                 .put("columns", absentSetting())
+                .put("legacyEdge", absentSetting())
                 .put("sidebarColor", absentSetting())
                 .put("sidebarTransparency", absentSetting()))
             .put("gestures", gestures)
