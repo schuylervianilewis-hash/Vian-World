@@ -35,7 +35,9 @@ object SidebarBackupModule {
     private val pageTypePattern = Regex("^[a-zA-Z0-9_]{1,64}$")
     private val gestureSet = HandleGestures.ALL.toSet()
 
-    fun export(context: Context): JSONObject {
+    fun export(context: Context): JSONObject = SidebarBackupV2.export(context)
+
+    private fun exportV1(context: Context): JSONObject {
         val manager = HandleManager.getInstance(context)
         val pageManager = PageManager.getInstance(context)
         val handles = manager.getAllHandles()
@@ -77,6 +79,14 @@ object SidebarBackupModule {
     }
 
     fun validate(payload: JSONObject) {
+        if (payload.optInt("schemaVersion", -1) == 1) {
+            validateV1(payload)
+        } else {
+            SidebarBackupV2.validate(payload)
+        }
+    }
+
+    private fun validateV1(payload: JSONObject) {
         require(payload.optInt("schemaVersion", -1) == 1) { "Unsupported Sidebar backup schema" }
         require(payload.optJSONArray("handles") != null) { "Sidebar handles are missing" }
         require(payload.optJSONArray("pages") != null) { "Sidebar page metadata is missing" }
@@ -189,7 +199,28 @@ object SidebarBackupModule {
         }
     }
 
-    fun restore(context: Context, payload: JSONObject, exactRollback: Boolean = false): List<String> {
+    data class RestoreResult(
+        val warnings: List<String>,
+        val details: List<String> = emptyList()
+    )
+
+    fun restoreDetailed(
+        context: Context,
+        payload: JSONObject,
+        exactRollback: Boolean = false
+    ): RestoreResult {
+        return if (payload.optInt("schemaVersion", -1) == 1) {
+            RestoreResult(restoreV1(context, payload, exactRollback))
+        } else {
+            val result = SidebarBackupV2.restoreDetailed(context, payload, exactRollback)
+            RestoreResult(result.warnings, result.details)
+        }
+    }
+
+    fun restore(context: Context, payload: JSONObject, exactRollback: Boolean = false): List<String> =
+        restoreDetailed(context, payload, exactRollback).warnings
+
+    private fun restoreV1(context: Context, payload: JSONObject, exactRollback: Boolean = false): List<String> {
         validate(payload)
         val warnings = mutableListOf<String>()
         restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
@@ -215,7 +246,7 @@ object SidebarBackupModule {
         return warnings
     }
 
-    private fun handleToJson(handle: HandleConfig): JSONObject {
+    internal fun handleToJson(handle: HandleConfig): JSONObject {
         val gestures = JSONObject()
         HandleGestures.ALL.forEach { gestures.put(it, handle.getActionForGesture(it)) }
         return JSONObject()
@@ -232,7 +263,7 @@ object SidebarBackupModule {
             .put("gestures", gestures)
     }
 
-    private fun restoreHandles(context: Context, handles: JSONArray, exactRollback: Boolean) {
+    internal fun restoreHandles(context: Context, handles: JSONArray, exactRollback: Boolean) {
         val manager = HandleManager.getInstance(context)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val currentIds = manager.getHandleIds()
