@@ -839,7 +839,12 @@ class MainActivity : SimpleActivity(), FlingListener {
     }
 
     fun showAddSidebarElementPicker(x: Float? = null, y: Float? = null) {
-        pendingSidebarElementPlacement = getPlacementCell(x, y)
+        val placement = getPlacementCell(x, y)
+        if (placement == null) {
+            toast("The dock is full. Remove an item before adding another there.")
+            return
+        }
+        pendingSidebarElementPlacement = placement
         val pickerIntent = Intent().setClassName(
             packageName,
             "com.example.feature.settings.AddElementActivity"
@@ -873,9 +878,23 @@ class MainActivity : SimpleActivity(), FlingListener {
             synchronized(sidebarElementPlacementLock) {
                 if (isFinishing || isDestroyed) return@synchronized
 
-                val (page, rect) = preferredPlacement?.let {
-                    findNearestEmptyCellOnPage(it.first, it.second.left, it.second.top)
-                } ?: findFirstEmptyCell()
+                val placement = if (preferredPlacement != null) {
+                    findNearestEmptyCellOnPage(
+                        preferredPlacement.first,
+                        preferredPlacement.second.left,
+                        preferredPlacement.second.top
+                    )
+                } else {
+                    findFirstEmptyCell()
+                }
+                if (placement == null) {
+                    runOnUiThread {
+                        toast("The dock is full. Remove an item before adding another there.")
+                    }
+                    return@synchronized
+                }
+                val (page, rect) = placement
+                val isDock = rect.top == config.homeRowCount - 1
 
                 val elementInfo = shura.home.helpers.SidebarHomeElementClient
                     .load(this, listOf(elementId))[elementId]
@@ -890,7 +909,7 @@ class MainActivity : SimpleActivity(), FlingListener {
                     top = rect.top,
                     right = rect.right,
                     bottom = rect.bottom,
-                    page = page,
+                    page = if (isDock) 0 else page,
                     packageName = packageName,
                     activityName = activityName,
                     title = title,
@@ -901,7 +920,7 @@ class MainActivity : SimpleActivity(), FlingListener {
                     // Keep provider imagery in the Drawable only. A non-null persisted
                     // bitmap is reserved for a user-customized launcher icon.
                     icon = null,
-                    docked = false,
+                    docked = isDock,
                     parentId = null,
                     drawable = shura.home.helpers.SidebarHomeElementIconDecorator.createDrawable(
                         this,
@@ -912,7 +931,9 @@ class MainActivity : SimpleActivity(), FlingListener {
                 )
                 binding.homeScreenGrid.root.storeAndShowGridItemFromBackground(item) {
                     if (!isFinishing && !isDestroyed) {
-                        binding.homeScreenGrid.root.skipToPage(page)
+                        if (!isDock) {
+                            binding.homeScreenGrid.root.skipToPage(page)
+                        }
                         LogCatcher.log("MainActivity", "Added Sidebar Home item: $elementId")
                     }
                 }
@@ -924,9 +945,35 @@ class MainActivity : SimpleActivity(), FlingListener {
         page: Int,
         targetX: Int,
         targetY: Int
-    ): Pair<Int, Rect> {
+    ): Pair<Int, Rect>? {
+        val dockRow = config.homeRowCount - 1
+        val allItems = homeScreenGridItemsDB.getAllItems()
+
+        if (targetY == dockRow) {
+            val occupiedDockColumns = HashSet<Int>()
+            allItems.filter { it.parentId == null && it.docked }.forEach { item ->
+                for (column in item.left..item.right) {
+                    occupiedDockColumns.add(column)
+                }
+            }
+            val nearestDockColumn = (0 until config.dockColumnCount)
+                .filterNot { occupiedDockColumns.contains(it) }
+                .minWithOrNull(
+                    compareBy<Int>(
+                        { abs(it - targetX) },
+                        { it }
+                    )
+                )
+                ?: return null
+
+            return Pair(
+                0,
+                Rect(nearestDockColumn, dockRow, nearestDockColumn, dockRow)
+            )
+        }
+
         val occupied = HashSet<Pair<Int, Int>>()
-        homeScreenGridItemsDB.getAllItems()
+        allItems
             .filter { it.parentId == null && !it.docked && it.page == page }
             .forEach { item ->
                 for (x in item.left..item.right) {
@@ -936,7 +983,7 @@ class MainActivity : SimpleActivity(), FlingListener {
                 }
             }
 
-        val nearest = (0 until config.homeRowCount - 1)
+        val nearest = (0 until dockRow)
             .flatMap { y -> (0 until config.homeColumnCount).map { x -> x to y } }
             .filterNot { occupied.contains(it) }
             .minWithOrNull(
@@ -1681,21 +1728,39 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
     }
 
-    fun getPlacementCell(x: Float? = null, y: Float? = null): Pair<Int, Rect> {
-        val targetCell = if (x != null && y != null) {
-            binding.homeScreenGrid.root.findNearestEmptyCell(x, y)
-                ?: binding.homeScreenGrid.root.findFirstEmptyCellOnCurrentPage()
+    fun getPlacementCell(
+        x: Float? = null,
+        y: Float? = null,
+        allowDock: Boolean = true
+    ): Pair<Int, Rect>? {
+        val grid = binding.homeScreenGrid.root
+        val hasTargetCoordinates = x != null && y != null
+
+        val targetCell = if (hasTargetCoordinates && allowDock) {
+            grid.findNearestEmptyCellIncludingDock(x!!, y!!)
+        } else if (hasTargetCoordinates) {
+            // Preserve the existing desktop-only placement path for widget-like items.
+            grid.findNearestEmptyCell(x!!, y!!)
         } else {
-            binding.homeScreenGrid.root.findFirstEmptyCellOnCurrentPage()
+            grid.findFirstEmptyCellOnCurrentPage()
         }
-        return if (targetCell != null) {
-            Pair(
-                binding.homeScreenGrid.root.getCurrentPage(),
+
+        if (targetCell != null) {
+            val isDock = targetCell.y == config.homeRowCount - 1
+            return Pair(
+                if (isDock) 0 else grid.getCurrentPage(),
                 Rect(targetCell.x, targetCell.y, targetCell.x, targetCell.y)
             )
-        } else {
-            findFirstEmptyCell()
         }
+
+        // A full dock must not silently redirect an item onto the desktop.
+        if (hasTargetCoordinates && allowDock && grid.isDockPosition(x!!, y!!)) {
+            return null
+        }
+
+        // If the intended desktop page is full, continue using the launcher's existing
+        // next-available-desktop-page behaviour.
+        return findFirstEmptyCell()
     }
 
     fun showAddAppDialog(x: Float? = null, y: Float? = null) {
@@ -1704,7 +1769,11 @@ class MainActivity : SimpleActivity(), FlingListener {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 AddAppDialog(this, apps) { selectedApp ->
-                    val (page, rect) = getPlacementCell(x, y)
+                    val placement = getPlacementCell(x, y) ?: run {
+                        toast("The dock is full. Remove an item before adding another there.")
+                        return@AddAppDialog
+                    }
+                    val (page, rect) = placement
                     val isDock = rect.top == config.homeRowCount - 1
                     val gridItem = HomeScreenGridItem(
                         id = null,
@@ -1771,7 +1840,11 @@ class MainActivity : SimpleActivity(), FlingListener {
 
         AddShortcutDialog(this, shortcutItems) { selectedShortcut ->
             handleShorcutCreation(selectedShortcut.activityInfo) { shortcutId, label, icon ->
-                val (page, rect) = getPlacementCell(x, y)
+                val placement = getPlacementCell(x, y) ?: run {
+                    toast("The dock is full. Remove an item before adding another there.")
+                    return@handleShorcutCreation
+                }
+                val (page, rect) = placement
                 val isDock = rect.top == config.homeRowCount - 1
                 val gridItem = HomeScreenGridItem(
                     id = null,
@@ -1808,7 +1881,11 @@ class MainActivity : SimpleActivity(), FlingListener {
 
     fun showAddFolderDialog(x: Float? = null, y: Float? = null) {
         CreateFolderDialog(this) { folderName ->
-            val (page, rect) = getPlacementCell(x, y)
+            val placement = getPlacementCell(x, y) ?: run {
+                toast("The dock is full. Remove an item before adding another there.")
+                return@CreateFolderDialog
+            }
+            val (page, rect) = placement
             val isDock = rect.top == config.homeRowCount - 1
             val gridItem = HomeScreenGridItem(
                 id = null,
@@ -1845,9 +1922,22 @@ class MainActivity : SimpleActivity(), FlingListener {
     private fun showAddFolderDialogAtPlacement(preferredPlacement: Pair<Int, Rect>?) {
         CreateFolderDialog(this) { folderName ->
             ensureBackgroundThread {
-                val (page, rect) = preferredPlacement?.let {
-                    findNearestEmptyCellOnPage(it.first, it.second.left, it.second.top)
-                } ?: findFirstEmptyCell()
+                val placement = if (preferredPlacement != null) {
+                    findNearestEmptyCellOnPage(
+                        preferredPlacement.first,
+                        preferredPlacement.second.left,
+                        preferredPlacement.second.top
+                    )
+                } else {
+                    findFirstEmptyCell()
+                }
+                if (placement == null) {
+                    runOnUiThread {
+                        toast("The dock is full. Remove an item before adding another there.")
+                    }
+                    return@ensureBackgroundThread
+                }
+                val (page, rect) = placement
                 val isDock = rect.top == config.homeRowCount - 1
                 val gridItem = HomeScreenGridItem(
                     id = null,
@@ -1870,7 +1960,9 @@ class MainActivity : SimpleActivity(), FlingListener {
                 )
                 binding.homeScreenGrid.root.storeAndShowGridItemFromBackground(gridItem) {
                     if (!isFinishing && !isDestroyed) {
-                        binding.homeScreenGrid.root.skipToPage(page)
+                        if (!isDock) {
+                            binding.homeScreenGrid.root.skipToPage(page)
+                        }
                         toast(R.string.folder_created)
                     }
                 }
@@ -1918,7 +2010,7 @@ class MainActivity : SimpleActivity(), FlingListener {
         widgetId: Int,
         providerInfo: AppWidgetProviderInfo
     ) {
-        val (page, rect) = getPlacementCell(x, y)
+        val (page, rect) = getPlacementCell(x, y, allowDock = false) ?: findFirstEmptyCell()
         val packageManager = packageManager
         val pkg = providerInfo.provider.packageName
         val label = providerInfo.loadLabel(packageManager).ifEmpty {
@@ -2231,7 +2323,8 @@ class MainActivity : SimpleActivity(), FlingListener {
         }
 
         override fun onLongPress(event: MotionEvent) {
-            (flingListener as MainActivity).homeScreenLongPressed(event.x, event.y)
+            // intoViewSpaceCoords() expects screen coordinates, not Activity-local event.x/y.
+            (flingListener as MainActivity).homeScreenLongPressed(event.rawX, event.rawY)
         }
     }
 
