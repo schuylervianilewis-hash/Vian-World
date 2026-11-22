@@ -20,6 +20,10 @@ android {
 
     defaultConfig {
         minSdk 23
+        // Version of the upstream TrackerControl release represented by this
+        // embedded source tree. Bump only when rebasing the module to a newer
+        // official TrackerControl release; do not use the host app version.
+        buildConfigField "long", "TRACKERCONTROL_VERSION_CODE", "2026110101L"
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         consumerProguardFiles 'proguard-rules.pro'
         buildConfigField "String", "DEFAULT_DOH_ENDPOINT", "\"https://dns.quad9.net/dns-query\""
