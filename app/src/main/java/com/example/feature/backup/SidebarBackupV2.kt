@@ -1015,7 +1015,7 @@ object SidebarBackupV2 {
             } else {
                 val backupPageIds = backupPages.map { it.pageId }.toSet()
                 currentPages.filterNot { it.pageId in backupPageIds }.forEach { stale ->
-                    clearPageData(prefs, containerId, stale.pageId, bulkRemovals)
+                    clearPageData(containerId, stale.pageId, primaryContainerId, bulkRemovals)
                 }
             }
 
