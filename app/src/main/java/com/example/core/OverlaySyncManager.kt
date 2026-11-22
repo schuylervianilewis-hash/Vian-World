@@ -68,11 +68,11 @@ object OverlaySyncManager {
         }
 
         val localPrefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
-        IconCacheManager.invalidateMemoryCache()
         val localEditor = localPrefs.edit()
         values.forEach { (key, value) -> putValue(localEditor, key, value) }
         removals.forEach(localEditor::remove)
         check(localEditor.commit()) { "Could not apply bulk preference updates" }
+        IconCacheManager.invalidateMemoryCache()
 
         val syncDir = File(context.cacheDir, "sidebar_pref_sync")
         if (!syncDir.exists()) check(syncDir.mkdirs()) { "Could not create Sidebar sync directory" }
