@@ -85,25 +85,23 @@ class HeavyPageHostManager private constructor(private val context: Context) {
                         editor.putStringSet(key, set)
                     }
                     "REMOVE" -> editor.remove(key)
-                    "SYNC_BULK" -> {
-                        val bundle = intent.getBundleExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_VALUES)
-                        bundle?.keySet()?.forEach { prefKey ->
-                            when (val prefValue = bundle.get(prefKey)) {
-                                is String -> editor.putString(prefKey, prefValue)
-                                is Int -> editor.putInt(prefKey, prefValue)
-                                is Long -> editor.putLong(prefKey, prefValue)
-                                is Float -> editor.putFloat(prefKey, prefValue)
-                                is Boolean -> editor.putBoolean(prefKey, prefValue)
-                                is ArrayList<*> -> editor.putStringSet(prefKey, prefValue.filterIsInstance<String>().toSet())
-                            }
+                    "SYNC_BULK_FILE" -> {
+                        val path = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_FILE_PATH)
+                            ?: error("Bulk preference sync file path is missing")
+                        check(com.example.core.OverlaySyncManager.applyBulkFile(context, "FloatingReaderPrefs", path)) {
+                            "Could not apply bulk preference sync file"
                         }
-                        intent.getStringArrayListExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_REMOVE_KEYS)
-                            ?.forEach(editor::remove)
                     }
                 }
                 editor.commit()
-                if (type == "SYNC_BULK" || type == "RELOAD_ALL") {
+                if (type == "SYNC_BULK_FILE" || type == "RELOAD_ALL") {
                     mainHandler.post {
+                        for (holder in activeEmbeddedHosts.values) {
+                            (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
+                        }
+                    }
+                }
+                if (key.contains("app_tracker") || key.contains("whitelist")) {                    mainHandler.post {
                         for (holder in activeEmbeddedHosts.values) {
                             (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
                         }
