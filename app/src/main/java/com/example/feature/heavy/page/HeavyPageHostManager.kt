@@ -96,6 +96,7 @@ class HeavyPageHostManager private constructor(private val context: Context) {
                         }
                         if (applied) {
                             refreshActiveEmbeddedPages()
+                            com.example.core.IconCacheManager.invalidateMemoryCache()
                             context.sendBroadcast(
                                 Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName)
                             )
