@@ -313,12 +313,18 @@ object SidebarBackupModule {
                     "handle_edge_$staleIndex", "handle_pos_$staleIndex",
                     "handle_width_$staleIndex", "handle_height_$staleIndex",
                     "handle_color_$staleIndex", "handle_shape_$staleIndex",
-                    "handle_alpha_$staleIndex"
+                    "handle_alpha_$staleIndex", "handle_${staleIndex}_columns",
+                    "handle_${staleIndex}_sidebar_color", "handle_${staleIndex}_sidebar_transparency"
                 ).forEach(editor::remove)
                 HandleGestures.ALL.forEach { gesture ->
                     editor.remove(HandleManager.getGesturePrefKey(staleIndex, gesture))
                     val staleContainer = HandleManager.getContainerId(id, gesture)
-                    editor.remove("handle_${staleContainer}_pages")
+                    prefs.all.keys.filter { key ->
+                        key.startsWith("handle_${staleContainer}_") ||
+                            key.startsWith("hg_${staleContainer}_") ||
+                            key.startsWith("wg_${staleContainer}_") ||
+                            key.startsWith("sidebar_apps_${staleContainer}_")
+                    }.forEach(editor::remove)
                 }
             }
             restoredIds.distinct().toMutableList()
