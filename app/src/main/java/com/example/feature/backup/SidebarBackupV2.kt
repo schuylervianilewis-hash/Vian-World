@@ -306,6 +306,7 @@ object SidebarBackupV2 {
             }
             "widget_page" -> {
                 val widgetId = page.pageId.toIntOrNull()
+                    ?: page.pageId.removePrefix("single_widget_").removePrefix("widget_").toIntOrNull()
                 val provider = widgetId?.takeIf { it >= 0 }?.let { id ->
                     runCatching {
                         AppWidgetManager.getInstance(context).getAppWidgetInfo(id)?.provider?.flattenToString()
