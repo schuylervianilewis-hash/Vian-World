@@ -88,6 +88,9 @@ object SidebarBackupV2 {
                 val stack = pageManager.getPageStack(containerId)
                 totalPages += stack.size
                 require(totalPages <= MAX_PAGES) { "Too many Sidebar pages to back up" }
+                val pageIds = stack.map { it.pageId }.toSet()
+                val selectedPageId = pageManager.getSelectedPageId(containerId)?.takeIf { it in pageIds }
+                val openingFaceId = pageManager.getOpeningFaceId(containerId)?.takeIf { it in pageIds }
 
                 val pagesJson = JSONArray()
                 val pageContentJson = JSONArray()
@@ -112,8 +115,8 @@ object SidebarBackupV2 {
                         .put("handleId", handle.id)
                         .put("gesture", gesture)
                         .put("containerId", containerId)
-                        .put("selectedPageId", pageManager.getSelectedPageId(containerId) ?: JSONObject.NULL)
-                        .put("openingFaceId", pageManager.getOpeningFaceId(containerId) ?: JSONObject.NULL)
+                        .put("selectedPageId", selectedPageId ?: JSONObject.NULL)
+                        .put("openingFaceId", openingFaceId ?: JSONObject.NULL)
                         .put("settings", exportContainerSettings(prefs, containerId, primaryContainerId))
                         .put("pages", pagesJson)
                         .put("pageContent", pageContentJson)
