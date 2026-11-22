@@ -22,8 +22,10 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.compose.ui.platform.ComposeView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -79,10 +81,31 @@ public class ActivityWireGuardProfiles extends AppCompatActivity {
         // A stable ID gives Compose's saveable state registry a key to persist
         // under, so the LazyColumn scroll position survives recreation.
         composeView.setId(R.id.compose_wg_profiles);
-        setContentView(composeView);
 
-        getSupportActionBar().setTitle(R.string.setting_wg_profile_manage);
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        // The merged host theme can be NoActionBar even when the Firewall
+        // activity's library theme is selected. Install a local Toolbar in
+        // that case so this screen always has a real AppCompat ActionBar.
+        ActionBar actionBar = getSupportActionBar();
+        if (actionBar == null) {
+            Toolbar toolbar = new Toolbar(this);
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.addView(toolbar, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    Util.dips2pixels(56, this)));
+            content.addView(composeView, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+            setContentView(content);
+            setSupportActionBar(toolbar);
+            actionBar = getSupportActionBar();
+        } else {
+            setContentView(composeView);
+        }
+
+        if (actionBar != null) {
+            actionBar.setTitle(R.string.setting_wg_profile_manage);
+            actionBar.setDisplayHomeAsUpEnabled(true);
+        }
 
         manager = new WgProfileManager(this);
         manager.migrateIfNeeded();
