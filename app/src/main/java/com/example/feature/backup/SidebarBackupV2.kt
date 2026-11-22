@@ -142,7 +142,7 @@ object SidebarBackupV2 {
             .put("elementMetadata", exportAllElementMetadata(context, prefs))
             .put("customIcons", exportCustomIconFiles(context))
             .put("savedLinkIds", JSONArray().apply {
-                ElementMetadataStore.getSavedLinkIds(context).distinct().sorted().forEach(::put)
+                ElementMetadataStore.getSavedLinkIds(context).filter { it.isNotBlank() }.distinct().sorted().forEach(::put)
             })
 
         if (hasSchedulerPage) {
@@ -416,7 +416,10 @@ object SidebarBackupV2 {
                 metadata.browserPackage?.takeIf { it.isNotBlank() }?.let { item.put("browserPackage", it) }
                 metadata.account?.takeIf { it.isNotBlank() }?.let { item.put("account", it) }
                 val iconFile = metadata.iconPath.takeIf { it.isNotBlank() }?.let(::File)
-                if (iconFile != null && iconFile.isFile && iconFile.length() in 1..MAX_ICON_BYTES.toLong()) {
+                if (iconFile != null && iconFile.exists()) {
+                    require(iconFile.isFile && iconFile.length() in 1..MAX_ICON_BYTES.toLong()) {
+                        "A Sidebar element icon is too large or unreadable to back up: ${metadata.id}"
+                    }
                     item.put("iconBase64", Base64.encodeToString(iconFile.readBytes(), Base64.NO_WRAP))
                 }
                 put(item)
