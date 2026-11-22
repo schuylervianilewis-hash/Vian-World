@@ -276,7 +276,11 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         } else {
             when (intent.action) {
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
-                    handleSyncPrefIntent(intent)
+                    // Large bulk-sync payloads are applied by the package broadcast receiver
+                    // after this start request ensures the resident service is running.
+                    if (intent.getStringExtra(OverlaySyncManager.EXTRA_TYPE) != "SYNC_BULK_FILE") {
+                        handleSyncPrefIntent(intent)
+                    }
                 }
                 ACTION_RELOAD_HANDLES -> {
                     applyOverlayAccessPolicy()
