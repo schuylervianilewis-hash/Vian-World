@@ -117,7 +117,7 @@ object SidebarBackupV2 {
                         .put("containerId", containerId)
                         .put("selectedPageId", selectedPageId ?: JSONObject.NULL)
                         .put("openingFaceId", openingFaceId ?: JSONObject.NULL)
-                        .put("settings", exportContainerSettings(prefs, containerId, primaryContainerId))
+                        .put("settings", exportContainerSettings(prefs, containerId))
                         .put("pages", pagesJson)
                         .put("pageContent", pageContentJson)
                 )
@@ -158,8 +158,7 @@ object SidebarBackupV2 {
 
     private fun exportContainerSettings(
         prefs: SharedPreferences,
-        containerId: String,
-        primaryContainerId: String
+        containerId: String
     ): JSONObject {
         return JSONObject()
             .put("sidebarColor", readSetting(prefs, "handle_${containerId}_sidebar_color", "sidebar_color", true))
@@ -815,7 +814,7 @@ object SidebarBackupV2 {
             val pagesKey = HandleManager.getContainerPagesKey(containerId)
             bulkValues[pagesKey] = pageStackJson
             bulkRemovals.remove(pagesKey)
-            restoreContainerSettings(containerId, container.optJSONObject("settings") ?: JSONObject(), exactRollback, bulkValues, bulkRemovals)
+            restoreContainerSettings(containerId, container.optJSONObject("settings") ?: JSONObject(), bulkValues, bulkRemovals)
 
             val restoredIds = backupPages
                 .filter { saved -> restoredStack.any { it.pageId == saved.pageId && it.pageType == saved.pageType } }
@@ -952,7 +951,6 @@ object SidebarBackupV2 {
     private fun restoreContainerSettings(
         containerId: String,
         settings: JSONObject,
-        exactRollback: Boolean,
         bulkValues: MutableMap<String, Any>,
         bulkRemovals: MutableSet<String>
     ) {
