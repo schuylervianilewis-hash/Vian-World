@@ -72,6 +72,10 @@ object OverlaySyncManager {
         values.forEach { (key, value) -> putValue(localEditor, key, value) }
         removals.forEach(localEditor::remove)
         check(localEditor.commit()) { "Could not apply bulk preference updates" }
+        check(values.all { (key, value) -> valueMatches(localPrefs, key, value) }) {
+            "Bulk preference read-back failed"
+        }
+        check(removals.none(localPrefs::contains)) { "Bulk preference removal read-back failed" }
         IconCacheManager.invalidateMemoryCache()
 
         val syncDir = File(context.cacheDir, "sidebar_pref_sync")
@@ -165,8 +169,44 @@ object OverlaySyncManager {
             require(key.isNotBlank() && key.length <= 512) { "Invalid bulk preference removal key" }
             editor.remove(key)
         }
-        return editor.commit()
+        if (!editor.commit()) return false
+        val targetPrefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
+        val readBackKeys = values.keys()
+        while (readBackKeys.hasNext()) {
+            val key = readBackKeys.next()
+            if (!encodedValueMatches(targetPrefs, key, values.getJSONObject(key))) return false
+        }
+        for (index in 0 until removals.length()) {
+            if (targetPrefs.contains(removals.getString(index))) return false
+        }
+        return true
     }
+
+    private fun valueMatches(prefs: SharedPreferences, key: String, value: Any): Boolean =
+        when (value) {
+            is String -> prefs.getString(key, null) == value
+            is Int -> prefs.getInt(key, Int.MIN_VALUE) == value
+            is Long -> prefs.getLong(key, Long.MIN_VALUE) == value
+            is Float -> kotlin.math.abs(prefs.getFloat(key, Float.NaN) - value) < 0.0001f
+            is Boolean -> prefs.getBoolean(key, !value) == value
+            is Set<*> -> prefs.getStringSet(key, null) == value.filterIsInstance<String>().toSet()
+            else -> false
+        }
+
+    private fun encodedValueMatches(prefs: SharedPreferences, key: String, item: JSONObject): Boolean =
+        when (item.optString("type")) {
+            "STRING" -> prefs.getString(key, null) == item.optString("value")
+            "INT" -> prefs.getInt(key, Int.MIN_VALUE) == item.optInt("value", Int.MAX_VALUE)
+            "LONG" -> prefs.getLong(key, Long.MIN_VALUE) == item.optLong("value", Long.MAX_VALUE)
+            "FLOAT" -> kotlin.math.abs(prefs.getFloat(key, Float.NaN) - item.optDouble("value").toFloat()) < 0.0001f
+            "BOOLEAN" -> prefs.getBoolean(key, !item.optBoolean("value")) == item.optBoolean("value")
+            "STRING_SET" -> {
+                val array = item.optJSONArray("value") ?: JSONArray()
+                val expected = (0 until array.length()).map { array.optString(it) }.toSet()
+                prefs.getStringSet(key, null) == expected
+            }
+            else -> false
+        }
 
     private fun putValue(editor: SharedPreferences.Editor, key: String, value: Any) {
         when (value) {
