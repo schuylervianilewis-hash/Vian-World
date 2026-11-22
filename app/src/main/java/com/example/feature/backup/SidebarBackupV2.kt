@@ -915,74 +915,78 @@ object SidebarBackupV2 {
     }
 
     private fun restoreContainerPageReference(
-        pageManager: PageManager,
         container: JSONObject,
         key: String,
         containerId: String,
         restoredIds: Set<String>,
         exactRollback: Boolean,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>,
         warnings: MutableSet<String>
     ) {
         val value = if (container.has(key) && !container.isNull(key)) container.optString(key) else null
+        val prefKey = if (key == "openingFaceId") {
+            HandleManager.getContainerOpeningFaceKey(containerId)
+        } else {
+            HandleManager.getContainerSelectedPageKey(containerId)
+        }
         if (value != null && value !in restoredIds) {
             warnings.add("Skipped $key for $containerId because its page is unavailable.")
             return
         }
         if (value != null) {
-            if (key == "openingFaceId") pageManager.saveOpeningFaceId(containerId, value)
-            else pageManager.saveSelectedPageId(containerId, value)
+            bulkValues[prefKey] = value
+            bulkRemovals.remove(prefKey)
         } else if (exactRollback) {
-            if (key == "openingFaceId") pageManager.saveOpeningFaceId(containerId, null)
-            else pageManager.saveSelectedPageId(containerId, null)
+            bulkValues.remove(prefKey)
+            bulkRemovals.add(prefKey)
         }
     }
 
     private fun restoreContainerSettings(
-        context: Context,
-        prefs: SharedPreferences,
         containerId: String,
         settings: JSONObject,
-        exactRollback: Boolean
+        exactRollback: Boolean,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>
     ) {
-        restoreSetting(context, settings, "sidebarColor", "handle_${containerId}_sidebar_color", "#1E1E2E", exactRollback)
-        restoreSetting(context, settings, "sidebarTransparency", "handle_${containerId}_sidebar_transparency", 0.9f, exactRollback)
-        restoreSetting(context, settings, "wrapContent", "handle_${containerId}_sidebar_wrap_content", true, exactRollback)
-        restoreSetting(context, settings, "height", "handle_${containerId}_sidebar_height", 280, exactRollback)
-        restoreSetting(context, settings, "columns", "handle_${containerId}_columns", 3, exactRollback)
+        restoreSetting(settings, "sidebarColor", "handle_${containerId}_sidebar_color", "#1E1E2E", exactRollback, bulkValues, bulkRemovals)
+        restoreSetting(settings, "sidebarTransparency", "handle_${containerId}_sidebar_transparency", 0.9f, exactRollback, bulkValues, bulkRemovals)
+        restoreSetting(settings, "wrapContent", "handle_${containerId}_sidebar_wrap_content", true, exactRollback, bulkValues, bulkRemovals)
+        restoreSetting(settings, "height", "handle_${containerId}_sidebar_height", 280, exactRollback, bulkValues, bulkRemovals)
+        restoreSetting(settings, "columns", "handle_${containerId}_columns", 3, exactRollback, bulkValues, bulkRemovals)
     }
 
     private fun restoreSetting(
-        context: Context,
         settings: JSONObject,
         name: String,
         key: String,
         defaultValue: Any,
-        exactRollback: Boolean
+        exactRollback: Boolean,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>
     ) {
         val setting = settings.optJSONObject(name) ?: JSONObject().put("present", false)
         val present = setting.optBoolean("present", false)
         if (!present && exactRollback) {
-            OverlaySyncManager.syncRemove(context, key)
+            bulkValues.remove(key)
+            bulkRemovals.add(key)
             return
         }
         val value = if (present) setting.opt("value") else defaultValue
-        when (value) {
-            is String -> OverlaySyncManager.syncString(context, key, value)
-            is Boolean -> OverlaySyncManager.syncBoolean(context, key, value)
-            is Int -> OverlaySyncManager.syncInt(context, key, value)
-            is Double -> OverlaySyncManager.syncFloat(context, key, value.toFloat())
-            is Float -> OverlaySyncManager.syncFloat(context, key, value)
-            else -> error("Unsupported Sidebar setting value for $name")
+        require(value is String || value is Boolean || value is Int || value is Double || value is Float) {
+            "Unsupported Sidebar setting value for $name"
         }
+        bulkValues[key] = value
+        bulkRemovals.remove(key)
     }
 
     private fun restorePageData(
-        context: Context,
-        prefs: SharedPreferences,
         containerId: String,
-        handleId: String,
         page: SidebarPage,
-        record: JSONObject
+        record: JSONObject,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>
     ): Int {
         val data = record.optJSONObject("data") ?: JSONObject()
         val pageId = page.pageId
@@ -997,25 +1001,17 @@ object SidebarBackupV2 {
                 val modified = if (data.optBoolean("modifiedPresent", false)) data.optBoolean("modified", false) else false
                 val gridItems = runCatching { JSONArray(grid).length() }.getOrDefault(0)
                 restoredItems += gridItems
-                val editor = prefs.edit()
-                    .putString("handle_${containerId}_hybrid_grid_${pageId}", grid)
-                    .putString("hg_${containerId}_${pageId}", elements)
-                    .putInt("handle_${containerId}_hybrid_grid_cols_${pageId}", columns)
-                    .putBoolean("handle_${containerId}_hybrid_grid_modified_${pageId}", modified)
+                bulkValues["handle_${containerId}_hybrid_grid_${pageId}"] = grid
+                bulkValues["hg_${containerId}_${pageId}"] = elements
+                bulkValues["handle_${containerId}_hybrid_grid_cols_${pageId}"] = columns
+                bulkValues["handle_${containerId}_hybrid_grid_modified_${pageId}"] = modified
+                val heightKey = "handle_${containerId}_hybrid_grid_height_${pageId}"
                 if (data.optBoolean("heightPresent", false)) {
-                    editor.putInt("handle_${containerId}_hybrid_grid_height_${pageId}", data.optInt("height", 0))
+                    bulkValues[heightKey] = data.optInt("height", 0)
+                    bulkRemovals.remove(heightKey)
                 } else {
-                    editor.remove("handle_${containerId}_hybrid_grid_height_${pageId}")
-                }
-                check(editor.commit()) { "Could not restore Hybrid Grid page $pageId" }
-                OverlaySyncManager.syncString(context, "handle_${containerId}_hybrid_grid_${pageId}", grid)
-                OverlaySyncManager.syncString(context, "hg_${containerId}_${pageId}", elements)
-                OverlaySyncManager.syncInt(context, "handle_${containerId}_hybrid_grid_cols_${pageId}", columns)
-                OverlaySyncManager.syncBoolean(context, "handle_${containerId}_hybrid_grid_modified_${pageId}", modified)
-                if (data.optBoolean("heightPresent", false)) {
-                    OverlaySyncManager.syncInt(context, "handle_${containerId}_hybrid_grid_height_${pageId}", data.optInt("height", 0))
-                } else {
-                    OverlaySyncManager.syncRemove(context, "handle_${containerId}_hybrid_grid_height_${pageId}")
+                    bulkValues.remove(heightKey)
+                    bulkRemovals.add(heightKey)
                 }
             }
             "widgets_grid" -> {
@@ -1023,25 +1019,22 @@ object SidebarBackupV2 {
                 val grid = if (gridPresent) sanitizeWidgetGridJsonForRestore(data.optString("gridJson", "[]")) else "[]"
                 val columns = if (data.optBoolean("columnsPresent", false)) data.optInt("columns", 4) else 4
                 restoredItems += runCatching { JSONArray(grid).length() }.getOrDefault(0)
-                check(prefs.edit()
-                    .putString("handle_${containerId}_widgets_grid_${pageId}", grid)
-                    .putInt("handle_${containerId}_widgets_grid_cols_${pageId}", columns)
-                    .commit()) { "Could not restore Widgets Grid page $pageId" }
-                OverlaySyncManager.syncString(context, "handle_${containerId}_widgets_grid_${pageId}", grid)
-                OverlaySyncManager.syncInt(context, "handle_${containerId}_widgets_grid_cols_${pageId}", columns)
+                bulkValues["handle_${containerId}_widgets_grid_${pageId}"] = grid
+                bulkValues["handle_${containerId}_widgets_grid_cols_${pageId}"] = columns
             }
             "apps" -> {
                 val appsPresent = data.optBoolean("appsJsonPresent", false)
                 val apps = if (appsPresent) sanitizeWidgetElementArrayForRestore(data.optString("appsJson", "[]")) else "[]"
                 val columnsPresent = data.optBoolean("pageColumnsPresent", false)
                 val columnsKey = "handle_${containerId}_page_${pageId}_columns"
-                val editor = prefs.edit().putString("sidebar_apps_${containerId}_${pageId}", apps)
-                if (columnsPresent) editor.putInt(columnsKey, data.optInt("pageColumns", 3))
-                else editor.remove(columnsKey)
-                check(editor.commit()) { "Could not restore Apps page $pageId" }
-                OverlaySyncManager.syncString(context, "sidebar_apps_${containerId}_${pageId}", apps)
-                if (columnsPresent) OverlaySyncManager.syncInt(context, columnsKey, data.optInt("pageColumns", 3))
-                else OverlaySyncManager.syncRemove(context, columnsKey)
+                bulkValues["sidebar_apps_${containerId}_${pageId}"] = apps
+                if (columnsPresent) {
+                    bulkValues[columnsKey] = data.optInt("pageColumns", 3)
+                    bulkRemovals.remove(columnsKey)
+                } else {
+                    bulkValues.remove(columnsKey)
+                    bulkRemovals.add(columnsKey)
+                }
                 restoredItems += runCatching { JSONArray(apps).length() }.getOrDefault(0)
             }
         }
