@@ -161,7 +161,11 @@ object OverlaySyncManager {
             require(key.isNotBlank() && key.length <= 512) { "Invalid bulk preference removal key" }
             editor.remove(key)
         }
-        return editor.commit()
+        val committed = editor.commit()
+        if (committed) {
+            context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName))
+        }
+        return committed
     }
 
     private fun putValue(editor: SharedPreferences.Editor, key: String, value: Any) {
