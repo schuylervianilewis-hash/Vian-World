@@ -1068,7 +1068,7 @@ object SidebarBackupV2 {
                     warnings.add("Android widget positions/provider hints were preserved; widget instances must be rebound on this device.")
                 }
                 restoredPlacements += placements.size
-                restoredGridItems += restorePageData(context, containerId, currentPage, record, bulkValues, bulkRemovals)
+                restoredGridItems += restorePageData(context, containerId, primaryContainerId, currentPage, record, bulkValues, bulkRemovals)
                 restoredPages++
             }
             restoredContainers++
@@ -1202,6 +1202,7 @@ object SidebarBackupV2 {
     private fun restorePageData(
         context: Context,
         containerId: String,
+        primaryContainerId: String,
         page: SidebarPage,
         record: JSONObject,
         bulkValues: MutableMap<String, Any>,
@@ -1225,6 +1226,25 @@ object SidebarBackupV2 {
         } else {
             bulkValues.remove(placementsKey)
             bulkRemovals.add(placementsKey)
+        }
+        if (containerId == primaryContainerId || containerId == "sidebar" || containerId == "handle_1") {
+            when (record.optString("kind")) {
+                "apps" -> {
+                    bulkRemovals.add("sidebar_apps_${pageId}")
+                    bulkRemovals.add("sidebar_apps")
+                }
+                "hybrid_grid" -> {
+                    bulkRemovals.add("hybrid_grid_${pageId}")
+                    bulkRemovals.add("hybrid_grid_cols_${pageId}")
+                    bulkRemovals.add("hybrid_grid_modified_${pageId}")
+                    bulkRemovals.add("hybrid_grid_height_${pageId}")
+                    bulkRemovals.add("hg_${pageId}")
+                }
+                "widgets_grid" -> {
+                    bulkRemovals.add("widgets_grid_${pageId}")
+                    bulkRemovals.add("widgets_grid_cols_${pageId}")
+                }
+            }
         }
         when (record.optString("kind")) {
             "hybrid_grid" -> {
