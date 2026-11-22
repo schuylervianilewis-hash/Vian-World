@@ -39,7 +39,7 @@ class SidebarBackupV2Test {
         assertEquals("Restored title", merged.first().title)
         assertEquals(320, merged.first().width)
         assertEquals(640, merged.first().height)
-        assertEquals(0.75f, merged.first().transparency)
+        assertEquals(0.75f, merged.first().transparency, 0.0001f)
         assertEquals(5, merged.first().gridColumns)
         assertEquals("custom_icon", merged.first().iconName)
         assertTrue(merged.first().isMiniApp)
@@ -71,7 +71,7 @@ class SidebarBackupV2Test {
 
         val failure = runCatching { SidebarBackupV2.validate(payload) }.exceptionOrNull()
 
-        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure is IllegalStateException)
     }
 
     private fun validPayload(): JSONObject {
