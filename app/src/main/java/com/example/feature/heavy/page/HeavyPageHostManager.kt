@@ -69,11 +69,21 @@ class HeavyPageHostManager private constructor(private val context: Context) {
 
     private val syncReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
-            if (intent?.action == com.example.core.OverlaySyncManager.ACTION_SYNC_PREF) {
-                val key = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_KEY) ?: ""
-                val value = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_VALUE) ?: ""
-                val type = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_TYPE) ?: ""
-                val prefs = context.getSharedPreferences("FloatingReaderPrefs", Context.MODE_PRIVATE)
+            if (intent?.action != com.example.core.OverlaySyncManager.ACTION_SYNC_PREF) return
+
+            val key = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_KEY) ?: ""
+            val value = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_VALUE) ?: ""
+            val type = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_TYPE) ?: ""
+            val prefName = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_PREF_NAME) ?: "FloatingReaderPrefs"
+
+            if (type == "SYNC_BULK_FILE") {
+                val path = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_FILE_PATH)
+                    ?: error("Bulk preference sync file path is missing")
+                check(com.example.core.OverlaySyncManager.applyBulkFile(context, prefName, path)) {
+                    "Could not apply bulk preference sync file"
+                }
+            } else {
+                val prefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
                 val editor = prefs.edit()
                 when (type) {
                     "STRING" -> editor.putString(key, value)
@@ -85,35 +95,15 @@ class HeavyPageHostManager private constructor(private val context: Context) {
                         editor.putStringSet(key, set)
                     }
                     "REMOVE" -> editor.remove(key)
-                    "SYNC_BULK_FILE" -> {
-                        val path = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_FILE_PATH)
-                            ?: error("Bulk preference sync file path is missing")
-                        check(com.example.core.OverlaySyncManager.applyBulkFile(context, "FloatingReaderPrefs", path)) {
-                            "Could not apply bulk preference sync file"
-                        }
-                    }
                 }
                 editor.commit()
-                if (type == "SYNC_BULK_FILE" || type == "RELOAD_ALL") {
-                    mainHandler.post {
-                        for (holder in activeEmbeddedHosts.values) {
-                            (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
-                        }
-                    }
-                }
-                if (key.contains("app_tracker") || key.contains("whitelist")) {                    mainHandler.post {
-                        for (holder in activeEmbeddedHosts.values) {
-                            (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
-                        }
-                    }
-                }
-                if (key.contains("app_tracker") || key.contains("whitelist")) {
-                    mainHandler.post {
-                        for (holder in activeEmbeddedHosts.values) {
-                            if (holder.pageView is AppTrackerPageView) {
-                                (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
-                            }
-                        }
+            }
+
+            if (type == "SYNC_BULK_FILE" || type == "RELOAD_ALL" ||
+                key.contains("app_tracker") || key.contains("whitelist")) {
+                mainHandler.post {
+                    for (holder in activeEmbeddedHosts.values) {
+                        (holder.pageView as? com.example.feature.sidebar.SidebarPageControllable)?.onPageSelected()
                     }
                 }
             }
