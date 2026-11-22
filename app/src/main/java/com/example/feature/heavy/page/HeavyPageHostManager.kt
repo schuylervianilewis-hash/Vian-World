@@ -79,8 +79,10 @@ class HeavyPageHostManager private constructor(private val context: Context) {
             if (type == "SYNC_BULK_FILE") {
                 val path = intent.getStringExtra(com.example.core.OverlaySyncManager.EXTRA_BULK_FILE_PATH)
                     ?: error("Bulk preference sync file path is missing")
-                check(com.example.core.OverlaySyncManager.applyBulkFile(context, prefName, path)) {
-                    "Could not apply bulk preference sync file"
+                runCatching {
+                    com.example.core.OverlaySyncManager.applyBulkFile(context, prefName, path)
+                }.onFailure {
+                    android.util.Log.e("HeavyPageHostManager", "Could not apply bulk preference sync file", it)
                 }
             } else {
                 val prefs = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
