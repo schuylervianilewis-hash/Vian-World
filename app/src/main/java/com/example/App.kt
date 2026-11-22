@@ -1,7 +1,6 @@
 package com.example
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Process
@@ -112,14 +111,9 @@ class App : FossifyApp() {
                 targetX: Float?,
                 targetY: Float?
             ) {
-                val intent = Intent(
-                    activity,
-                    com.example.feature.settings.AddElementActivity::class.java
-                ).putExtra("SIDEBAR_HOME_PICKER", true)
-                activity.startActivityForResult(
-                    intent,
-                    AddElementBridge.REQUEST_SIDEBAR_ELEMENT
-                )
+                // Preserve the target cell before opening Sidebar's picker.
+                // This method owns pending placement state and the result callback.
+                activity.showAddSidebarElementPicker(targetX, targetY)
             }
         })
     }
