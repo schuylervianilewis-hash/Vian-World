@@ -161,15 +161,12 @@ object SidebarBackupV2 {
         containerId: String,
         primaryContainerId: String
     ): JSONObject {
-        val primary = containerId == primaryContainerId ||
-            containerId == "sidebar" ||
-            containerId == "handle_1"
         return JSONObject()
-            .put("sidebarColor", readSetting(prefs, "handle_${containerId}_sidebar_color", "sidebar_color", primary))
-            .put("sidebarTransparency", readSetting(prefs, "handle_${containerId}_sidebar_transparency", "sidebar_transparency", primary))
-            .put("wrapContent", readSetting(prefs, "handle_${containerId}_sidebar_wrap_content", "sidebar_wrap_content", primary))
-            .put("height", readSetting(prefs, "handle_${containerId}_sidebar_height", "sidebar_height", primary))
-            .put("columns", readSetting(prefs, "handle_${containerId}_columns", "sidebar_columns", primary))
+            .put("sidebarColor", readSetting(prefs, "handle_${containerId}_sidebar_color", "sidebar_color", true))
+            .put("sidebarTransparency", readSetting(prefs, "handle_${containerId}_sidebar_transparency", "sidebar_transparency", true))
+            .put("wrapContent", readSetting(prefs, "handle_${containerId}_sidebar_wrap_content", "sidebar_wrap_content", true))
+            .put("height", readSetting(prefs, "handle_${containerId}_sidebar_height", "sidebar_height", true))
+            .put("columns", readSetting(prefs, "handle_${containerId}_columns", "sidebar_columns", true))
     }
 
     private fun readSetting(
@@ -959,36 +956,32 @@ object SidebarBackupV2 {
         bulkValues: MutableMap<String, Any>,
         bulkRemovals: MutableSet<String>
     ) {
-        restoreSetting(settings, "sidebarColor", "handle_${containerId}_sidebar_color", "#1E1E2E", exactRollback, bulkValues, bulkRemovals)
-        restoreSetting(settings, "sidebarTransparency", "handle_${containerId}_sidebar_transparency", 0.9f, exactRollback, bulkValues, bulkRemovals)
-        restoreSetting(settings, "wrapContent", "handle_${containerId}_sidebar_wrap_content", true, exactRollback, bulkValues, bulkRemovals)
-        restoreSetting(settings, "height", "handle_${containerId}_sidebar_height", 280, exactRollback, bulkValues, bulkRemovals)
-        restoreSetting(settings, "columns", "handle_${containerId}_columns", 3, exactRollback, bulkValues, bulkRemovals)
+        restoreSetting(settings, "sidebarColor", "handle_${containerId}_sidebar_color", bulkValues, bulkRemovals)
+        restoreSetting(settings, "sidebarTransparency", "handle_${containerId}_sidebar_transparency", bulkValues, bulkRemovals)
+        restoreSetting(settings, "wrapContent", "handle_${containerId}_sidebar_wrap_content", bulkValues, bulkRemovals)
+        restoreSetting(settings, "height", "handle_${containerId}_sidebar_height", bulkValues, bulkRemovals)
+        restoreSetting(settings, "columns", "handle_${containerId}_columns", bulkValues, bulkRemovals)
     }
 
     private fun restoreSetting(
         settings: JSONObject,
         name: String,
         key: String,
-        defaultValue: Any,
-        exactRollback: Boolean,
         bulkValues: MutableMap<String, Any>,
         bulkRemovals: MutableSet<String>
     ) {
         val setting = settings.optJSONObject(name) ?: JSONObject().put("present", false)
-        val present = setting.optBoolean("present", false)
-        if (!present && exactRollback) {
+        if (!setting.optBoolean("present", false)) {
             bulkValues.remove(key)
             bulkRemovals.add(key)
             return
         }
-        val rawValue = if (present) setting.opt("value") else defaultValue
+        val rawValue = setting.opt("value")
         val value = if (rawValue is Double) rawValue.toFloat() else rawValue
         require(value is String || value is Boolean || value is Int || value is Float) {
             "Unsupported Sidebar setting value for $name"
         }
         bulkValues[key] = value
-        bulkRemovals.remove(key)
         bulkRemovals.remove(key)
     }
 
