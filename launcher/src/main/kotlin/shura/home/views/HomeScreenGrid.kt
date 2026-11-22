@@ -2450,6 +2450,92 @@ class HomeScreenGrid(context: Context, attrs: AttributeSet, defStyle: Int) :
     }
 
     /**
+     * Maps a long-press position to the closest rendered grid cell, including the dock.
+     *
+     * Coordinates are in this view's space. Cell rectangles exclude the launcher's
+     * artificial side/top margins, so remove those margins before comparing.
+     */
+    private fun findCellNearestPosition(x: Float, y: Float): Point? {
+        if (cells.isEmpty()) {
+            fillCellSizes()
+        }
+        if (cells.isEmpty()) return null
+
+        val adjustedX = (x - sideMargins.left).toInt()
+        val adjustedY = (y - sideMargins.top).toInt()
+
+        return cells.entries.minByOrNull { entry ->
+            val rect = entry.value
+            val dx = when {
+                adjustedX < rect.left -> rect.left - adjustedX
+                adjustedX >= rect.right -> adjustedX - rect.right + 1
+                else -> 0
+            }
+            val dy = when {
+                adjustedY < rect.top -> rect.top - adjustedY
+                adjustedY >= rect.bottom -> adjustedY - rect.bottom + 1
+                else -> 0
+            }
+            dx.toLong() * dx.toLong() + dy.toLong() * dy.toLong()
+        }?.key
+    }
+
+    /** True when the supplied position resolves to the dock row. */
+    fun isDockPosition(x: Float, y: Float): Boolean {
+        return findCellNearestPosition(x, y)?.y == rowCount - 1
+    }
+
+    /**
+     * Resolves an add-to-home target to the nearest free cell in the same area
+     * (desktop page or dock). Unlike the legacy desktop-only resolver, this
+     * preserves dock targets and never silently falls back to the first row.
+     */
+    fun findNearestEmptyCellIncludingDock(x: Float, y: Float): Point? {
+        val target = findCellNearestPosition(x, y) ?: return null
+
+        if (target.y == rowCount - 1) {
+            val occupiedDockColumns = HashSet<Int>()
+            gridItems.filter { it.parentId == null && it.docked }.forEach { item ->
+                for (column in item.left..item.right) {
+                    occupiedDockColumns.add(column)
+                }
+            }
+
+            return (0 until dockColumnCount)
+                .filterNot { occupiedDockColumns.contains(it) }
+                .minWithOrNull(
+                    compareBy<Int>(
+                        { abs(it - target.x) },
+                        { it }
+                    )
+                )
+                ?.let { Point(it, rowCount - 1) }
+        }
+
+        val occupied = HashSet<Point>()
+        gridItems.filterVisibleOnCurrentPageOnly()
+            .filter { it.parentId == null && !it.docked }
+            .forEach { item ->
+                for (column in item.left..item.right) {
+                    for (row in item.top..item.bottom) {
+                        occupied.add(Point(column, row))
+                    }
+                }
+            }
+
+        return (0 until (rowCount - 1))
+            .flatMap { row -> (0 until columnCount).map { column -> Point(column, row) } }
+            .filterNot { occupied.contains(it) }
+            .minWithOrNull(
+                compareBy<Point>(
+                    { abs(it.x - target.x) + abs(it.y - target.y) },
+                    { it.y },
+                    { it.x }
+                )
+            )
+    }
+
+    /**
      * Returns the closest available desktop cell to the supplied long-press position.
      * Unlike getTargetCell, this also works when the original cell is occupied.
      */
