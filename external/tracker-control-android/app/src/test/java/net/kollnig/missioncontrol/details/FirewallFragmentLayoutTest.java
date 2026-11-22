@@ -57,9 +57,9 @@ public class FirewallFragmentLayoutTest {
 
         LinearLayout actions = (LinearLayout) root.getChildAt(0);
         assertEquals(3, actions.getChildCount());
-        assertActionButton(activity, actions, 0, R.string.firewall_block_all);
+        assertActionButton(activity, actions, 0, R.string.firewall_direct_all);
         assertActionButton(activity, actions, 1, R.string.firewall_vpn_all);
-        assertActionButton(activity, actions, 2, R.string.firewall_direct_all);
+        assertActionButton(activity, actions, 2, R.string.firewall_block_all);
 
         LinearLayout.LayoutParams listParams =
                 (LinearLayout.LayoutParams) root.getChildAt(1).getLayoutParams();
