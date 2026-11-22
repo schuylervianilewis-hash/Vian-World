@@ -1605,6 +1605,22 @@ object SidebarBackupV2 {
                 }
                 count
             }
+            val readBack = dao.getAllTasks().first()
+            if (exactRollback) {
+                require(readBack.size == tasks.size) { "Scheduler rollback count read-back failed" }
+                tasks.forEach { expected ->
+                    require(readBack.any { it.id == expected.id && taskFingerprint(it) == taskFingerprint(expected) }) {
+                        "Scheduler rollback read-back failed for task ${expected.id}"
+                    }
+                }
+            } else {
+                val expectedFingerprints = tasks.map(::taskFingerprint).toSet()
+                val actualFingerprints = readBack.map(::taskFingerprint).toSet()
+                require(actualFingerprints.containsAll(expectedFingerprints)) {
+                    "Scheduler restore read-back is missing one or more tasks"
+                }
+            }
+            count
         }
 
         val tagsPresent = scheduler.optBoolean("tagsPresent", false)
