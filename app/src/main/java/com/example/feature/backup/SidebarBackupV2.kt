@@ -754,6 +754,8 @@ object SidebarBackupV2 {
         val manager = HandleManager.getInstance(context)
         val pageManager = PageManager.getInstance(context)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val bulkValues = linkedMapOf<String, Any>()
+        val bulkRemovals = linkedSetOf<String>()
         val backupContainers = payload.getJSONArray("containers")
         val backupContainerIds = (0 until backupContainers.length()).map {
             backupContainers.getJSONObject(it).getString("containerId")
@@ -763,7 +765,8 @@ object SidebarBackupV2 {
         SidebarBackupModule.restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
 
         if (exactRollback) {
-            previousContainerIds.filterNot { it in backupContainerIds }.forEach { clearContainerData(prefs, it) }
+            previousContainerIds.filterNot { it in backupContainerIds }
+                .forEach { clearContainerData(prefs, it, bulkRemovals) }
         }
 
         var restoredContainers = 0
@@ -801,20 +804,23 @@ object SidebarBackupV2 {
             } else {
                 val backupPageIds = backupPages.map { it.pageId }.toSet()
                 currentPages.filterNot { it.pageId in backupPageIds }.forEach { stale ->
-                    clearPageData(prefs, containerId, stale.pageId)
+                    clearPageData(prefs, containerId, stale.pageId, bulkRemovals)
                 }
             }
 
             val restoredStack = if (exactRollback) backupPages else mergePageStack(currentPages, backupPages)
-            pageManager.savePageStack(containerId, restoredStack)
-            restoreContainerSettings(context, prefs, containerId, container.optJSONObject("settings") ?: JSONObject(), exactRollback)
+            val pageStackJson = JSONArray().apply {
+                restoredStack.forEachIndexed { index, page -> put(page.copy(order = index).toJson()) }
+            }.toString()
+            bulkValues[HandleManager.getContainerPagesKey(containerId)] = pageStackJson
+            restoreContainerSettings(containerId, container.optJSONObject("settings") ?: JSONObject(), exactRollback, bulkValues, bulkRemovals)
 
             val restoredIds = backupPages
                 .filter { saved -> restoredStack.any { it.pageId == saved.pageId && it.pageType == saved.pageType } }
                 .map { it.pageId }
                 .toSet()
-            restoreContainerPageReference(pageManager, container, "openingFaceId", containerId, restoredIds, exactRollback, warnings)
-            restoreContainerPageReference(pageManager, container, "selectedPageId", containerId, restoredIds, exactRollback, warnings)
+            restoreContainerPageReference(container, "openingFaceId", containerId, restoredIds, exactRollback, bulkValues, bulkRemovals, warnings)
+            restoreContainerPageReference(container, "selectedPageId", containerId, restoredIds, exactRollback, bulkValues, bulkRemovals, warnings)
 
             val pageContent = container.getJSONArray("pageContent")
             for (contentIndex in 0 until pageContent.length()) {
@@ -828,7 +834,13 @@ object SidebarBackupV2 {
                 }
 
                 val placementsJson = record.getJSONArray("elements")
-                val placements = (0 until placementsJson.length()).map { ElementPlacement.fromJson(placementsJson.getJSONObject(it)) }
+                val placements = (0 until placementsJson.length()).map {
+                    ElementPlacement.fromJson(placementsJson.getJSONObject(it))
+                }
+                val placementsKey = HandleManager.getContainerPageElementsKey(containerId, pageId)
+                bulkValues[placementsKey] = JSONArray().apply {
+                    placements.forEach { put(it.toJson()) }
+                }.toString()
                 if (currentPage.pageType == PageTypes.WIDGET || currentPage.pageType == "single_widget") {
                     warnings.add("Single Android widget page $pageId was preserved as metadata but must be rebound on this device.")
                 }
@@ -841,31 +853,44 @@ object SidebarBackupV2 {
                 if (hasWidgetContent(record)) {
                     warnings.add("Android widget positions/provider hints were preserved; widget instances must be rebound on this device.")
                 }
-                ElementPlacementManager.getInstance(context).saveElements(containerId, pageId, placements)
                 restoredPlacements += placements.size
-                restoredGridItems += restorePageData(context, prefs, containerId, handleId, currentPage, record)
+                restoredGridItems += restorePageData(containerId, currentPage, record, bulkValues, bulkRemovals)
                 restoredPages++
             }
             restoredContainers++
         }
 
+        val metadataKeysBefore = prefs.all.keys.filter { it.startsWith("elem_meta_") }.toSet()
         restoreElementMetadata(context, prefs, payload.optJSONArray("elementMetadata") ?: JSONArray(), exactRollback, warnings)
+        val metadataKeysAfter = prefs.all.keys.filter { it.startsWith("elem_meta_") }.toSet()
+        if (exactRollback) bulkRemovals.addAll(metadataKeysBefore - metadataKeysAfter)
+        metadataKeysAfter.forEach { key ->
+            (prefs.all[key] as? String)?.let { bulkValues[key] = it }
+        }
+
         restoreCustomIconFiles(context, payload.optJSONArray("customIcons") ?: JSONArray(), exactRollback)
-        restoreSavedLinks(context, prefs, payload.optJSONArray("savedLinkIds") ?: JSONArray(), exactRollback)
+        restoreSavedLinks(context, payload.optJSONArray("savedLinkIds") ?: JSONArray(), exactRollback, bulkValues)
 
         var schedulerCount = 0
         if (payload.has("scheduler")) {
-            schedulerCount = restoreScheduler(context, prefs, payload.getJSONObject("scheduler"), exactRollback)
-        } else if (exactRollback) {
-            // A pre-restore snapshot without a Scheduler page must return to its original no-op state.
+            schedulerCount = restoreScheduler(
+                context,
+                prefs,
+                payload.getJSONObject("scheduler"),
+                exactRollback,
+                bulkValues,
+                bulkRemovals
+            )
         }
 
         if (payload.has("appTrackerWhitelist")) {
-            restoreAppTrackerWhitelist(context, prefs, payload.getJSONArray("appTrackerWhitelist"), exactRollback)
+            restoreAppTrackerWhitelist(prefs, payload.getJSONArray("appTrackerWhitelist"), exactRollback, bulkValues)
         }
 
+        // One sync transaction updates Main and Heavy process preference caches, then refreshes
+        // the active page once. This avoids a handle detach/reattach for every restored key.
+        OverlaySyncManager.syncBulk(context, bulkValues, bulkRemovals)
         IconCacheManager.invalidateMemoryCache()
-        OverlaySyncManager.triggerReload(context)
         context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName))
 
         val details = listOf(
