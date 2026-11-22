@@ -64,6 +64,26 @@ class SidebarBackupV2Test {
     }
 
     @Test
+    fun acceptsEarlierSchemaTwoPayloadWithoutNotificationFilters() {
+        val payload = validPayload()
+        payload.put("schemaVersion", 2)
+        payload.remove("notificationFilters")
+
+        SidebarBackupV2.validate(payload)
+    }
+
+    @Test
+    fun rejectsInvalidNotificationFilterPackageNames() {
+        val payload = validPayload()
+        payload.getJSONObject("notificationFilters")
+            .getJSONArray("sidebarHiddenPackages")
+            .put("../not-a-package")
+
+        val failure = runCatching { SidebarBackupV2.validate(payload) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
     fun acceptsPersistedContainerForGestureThatDoesNotCurrentlyOpenSidebar() {
         val payload = validPayload()
         val containers = payload.getJSONArray("containers")
@@ -216,5 +236,10 @@ class SidebarBackupV2Test {
             .put("elementMetadata", JSONArray())
             .put("customIcons", JSONArray())
             .put("savedLinkIds", JSONArray())
+            .put("notificationFilters", JSONObject()
+                .put("sidebarHiddenPresent", true)
+                .put("sidebarHiddenPackages", JSONArray().put("com.example.hidden"))
+                .put("historyHiddenPresent", false)
+                .put("historyHiddenPackages", JSONArray()))
     }
 }
