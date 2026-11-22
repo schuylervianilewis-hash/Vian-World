@@ -206,6 +206,7 @@ object SidebarBackupV2 {
             PageTypes.HYBRID_GRID, "hybrid_grid", "default_hybrid", "tools" -> "hybrid_grid"
             PageTypes.WIDGETS_GRID, "widgets_grid", "widgets" -> "widgets_grid"
             PageTypes.APPS, "apps", "apps_grid" -> "apps"
+            PageTypes.WIDGET, "widget", "single_widget" -> "widget_page"
             else -> "none"
         }
         val data = JSONObject()
@@ -267,6 +268,16 @@ object SidebarBackupV2 {
                 if (gridRaw != null) data.put("gridJson", sanitizeWidgetGridJson(context, gridRaw))
                 data.put("columnsPresent", columns != null)
                 if (columns != null) data.put("columns", columns)
+            }
+            "widget_page" -> {
+                val widgetId = page.pageId.toIntOrNull()
+                val provider = widgetId?.takeIf { it >= 0 }?.let { id ->
+                    runCatching {
+                        AppWidgetManager.getInstance(context).getAppWidgetInfo(id)?.provider?.flattenToString()
+                    }.getOrNull()
+                }
+                data.put("providerPresent", provider != null)
+                if (!provider.isNullOrBlank()) data.put("provider", provider.take(512))
             }
             "apps" -> {
                 val pageId = page.pageId
@@ -594,6 +605,7 @@ object SidebarBackupV2 {
             PageTypes.HYBRID_GRID, "hybrid_grid", "default_hybrid", "tools" -> "hybrid_grid"
             PageTypes.WIDGETS_GRID, "widgets_grid", "widgets" -> "widgets_grid"
             PageTypes.APPS, "apps", "apps_grid" -> "apps"
+            PageTypes.WIDGET, "widget", "single_widget" -> "widget_page"
             else -> "none"
         }
         require(kind == expectedKind) { "Unsupported page content kind for ${page.pageType}" }
@@ -614,6 +626,12 @@ object SidebarBackupV2 {
             "apps" -> {
                 validateOptionalStringArray(data, "appsJsonPresent", "appsJson", MAX_GRID_ITEMS, 512)
                 validateOptionalInt(data, "pageColumnsPresent", "pageColumns", 1..12)
+            }
+            "widget_page" -> {
+                val providerPresent = data.optBoolean("providerPresent", false)
+                if (providerPresent) require(data.optString("provider").length in 1..512) {
+                    "Invalid single-widget provider hint"
+                } else require(!data.has("provider")) { "Unexpected single-widget provider hint" }
             }
         }
     }
@@ -1007,6 +1025,7 @@ object SidebarBackupV2 {
 
     private fun hasWidgetContent(record: JSONObject): Boolean {
         val elements = record.optJSONArray("elements") ?: JSONArray()
+        if (record.optString("kind") == "widget_page") return true
         if ((0 until elements.length()).any { elements.optJSONObject(it)?.optString("actionKey")?.startsWith("widget:") == true }) {
             return true
         }
