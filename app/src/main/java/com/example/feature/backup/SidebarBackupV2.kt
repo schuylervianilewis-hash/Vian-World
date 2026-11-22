@@ -1107,8 +1107,6 @@ object SidebarBackupV2 {
         // One sync transaction updates Main and Heavy process preference caches, then refreshes
         // the active page once. This avoids a handle detach/reattach for every restored key.
         OverlaySyncManager.syncBulk(context, bulkValues, bulkRemovals)
-        IconCacheManager.invalidateMemoryCache()
-        context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName))
 
         val metadataCount = payload.optJSONArray("elementMetadata")?.length() ?: 0
         val iconCount = payload.optJSONArray("customIcons")?.length() ?: 0
