@@ -496,22 +496,12 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 // currently visible Sidebar state, not only reattach trigger handles.
                 SidebarManager.getInstance(this).refreshPages()
             }
-            "SYNC_BULK" -> {
-                val bundle = intent.getBundleExtra(OverlaySyncManager.EXTRA_BULK_VALUES)
-                val editor = targetPrefs.edit()
-                bundle?.keySet()?.forEach { prefKey ->
-                    when (val prefValue = bundle.get(prefKey)) {
-                        is String -> editor.putString(prefKey, prefValue)
-                        is Int -> editor.putInt(prefKey, prefValue)
-                        is Long -> editor.putLong(prefKey, prefValue)
-                        is Float -> editor.putFloat(prefKey, prefValue)
-                        is Boolean -> editor.putBoolean(prefKey, prefValue)
-                        is ArrayList<*> -> editor.putStringSet(prefKey, prefValue.filterIsInstance<String>().toSet())
-                    }
+            "SYNC_BULK_FILE" -> {
+                val path = intent.getStringExtra(OverlaySyncManager.EXTRA_BULK_FILE_PATH)
+                    ?: error("Bulk preference sync file path is missing")
+                check(OverlaySyncManager.applyBulkFile(this, prefName, path)) {
+                    "Could not apply bulk preference sync file"
                 }
-                intent.getStringArrayListExtra(OverlaySyncManager.EXTRA_BULK_REMOVE_KEYS)
-                    ?.forEach(editor::remove)
-                check(editor.commit()) { "Could not apply bulk preference sync" }
                 SidebarManager.getInstance(this).refreshPages()
             }
             "SYNC_HANDLE" -> {
