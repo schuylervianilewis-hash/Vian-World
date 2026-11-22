@@ -54,7 +54,7 @@ object SidebarBackupV2 {
     private val handleIdPattern = Regex("^handle_[1-9][0-9]{0,2}$")
     private val pageIdPattern = Regex("^[a-zA-Z0-9_.:-]{1,128}$")
     private val pageTypePattern = Regex("^[a-zA-Z0-9_]{1,64}$")
-    private val actionPattern = Regex("^[a-zA-Z0-9_.:-]{1,512}$")
+    private val actionPattern = Regex("^[a-zA-Z0-9_./:-]{1,512}$")
     private val gestureSet = HandleGestures.ALL.toSet()
     private val safeIconNamePattern = Regex("^[a-zA-Z0-9._-]{1,256}\\.webp$")
 
