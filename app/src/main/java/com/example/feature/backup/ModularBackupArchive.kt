@@ -41,7 +41,7 @@ object ModularBackupArchive {
     private val currentModuleSchemas = mapOf(
         MODULE_LAUNCHER to 2,
         MODULE_FIREWALL to 1,
-        MODULE_SIDEBAR to 2
+        MODULE_SIDEBAR to 3
     )
 
     data class Parsed(
