@@ -366,3 +366,30 @@ Capped at 500 lines per file.
 * How it was verified: Local JVM unit test suite (78/78 tests passed in `FloatingMiniAppFrameworkTest`) and clean `compile_applet` compilation — on-device claim only / not tested on physical hardware. Physical on-device execution required to observe soft keyboard behavior with real Android IMEs and Settings intent dispatching across OEM ROMs.
 * Any deviation from what was requested, and why: None.
 * Any known issue or follow-up needed: Physical on-device verification of soft keyboard interactions and Settings intent launches.
+
+
+---
+
+### Receipt 103 — WireGuard Import Launch Crash & Launcher Target Placement
+
+* Timestamp: 2026-11-23 (time not recorded)
+* One-line summary of what was requested: Resolve the on-device WireGuard profile import crash before the Android document picker opens, and fix launcher Sidebar additions being inserted at the first/top row instead of their requested location.
+* Exact files touched:
+  - `app/src/main/java/com/example/App.kt`
+  - `external/tracker-control-android/app/src/main/java/net/kollnig/missioncontrol/ActivityWireGuardProfiles.java`
+  - `external/tracker-control-android/app/src/test/java/net/kollnig/missioncontrol/ActivityWireGuardProfilesThemeTest.java`
+  - `receipts/RECEIPTS_100.md`
+* What was actually done — factual, not persuasive:
+  - Launcher placement root cause: the host application's custom `AddElementBridge` delegate launched `AddElementActivity` directly and discarded `targetX`/`targetY`. This bypassed `MainActivity.showAddSidebarElementPicker()`, which owns `pendingSidebarElementPlacement`. The result handler therefore received no preferred cell and fell back to `findFirstEmptyCell()`, placing the new item at the first available cell.
+  - Launcher repair: route the custom delegate through `activity.showAddSidebarElementPicker(targetX, targetY)`. This reuses the existing placement-aware path, preserves the selected coordinates, and retains the existing result flow.
+  - WireGuard crash root cause: `ActivityWireGuardProfiles.onCreate()` called `getSupportActionBar().setTitle()` and `setDisplayHomeAsUpEnabled()` without ensuring that the effective host/library theme had created an AppCompat ActionBar. The device crash report showed the ActionBar was null at the first call, before the file picker could be launched.
+  - WireGuard repair: when no decor ActionBar exists, install a local AppCompat `Toolbar` above the existing Compose profile screen and register it with `setSupportActionBar()`. Preserve the existing title and up-navigation behaviour. Do not change the global Firewall theme.
+  - Test repair: retain the manifest theme assertion and add a Robolectric activity-creation test that asserts the runtime SupportActionBar exists and has the expected profile-management title. This tests the behaviour that the earlier theme-ID-only test missed.
+  - The confirmed Firewall action ordering and disabled-VPN explanatory toast were reported working on the user's device and were not changed.
+* How it was verified: GitHub source inspection established both root causes. Changes and a runtime regression test were committed to the working branch. CI/build/test results are pending at receipt creation; no physical-device verification of either repair has yet occurred.
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed:
+  - Confirm on-device that WireGuard profile management opens without crashing and that Import from file launches Android's system document picker.
+  - Test selection, parsing, persistence and activation separately.
+  - Confirm Sidebar elements added from desktop cells and every dock position land in the intended cell; test occupied targets and the no-coordinate add flow.
+  - Re-run the full relevant GitHub Actions workflow and inspect the APK artifact before asking for device retest.
