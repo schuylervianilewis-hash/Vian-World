@@ -503,10 +503,12 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
             "SYNC_BULK_FILE" -> {
                 val path = intent.getStringExtra(OverlaySyncManager.EXTRA_BULK_FILE_PATH)
                     ?: error("Bulk preference sync file path is missing")
-                check(OverlaySyncManager.applyBulkFile(this, prefName, path)) {
-                    "Could not apply bulk preference sync file"
-                }
-                SidebarManager.getInstance(this).refreshPages()
+                val applied = runCatching {
+                    OverlaySyncManager.applyBulkFile(this, prefName, path)
+                }.onFailure {
+                    android.util.Log.e("HandleService", "Could not apply bulk preference sync file", it)
+                }.getOrDefault(false)
+                if (applied) SidebarManager.getInstance(this).refreshPages()
             }
             "SYNC_HANDLE" -> {
                 val bundle = intent.extras
