@@ -605,7 +605,7 @@ object SidebarBackupV2 {
                 val page = pagesById[pageId] ?: error("Page content references an unknown page")
                 require(record.optString("pageType") == page.pageType) { "Page content type mismatch" }
                 require(seenContent.add(pageId)) { "Duplicate page content record" }
-                validatePageContent(record, page)
+                validatePageContent(record, page, payload.optInt("schemaVersion", 2))
             }
             require(seenContent == pagesById.keys) { "A configured page is missing its content record" }
         }
@@ -817,7 +817,7 @@ object SidebarBackupV2 {
         }
     }
 
-    private fun validatePageContent(record: JSONObject, page: SidebarPage) {
+    private fun validatePageContent(record: JSONObject, page: SidebarPage, schemaVersion: Int) {
         val elements = record.optJSONArray("elements") ?: error("Page element placements are missing")
         val elementsPresent = if (record.has("elementsPresent")) record.optBoolean("elementsPresent") else elements.length() > 0
         if (!elementsPresent) require(elements.length() == 0) { "Absent page elements cannot contain records" }
@@ -868,7 +868,7 @@ object SidebarBackupV2 {
                 if (data.has("widgetElementsJsonPresent") || data.has("widgetElementsJson")) {
                     validateOptionalStringArray(data, "widgetElementsJsonPresent", "widgetElementsJson", MAX_GRID_ITEMS, 512)
                 } else {
-                    require(record.optInt("schemaVersion", 2) <= 2) { "Widgets Grid element IDs are missing" }
+                    require(schemaVersion <= 2) { "Widgets Grid element IDs are missing" }
                 }
             }
             "apps" -> {
