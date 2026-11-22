@@ -393,3 +393,25 @@ Capped at 500 lines per file.
   - Test selection, parsing, persistence and activation separately.
   - Confirm Sidebar elements added from desktop cells and every dock position land in the intended cell; test occupied targets and the no-coordinate add flow.
   - Re-run the full relevant GitHub Actions workflow and inspect the APK artifact before asking for device retest.
+
+
+---
+
+### Receipt 104 — WireGuard Regression Test Compile Fix
+
+* Timestamp: 2026-11-23
+* One-line summary of what was requested: Resolve the CI failure introduced by the new runtime ActionBar regression test.
+* Exact files touched:
+  - `external/tracker-control-android/app/src/test/java/net/kollnig/missioncontrol/ActivityWireGuardProfilesThemeTest.java`
+  - `receipts/RECEIPTS_100.md`
+* What was actually done — factual, not persuasive:
+  - Inspected GitHub Actions run #451 and downloaded the failing job log.
+  - The failure was a Java compile error in `ActivityWireGuardProfilesThemeTest`: `Robolectric.buildActivity(...)` was referenced without importing `org.robolectric.Robolectric`.
+  - Added the missing explicit import. No test logic or production source was changed in this correction.
+  - Commit for the import correction: `1eb953c8d982df3d91206b6e1745f5a490da6792`.
+* How it was verified: GitHub source read-back confirms the missing import is present. A new full workflow run for this exact commit has not yet been observed/completed; no test pass or APK artifact is claimed.
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed:
+  - Confirm a new Actions run is triggered for commit `1eb953c8d982df3d91206b6e1745f5a490da6792`.
+  - Inspect full CI result; if successful, verify APK artifact and checksum.
+  - Continue physical-device QA for WireGuard import and launcher target placement.
