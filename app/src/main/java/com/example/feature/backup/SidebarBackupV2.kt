@@ -1007,7 +1007,17 @@ object SidebarBackupV2 {
             .map { backupHandles.getJSONObject(it) }
             .first { it.getString("id") == "handle_1" }
         val backupPrimaryGestures = backupPrimaryHandle.getJSONObject("gestures")
-        val primaryGesture = HandleGestures.ALL.first {
+        // Match HandleManager.getFirstHandlePrimaryContainerId() exactly. The
+        // manager's legacy-key precedence is intentionally not HandleGestures.ALL order.
+        val primaryGesture = listOf(
+            HandleGestures.SWIPE_LEFT,
+            HandleGestures.SWIPE_RIGHT,
+            HandleGestures.TAP,
+            HandleGestures.DOUBLE_TAP,
+            HandleGestures.LONG_PRESS,
+            HandleGestures.SWIPE_UP,
+            HandleGestures.SWIPE_DOWN
+        ).first {
             backupPrimaryGestures.optString(it) == HandleManager.ACTION_OPEN_SIDEBAR
         }
         val primaryContainerId = HandleManager.getContainerId("handle_1", primaryGesture)
