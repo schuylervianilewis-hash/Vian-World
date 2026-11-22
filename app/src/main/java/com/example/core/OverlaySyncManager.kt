@@ -3,7 +3,10 @@ package com.example.core
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.os.Bundle
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.UUID
 
 object OverlaySyncManager {
     const val ACTION_SYNC_PREF = "com.example.ACTION_SYNC_PREF"
@@ -59,7 +62,7 @@ object OverlaySyncManager {
         removals: Set<String> = emptySet(),
         prefName: String = "FloatingReaderPrefs"
     ) {
-        require(values.size + removals.size <= 5000) { "Too many preference updates in one batch" }
+        require(values.size + removals.size <= 10000) { "Too many preference updates in one batch" }
         require((values.keys + removals).all { it.isNotBlank() && it.length <= 512 }) {
             "Invalid preference key in bulk sync"
         }
@@ -70,28 +73,42 @@ object OverlaySyncManager {
         removals.forEach(localEditor::remove)
         check(localEditor.commit()) { "Could not apply bulk preference updates" }
 
-        val bundle = Bundle()
+        val syncDir = File(context.cacheDir, "sidebar_pref_sync")
+        if (!syncDir.exists()) check(syncDir.mkdirs()) { "Could not create Sidebar sync directory" }
+        syncDir.listFiles()?.filter { it.isFile && System.currentTimeMillis() - it.lastModified() > 24L * 60L * 60L * 1000L }
+            ?.forEach { it.delete() }
+
+        val encodedValues = JSONObject()
         values.forEach { (key, value) ->
+            val encoded = JSONObject()
             when (value) {
-                is String -> bundle.putString(key, value)
-                is Int -> bundle.putInt(key, value)
-                is Long -> bundle.putLong(key, value)
-                is Float -> bundle.putFloat(key, value)
-                is Boolean -> bundle.putBoolean(key, value)
-                is Set<*> -> bundle.putStringArrayList(key, ArrayList(value.filterIsInstance<String>()))
+                is String -> encoded.put("type", "STRING").put("value", value)
+                is Int -> encoded.put("type", "INT").put("value", value)
+                is Long -> encoded.put("type", "LONG").put("value", value)
+                is Float -> encoded.put("type", "FLOAT").put("value", value.toDouble())
+                is Boolean -> encoded.put("type", "BOOLEAN").put("value", value)
+                is Set<*> -> encoded.put("type", "STRING_SET").put(
+                    "value",
+                    JSONArray().apply { value.filterIsInstance<String>().forEach(::put) }
+                )
                 else -> error("Unsupported bulk preference value for $key")
             }
+            encodedValues.put(key, encoded)
         }
-        val removeList = ArrayList(removals)
+        val payload = JSONObject()
+            .put("prefName", prefName)
+            .put("values", encodedValues)
+            .put("removals", JSONArray().apply { removals.sorted().forEach(::put) })
+        val syncFile = File(syncDir, "sidebar-sync-${UUID.randomUUID()}.json")
+        syncFile.writeText(payload.toString(), Charsets.UTF_8)
 
         val serviceIntent = Intent(context, HandleService::class.java).apply {
             action = ACTION_SYNC_PREF
             putExtra(EXTRA_KEY, "")
             putExtra(EXTRA_VALUE, "")
-            putExtra(EXTRA_TYPE, "SYNC_BULK")
+            putExtra(EXTRA_TYPE, "SYNC_BULK_FILE")
             putExtra(EXTRA_PREF_NAME, prefName)
-            putExtra(EXTRA_BULK_VALUES, bundle)
-            putStringArrayListExtra(EXTRA_BULK_REMOVE_KEYS, removeList)
+            putExtra(EXTRA_BULK_FILE_PATH, syncFile.absolutePath)
         }
         runCatching { context.startService(serviceIntent) }
 
@@ -99,12 +116,49 @@ object OverlaySyncManager {
             setPackage(context.packageName)
             putExtra(EXTRA_KEY, "")
             putExtra(EXTRA_VALUE, "")
-            putExtra(EXTRA_TYPE, "SYNC_BULK")
+            putExtra(EXTRA_TYPE, "SYNC_BULK_FILE")
             putExtra(EXTRA_PREF_NAME, prefName)
-            putExtra(EXTRA_BULK_VALUES, bundle)
-            putStringArrayListExtra(EXTRA_BULK_REMOVE_KEYS, removeList)
+            putExtra(EXTRA_BULK_FILE_PATH, syncFile.absolutePath)
         }
         runCatching { context.sendBroadcast(broadcastIntent) }
+    }
+
+    fun applyBulkFile(context: Context, prefName: String, path: String): Boolean {
+        val syncDir = File(context.cacheDir, "sidebar_pref_sync").canonicalFile
+        val file = File(path).canonicalFile
+        require(file.parentFile == syncDir && file.isFile) { "Invalid bulk preference sync file" }
+        val payload = JSONObject(file.readText(Charsets.UTF_8))
+        require(payload.optString("prefName") == prefName) { "Bulk preference file target mismatch" }
+        val values = payload.optJSONObject("values") ?: error("Bulk preference values are missing")
+        require(values.length() <= 10000) { "Too many bulk preference values" }
+        val editor = context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit()
+        val keys = values.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            require(key.isNotBlank() && key.length <= 512) { "Invalid bulk preference key" }
+            val item = values.getJSONObject(key)
+            when (item.optString("type")) {
+                "STRING" -> editor.putString(key, item.optString("value"))
+                "INT" -> editor.putInt(key, item.getInt("value"))
+                "LONG" -> editor.putLong(key, item.getLong("value"))
+                "FLOAT" -> editor.putFloat(key, item.getDouble("value").toFloat())
+                "BOOLEAN" -> editor.putBoolean(key, item.getBoolean("value"))
+                "STRING_SET" -> {
+                    val array = item.getJSONArray("value")
+                    require(array.length() <= 5000) { "Bulk string set is too large" }
+                    editor.putStringSet(key, (0 until array.length()).map { array.getString(it) }.toSet())
+                }
+                else -> error("Unsupported bulk preference type")
+            }
+        }
+        val removals = payload.optJSONArray("removals") ?: JSONArray()
+        require(removals.length() <= 10000) { "Too many bulk preference removals" }
+        for (index in 0 until removals.length()) {
+            val key = removals.getString(index)
+            require(key.isNotBlank() && key.length <= 512) { "Invalid bulk preference removal key" }
+            editor.remove(key)
+        }
+        return editor.commit()
     }
 
     private fun putValue(editor: SharedPreferences.Editor, key: String, value: Any) {
@@ -119,8 +173,7 @@ object OverlaySyncManager {
         }
     }
 
-    const val EXTRA_BULK_VALUES = "extra_bulk_values"
-    const val EXTRA_BULK_REMOVE_KEYS = "extra_bulk_remove_keys"
+    const val EXTRA_BULK_FILE_PATH = "extra_bulk_file_path"
 
     fun triggerReload(context: Context) {
         sendSync(context, "", "", "RELOAD_ALL", "FloatingReaderPrefs")
