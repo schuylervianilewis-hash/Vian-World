@@ -22,9 +22,9 @@ import java.security.MessageDigest
 /**
  * Sidebar backup boundary.
  *
- * Includes handle configuration, minimal metadata for every configured page stack, and
- * only the resident Main-process default_hybrid Home Grid. It deliberately does not
- * enumerate or copy arbitrary FloatingReaderPrefs keys.
+ * Exports schema v2 through [SidebarBackupV2], including every configured container,
+ * complete page configuration, page-scoped placements and allowlisted page content.
+ * The retained v1 reader restores older archives without weakening their validation.
  */
 object SidebarBackupModule {
     private const val PREFS_NAME = "FloatingReaderPrefs"
