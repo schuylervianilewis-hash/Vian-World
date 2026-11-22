@@ -124,6 +124,7 @@ class SidebarBackupV2Test {
             .put("sidebarTransparency", absentSetting())
             .put("wrapContent", absentSetting())
             .put("height", absentSetting())
+            .put("width", absentSetting())
             .put("columns", absentSetting())
 
         val container = JSONObject()
@@ -136,10 +137,20 @@ class SidebarBackupV2Test {
             .put("pages", JSONArray().put(page.toJson()))
             .put("pageContent", JSONArray().put(pageContent))
 
+        val globalSettings = JSONObject()
+            .put("sidebarColor", absentSetting())
+            .put("sidebarTransparency", absentSetting())
+            .put("wrapContent", absentSetting())
+            .put("height", absentSetting())
+            .put("width", absentSetting())
+            .put("columns", absentSetting())
+            .put("positionLeft", absentSetting())
+
         return JSONObject()
             .put("schemaVersion", SidebarBackupV2.SCHEMA_VERSION)
             .put("handles", JSONArray().put(handle))
             .put("containers", JSONArray().put(container))
+            .put("globalSettings", globalSettings)
             .put("elementMetadata", JSONArray())
             .put("customIcons", JSONArray())
             .put("savedLinkIds", JSONArray())
