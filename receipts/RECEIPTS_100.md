@@ -415,3 +415,31 @@ Capped at 500 lines per file.
   - Confirm a new Actions run is triggered for commit `1eb953c8d982df3d91206b6e1745f5a490da6792`.
   - Inspect full CI result; if successful, verify APK artifact and checksum.
   - Continue physical-device QA for WireGuard import and launcher target placement.
+
+
+---
+
+### Receipt 105 — Folder Editor Multi-Add Session
+
+* Timestamp: 2026-11-23
+* One-line summary of what was requested: Allow the folder editor to add multiple child elements in one picker session while preserving the existing one-item Add Element flow for all other callers.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/settings/AddElementActivity.kt`
+  - `app/src/main/java/com/example/SidebarEditActivity.kt`
+  - `app/src/main/java/com/example/feature/element/ElementSelectionSession.kt`
+  - `app/src/test/java/com/example/feature/element/ElementSelectionSessionTest.kt`
+  - `receipts/RECEIPTS_100.md`
+* What was actually done — factual, not persuasive:
+  - The folder editor now launches Add Element with an explicit multi-select flag; the ordinary Sidebar editor does not set it.
+  - In multi-select mode, each selected element is retained in the picker session and the toolbar exposes a Done action with the current selection count. Done returns the ordered ID list in one result; backing out cancels the session.
+  - Selection state is restored across activity recreation.
+  - The folder editor appends the returned batch in selection order and saves once. The previous single ELEMENT_ID result path remains as a compatibility fallback.
+  - Non-folder callers retain the original immediate single-item return path.
+* Verification:
+  - Pending unit tests, CI and APK artifact verification at receipt creation.
+  - Physical-device QA remains outstanding.
+* Any deviation from what was requested, and why: None.
+* Any known issue or follow-up needed:
+  - Verify repeated app/shortcut/widget/action selections remain in the picker until Done, and all children persist after returning to and reopening the folder.
+  - Verify ordinary Sidebar Add still returns immediately after one selection.
+  - Verify cancellation discards the unsubmitted batch without altering the folder.

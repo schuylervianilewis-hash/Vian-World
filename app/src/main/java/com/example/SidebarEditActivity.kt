@@ -153,7 +153,9 @@ class SidebarEditActivity : ComponentActivity() {
         }
 
         val btnAdd = createSmallBtn("Add") {
-            val intent = Intent(this@SidebarEditActivity, AddElementActivity::class.java)
+            val intent = Intent(this@SidebarEditActivity, AddElementActivity::class.java).apply {
+                putExtra(AddElementActivity.EXTRA_MULTI_SELECT, folderUuid != null)
+            }
             startActivityForResult(intent, 100)
         }
         val btnEmpty = createSmallBtn("Empty") {
@@ -221,13 +223,29 @@ class SidebarEditActivity : ComponentActivity() {
             "ROUTING_DIAG: SIDEBAR_EDIT_ON_ACTIVITY_RESULT req=$requestCode res=$resultCode id=${data?.getStringExtra("ELEMENT_ID")} pageId=$pageId"
         )
         if (requestCode == 100 && resultCode == RESULT_OK) {
-            val id = data?.getStringExtra("ELEMENT_ID")
-            if (id != null) {
-                localIds.add(id)
-                adapter.notifyItemInserted(localIds.size - 1)
-                saveIds() // Auto-save after addition
+            val selectedIds = data?.getStringArrayListExtra(AddElementActivity.EXTRA_ELEMENT_IDS)
+            if (!selectedIds.isNullOrEmpty()) {
+                val insertAt = localIds.size
+                localIds.addAll(selectedIds)
+                adapter.notifyItemRangeInserted(insertAt, selectedIds.size)
+                saveIds()
                 if (folderUuid != null) {
-                    com.example.core.LogKeeper.writeLog("FolderElement", "child count after adding/removing: ${localIds.size}")
+                    com.example.core.LogKeeper.writeLog(
+                        "FolderElement",
+                        "batch add count=${selectedIds.size}; child count after adding/removing: ${localIds.size}"
+                    )
+                }
+            } else {
+                // Preserve the original one-item result contract for non-folder Add callers
+                // and for compatibility with older picker implementations.
+                val id = data?.getStringExtra("ELEMENT_ID")
+                if (id != null) {
+                    localIds.add(id)
+                    adapter.notifyItemInserted(localIds.size - 1)
+                    saveIds()
+                    if (folderUuid != null) {
+                        com.example.core.LogKeeper.writeLog("FolderElement", "child count after adding/removing: ${localIds.size}")
+                    }
                 }
             }
         } else if (requestCode == 200 && resultCode == RESULT_OK && data != null) {
