@@ -904,11 +904,17 @@ object SidebarBackupV2 {
         val warnings = linkedSetOf<String>()
         val manager = HandleManager.getInstance(context)
         val pageManager = PageManager.getInstance(context)
+        val primaryContainerId = manager.getFirstHandlePrimaryContainerId()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val bulkValues = linkedMapOf<String, Any>()
         val bulkRemovals = linkedSetOf<String>()
         val previousHandleIds = manager.getHandleIds().toSet()
         val previousPrefKeys = prefs.all.keys.toSet()
+        val backupHandles = payload.getJSONArray("handles")
+        val backupHandleActions = (0 until backupHandles.length()).associate { index ->
+            val handle = backupHandles.getJSONObject(index)
+            handle.getString("id") to handle
+        }
         val backupContainers = payload.getJSONArray("containers")
         val backupContainerIds = (0 until backupContainers.length()).map {
             backupContainers.getJSONObject(it).getString("containerId")
@@ -940,9 +946,7 @@ object SidebarBackupV2 {
             val handleId = container.getString("handleId")
             val gesture = container.getString("gesture")
             val containerId = container.getString("containerId")
-            val handleJson = (0 until payload.getJSONArray("handles").length())
-                .map { payload.getJSONArray("handles").getJSONObject(it) }
-                .firstOrNull { it.optString("id") == handleId }
+            val handleJson = backupHandleActions[handleId]
             val gestureActions = handleJson?.optJSONObject("gestures")
             if (gestureActions?.optString(gesture) != HandleManager.ACTION_OPEN_SIDEBAR) {
                 warnings.add("Skipped container $containerId: its saved gesture does not open Sidebar.")
@@ -1468,24 +1472,43 @@ object SidebarBackupV2 {
     }
 
     private fun clearPageData(
-        prefs: SharedPreferences,
         containerId: String,
         pageId: String,
+        primaryContainerId: String,
         bulkRemovals: MutableSet<String>
     ) {
-        val keys = listOf(
+        val keys = linkedSetOf(
             HandleManager.getContainerPageElementsKey(containerId, pageId),
             "handle_${containerId}_hybrid_grid_${pageId}",
             "handle_${containerId}_hybrid_grid_cols_${pageId}",
             "handle_${containerId}_hybrid_grid_modified_${pageId}",
             "handle_${containerId}_hybrid_grid_height_${pageId}",
+            "${containerId}_hybrid_grid_${pageId}",
+            "${containerId}_hybrid_grid_cols_${pageId}",
+            "${containerId}_hybrid_grid_modified_${pageId}",
             "hg_${containerId}_${pageId}",
             "handle_${containerId}_widgets_grid_${pageId}",
             "handle_${containerId}_widgets_grid_cols_${pageId}",
+            "${containerId}_widgets_grid_${pageId}",
+            "${containerId}_widgets_grid_cols_${pageId}",
             "sidebar_apps_${containerId}_${pageId}",
             "handle_${containerId}_page_${pageId}_columns"
         )
-        keys.forEach(bulkRemovals::add)
+        if (containerId == primaryContainerId || containerId == "sidebar" || containerId == "handle_1") {
+            keys.addAll(
+                listOf(
+                    "hybrid_grid_${pageId}",
+                    "hybrid_grid_cols_${pageId}",
+                    "hybrid_grid_modified_${pageId}",
+                    "hg_${pageId}",
+                    "widgets_grid_${pageId}",
+                    "widgets_grid_cols_${pageId}",
+                    "sidebar_apps_${pageId}",
+                    "sidebar_apps"
+                )
+            )
+        }
+        bulkRemovals.addAll(keys)
     }
 
     private fun safeFileName(value: String): String =
