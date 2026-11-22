@@ -61,7 +61,7 @@ object ElementMetadataStore {
     private const val TAG = "ElementMetadataStore"
     private const val PREFS_NAME = "FloatingReaderPrefs"
     private const val PREF_KEY_PREFIX = "elem_meta_"
-    private const val MIGRATION_KEY = "element_metadata_migrated_v1"
+    private const val MIGRATION_KEY = "element_metadata_migrated_v2"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun get(context: Context, id: String): ElementMetadata? {
@@ -312,6 +312,7 @@ object ElementMetadataStore {
         }
     }
 
+    @Synchronized
     fun migrateLegacyElements(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (prefs.getBoolean(MIGRATION_KEY, false)) {
@@ -351,9 +352,14 @@ object ElementMetadataStore {
 
             for ((key, value) in allPrefs) {
                 if (value is String) {
-                    if (key.startsWith("sidebar_apps") || key.endsWith("_apps")) {
+                    if (key.startsWith("sidebar_apps") || key.endsWith("_apps") || key.startsWith("hg_")) {
                         extractIdsFromJsonArray(value)
-                    } else if (key.startsWith("hybrid_grid_") && !key.startsWith("hybrid_grid_cols_") && !key.startsWith("hybrid_grid_modified_")) {
+                    } else if (
+                        (key.startsWith("hybrid_grid_") || key.contains("_hybrid_grid_")) &&
+                        !key.contains("_hybrid_grid_cols_") &&
+                        !key.contains("_hybrid_grid_modified_") &&
+                        !key.contains("_hybrid_grid_height_")
+                    ) {
                         extractIdsFromHybridJson(value)
                     }
                 }
