@@ -853,7 +853,7 @@ object SidebarBackupV2 {
         val backupContainerIds = (0 until backupContainers.length()).map {
             backupContainers.getJSONObject(it).getString("containerId")
         }.toSet()
-        val previousContainerIds = currentSidebarContainerIds(manager)
+        val previousContainerIds = currentContainerIds(manager)
 
         SidebarBackupModule.restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
         restoreHandleSettings(payload.getJSONArray("handles"), bulkValues, bulkRemovals)
@@ -1380,14 +1380,9 @@ object SidebarBackupV2 {
         bulkValues["app_tracker_whitelist_cache"] = current + incoming
     }
 
-    private fun currentSidebarContainerIds(manager: HandleManager): Set<String> =
+    private fun currentContainerIds(manager: HandleManager): Set<String> =
         manager.getHandleIds().flatMap { id ->
-            HandleGestures.ALL.mapNotNull { gesture ->
-                val handle = manager.getHandle(id) ?: return@mapNotNull null
-                if (handle.getActionForGesture(gesture) == HandleManager.ACTION_OPEN_SIDEBAR) {
-                    HandleManager.getContainerId(id, gesture)
-                } else null
-            }
+            HandleGestures.ALL.map { gesture -> HandleManager.getContainerId(id, gesture) }
         }.toSet()
 
     private fun clearContainerData(
