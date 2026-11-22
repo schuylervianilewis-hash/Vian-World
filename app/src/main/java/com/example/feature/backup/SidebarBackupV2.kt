@@ -1294,6 +1294,8 @@ object SidebarBackupV2 {
                 val apps = if (appsPresent) sanitizeWidgetElementArrayForRestore(data.optString("appsJson", "[]")) else "[]"
                 val columnsPresent = data.optBoolean("pageColumnsPresent", false)
                 val columnsKey = "handle_${containerId}_page_${pageId}_columns"
+                val physicalHandleIndex = containerId.removePrefix("handle_").substringBefore("_")
+                bulkRemovals.add("handle_${physicalHandleIndex}_page_${pageId}_columns")
                 val appsKey = "sidebar_apps_${containerId}_${pageId}"
                 bulkValues[appsKey] = apps
                 bulkRemovals.remove(appsKey)
