@@ -797,7 +797,7 @@ object SidebarBackupV2 {
     }
 
     private fun validateNotificationFilters(filters: JSONObject) {
-        val packagePattern = Regex("^[A-Za-z0-9_]+(\\\\.[A-Za-z0-9_]+)+$")
+        val packagePattern = Regex("^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+$")
         listOf(
             "sidebarHiddenPresent" to "sidebarHiddenPackages",
             "historyHiddenPresent" to "historyHiddenPackages"
