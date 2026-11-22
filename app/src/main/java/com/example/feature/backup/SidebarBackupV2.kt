@@ -1221,7 +1221,7 @@ object SidebarBackupV2 {
             val sanitizedPlacements = JSONArray()
             for (index in 0 until placements.length()) {
                 val placement = ElementPlacement.fromJson(placements.getJSONObject(index))
-                val safeAction = sanitizeWidgetElementId(context, placement.actionKey)
+                val safeAction = sanitizeWidgetElementIdForRestore(placement.actionKey)
                 sanitizedPlacements.put(placement.copy(actionKey = safeAction).toJson())
             }
             bulkValues[placementsKey] = sanitizedPlacements.toString()
@@ -1328,16 +1328,39 @@ object SidebarBackupV2 {
         }
     }
 
+    private fun sanitizeWidgetElementIdForRestore(source: String): String {
+        if (source.startsWith("folder:")) {
+            val parts = source.split(":", limit = 3)
+            if (parts.size >= 3) {
+                val rewritten = runCatching {
+                    val folder = JSONObject(parts[2])
+                    val items = folder.optJSONArray("items")
+                    if (items != null) {
+                        val sanitized = JSONArray()
+                        for (index in 0 until items.length()) {
+                            sanitized.put(sanitizeWidgetElementIdForRestore(items.optString(index)))
+                        }
+                        folder.put("items", sanitized)
+                    }
+                    "folder:${parts[1]}:${folder}"
+                }.getOrNull()
+                if (rewritten != null) return rewritten
+            }
+            return source
+        }
+        if (!source.startsWith("widget:")) return source
+        val suffix = source.removePrefix("widget:")
+        val providerHint = suffix.substringAfter(":", "")
+        return "widget:-1:${providerHint.take(255)}"
+    }
+
     private fun sanitizeWidgetGridJsonForRestore(source: String): String {
         val items = JSONArray(source)
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index) ?: continue
             val id = item.optString("id")
-            if (id.startsWith("widget:")) {
-                val suffix = id.removePrefix("widget:")
-                val hint = if (suffix.startsWith("-1:")) suffix.substringAfter(":", "") else ""
-                item.put("id", "widget:-1:${hint.take(255)}")
-            }
+            val sanitized = sanitizeWidgetElementIdForRestore(id)
+            if (sanitized != id) item.put("id", sanitized)
         }
         return items.toString()
     }
@@ -1346,11 +1369,8 @@ object SidebarBackupV2 {
         val items = JSONArray(source)
         for (index in 0 until items.length()) {
             val id = items.optString(index)
-            if (id.startsWith("widget:")) {
-                val suffix = id.removePrefix("widget:")
-                val hint = if (suffix.startsWith("-1:")) suffix.substringAfter(":", "") else ""
-                items.put(index, "widget:-1:${hint.take(255)}")
-            }
+            val sanitized = sanitizeWidgetElementIdForRestore(id)
+            if (sanitized != id) items.put(index, sanitized)
         }
         return items.toString()
     }
