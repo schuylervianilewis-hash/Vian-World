@@ -142,6 +142,7 @@ object SidebarBackupV2 {
             .put("savedLinkIds", JSONArray().apply {
                 ElementMetadataStore.getSavedLinkIds(context).filter { it.isNotBlank() }.distinct().sorted().forEach(::put)
             })
+            .put("notificationFilters", exportNotificationFilters(context))
 
         if (hasSchedulerPage) {
             payload.put("scheduler", exportScheduler(context, prefs))
@@ -158,6 +159,17 @@ object SidebarBackupV2 {
         }
         validate(payload)
         return payload
+    }
+
+    private fun exportNotificationFilters(context: Context): JSONObject {
+        val prefs = context.getSharedPreferences("NotificationPrefs", Context.MODE_PRIVATE)
+        val sidebarHidden = prefs.getStringSet("sidebar_hidden_packages", emptySet()) ?: emptySet()
+        val historyHidden = prefs.getStringSet("history_hidden_packages", emptySet()) ?: emptySet()
+        return JSONObject()
+            .put("sidebarHiddenPresent", prefs.contains("sidebar_hidden_packages"))
+            .put("sidebarHiddenPackages", JSONArray(sidebarHidden.sorted()))
+            .put("historyHiddenPresent", prefs.contains("history_hidden_packages"))
+            .put("historyHiddenPackages", JSONArray(historyHidden.sorted()))
     }
 
     private fun exportHandleSettings(prefs: SharedPreferences, index: String): JSONObject {
@@ -599,6 +611,7 @@ object SidebarBackupV2 {
         }
 
         validateGlobalSettings(payload.optJSONObject("globalSettings") ?: error("Global Sidebar settings are missing"))
+        validateNotificationFilters(payload.optJSONObject("notificationFilters") ?: error("Notification filters are missing"))
         validateMetadata(payload.optJSONArray("elementMetadata") ?: JSONArray())
         validateCustomIcons(payload.optJSONArray("customIcons") ?: JSONArray())
         validateStringArray(payload.optJSONArray("savedLinkIds") ?: JSONArray(), 500, 128, "saved link")
@@ -781,6 +794,23 @@ object SidebarBackupV2 {
         restoreSetting(settings, "width", "sidebar_width", bulkValues, bulkRemovals)
         restoreSetting(settings, "columns", "sidebar_columns", bulkValues, bulkRemovals)
         restoreSetting(settings, "positionLeft", "sidebar_position_left", bulkValues, bulkRemovals)
+    }
+
+    private fun validateNotificationFilters(filters: JSONObject) {
+        val packagePattern = Regex("^[A-Za-z0-9_]+(\\\\.[A-Za-z0-9_]+)+$")
+        listOf(
+            "sidebarHiddenPresent" to "sidebarHiddenPackages",
+            "historyHiddenPresent" to "historyHiddenPackages"
+        ).forEach { (presentKey, valuesKey) ->
+            require(filters.has(presentKey) && filters.opt(presentKey) is Boolean) { "Invalid notification filter presence flag" }
+            val values = filters.optJSONArray(valuesKey) ?: error("Notification filter list is missing")
+            require(values.length() <= 1000) { "Too many notification filter entries" }
+            val seen = mutableSetOf<String>()
+            for (index in 0 until values.length()) {
+                val packageName = values.optString(index)
+                require(packagePattern.matches(packageName) && seen.add(packageName)) { "Invalid notification filter package" }
+            }
+        }
     }
 
     private fun validatePageContent(record: JSONObject, page: SidebarPage) {
@@ -1068,11 +1098,6 @@ object SidebarBackupV2 {
                 val placements = (0 until placementsJson.length()).map {
                     ElementPlacement.fromJson(placementsJson.getJSONObject(it))
                 }
-                val placementsKey = HandleManager.getContainerPageElementsKey(containerId, pageId)
-                bulkValues[placementsKey] = JSONArray().apply {
-                    placements.forEach { put(it.toJson()) }
-                }.toString()
-                bulkRemovals.remove(placementsKey)
                 if (currentPage.pageType == PageTypes.WIDGET || currentPage.pageType == "single_widget") {
                     warnings.add("Single Android widget page $pageId was preserved as metadata but must be rebound on this device.")
                 }
@@ -1121,6 +1146,11 @@ object SidebarBackupV2 {
         if (payload.has("appTrackerWhitelist")) {
             restoreAppTrackerWhitelist(prefs, payload.getJSONArray("appTrackerWhitelist"), exactRollback, bulkValues)
         }
+        val notificationFilterCount = restoreNotificationFilters(
+            context,
+            payload.getJSONObject("notificationFilters"),
+            exactRollback
+        )
 
         // One sync transaction updates Main and Heavy process preference caches, then refreshes
         // the active page once. This avoids a handle detach/reattach for every restored key.
@@ -1132,7 +1162,7 @@ object SidebarBackupV2 {
         val appTrackerCount = payload.optJSONArray("appTrackerWhitelist")?.length() ?: 0
         val details = listOf(
             "Sidebar: restored $restoredContainers containers, $restoredPages pages, $restoredPlacements page elements, $restoredGridItems grid items and $schedulerCount Scheduler reminders.",
-            "Sidebar metadata: processed $metadataCount element records, $iconCount custom icons, $savedLinkCount saved links and $appTrackerCount App Tracker whitelist entries."
+            "Sidebar metadata: processed $metadataCount element records, $iconCount custom icons, $savedLinkCount saved links, $appTrackerCount App Tracker whitelist entries and $notificationFilterCount notification filter entries."
         )
         return RestoreResult(warnings.toList(), details)
     }
@@ -1581,6 +1611,45 @@ object SidebarBackupV2 {
             bulkRemovals.add("scheduler_tags")
         }
         return imported
+    }
+
+    private fun restoreNotificationFilters(
+        context: Context,
+        filters: JSONObject,
+        exactRollback: Boolean
+    ): Int {
+        val prefs = context.getSharedPreferences("NotificationPrefs", Context.MODE_PRIVATE)
+        val entries = listOf(
+            "sidebarHiddenPresent" to "sidebarHiddenPackages" to "sidebar_hidden_packages",
+            "historyHiddenPresent" to "historyHiddenPackages" to "history_hidden_packages"
+        )
+        val editor = prefs.edit()
+        val expected = linkedMapOf<String, Set<String>>()
+        entries.forEach { (presenceAndValues, key) ->
+            val (presentKey, valuesKey) = presenceAndValues
+            val present = filters.optBoolean(presentKey, false)
+            val values = filters.optJSONArray(valuesKey) ?: JSONArray()
+            val backupSet = (0 until values.length()).map { values.getString(it) }.toSet()
+            if (exactRollback) {
+                if (present) {
+                    editor.putStringSet(key, backupSet)
+                    expected[key] = backupSet
+                } else {
+                    editor.remove(key)
+                }
+            } else if (present) {
+                val merged = (prefs.getStringSet(key, emptySet()) ?: emptySet()) + backupSet
+                editor.putStringSet(key, merged)
+                expected[key] = merged
+            }
+        }
+        check(editor.commit()) { "Could not restore notification filter preferences" }
+        expected.forEach { (key, value) ->
+            check((prefs.getStringSet(key, emptySet()) ?: emptySet()) == value) {
+                "Notification filter read-back failed for $key"
+            }
+        }
+        return expected.values.sumOf { it.size }
     }
 
     private fun restoreAppTrackerWhitelist(
