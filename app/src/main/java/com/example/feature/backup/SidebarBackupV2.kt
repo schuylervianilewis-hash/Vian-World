@@ -1271,12 +1271,23 @@ object SidebarBackupV2 {
         return restoredItems
     }
 
+    private fun containsWidgetElementId(source: String): Boolean {
+        if (source.startsWith("widget:")) return true
+        if (!source.startsWith("folder:")) return false
+        val parts = source.split(":", limit = 3)
+        if (parts.size < 3) return false
+        return runCatching {
+            val items = JSONObject(parts[2]).optJSONArray("items") ?: return@runCatching false
+            (0 until items.length()).any { containsWidgetElementId(items.optString(it)) }
+        }.getOrDefault(false)
+    }
+
     private fun hasWidgetContent(record: JSONObject): Boolean {
-        val elements = record.optJSONArray("elements") ?: JSONArray()
         if (record.optString("kind") == "widget_page") return true
-        if ((0 until elements.length()).any { elements.optJSONObject(it)?.optString("actionKey")?.startsWith("widget:") == true }) {
-            return true
-        }
+        val elements = record.optJSONArray("elements") ?: JSONArray()
+        if ((0 until elements.length()).any {
+                containsWidgetElementId(elements.optJSONObject(it)?.optString("actionKey").orEmpty())
+            }) return true
         val data = record.optJSONObject("data") ?: return false
         val rawValues = listOf("gridJson", "appsJson", "elementsJson")
         return rawValues.any { key ->
@@ -1286,8 +1297,8 @@ object SidebarBackupV2 {
                 (0 until array.length()).any { index ->
                     val item = array.opt(index)
                     when (item) {
-                        is JSONObject -> item.optString("id").startsWith("widget:")
-                        is String -> item.startsWith("widget:")
+                        is JSONObject -> containsWidgetElementId(item.optString("id"))
+                        is String -> containsWidgetElementId(item)
                         else -> false
                     }
                 }
