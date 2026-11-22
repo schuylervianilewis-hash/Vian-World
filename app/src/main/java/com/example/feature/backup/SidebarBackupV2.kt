@@ -1632,6 +1632,7 @@ object SidebarBackupV2 {
         )
         val editor = prefs.edit()
         val expected = linkedMapOf<String, Set<String>>()
+        val expectedAbsent = linkedSetOf<String>()
         entries.forEach { (presenceAndValues, key) ->
             val (presentKey, valuesKey) = presenceAndValues
             val present = filters.optBoolean(presentKey, false)
@@ -1643,6 +1644,7 @@ object SidebarBackupV2 {
                     expected[key] = backupSet
                 } else {
                     editor.remove(key)
+                    expectedAbsent.add(key)
                 }
             } else if (present) {
                 val merged = (prefs.getStringSet(key, emptySet()) ?: emptySet()) + backupSet
@@ -1655,6 +1657,9 @@ object SidebarBackupV2 {
             check((prefs.getStringSet(key, emptySet()) ?: emptySet()) == value) {
                 "Notification filter read-back failed for $key"
             }
+        }
+        expectedAbsent.forEach { key ->
+            check(!prefs.contains(key)) { "Notification filter removal read-back failed for $key" }
         }
         return expected.values.sumOf { it.size }
     }
