@@ -22,8 +22,9 @@
 ## Verification status
 
 - GitHub source read-back and branch diff inspected after the changes.
-- Full Android build, automated tests, and on-device placement QA are **pending** at the time of this receipt.
-- No claim of successful compilation or device verification is made here.
+- GitHub Actions [run #310](https://github.com/schuylervianilewis-hash/Vian-World/actions/runs/44994097987) passed the launcher, Firewall and host unit tests, Vian World debug APK assembly, and artifact upload.
+- Uploaded artifact: `vian-world-debug` (51,705,609 bytes; SHA-256 `983efec454ccafe7bf5b447b9bfbb1843abda364a0cf4aaf75fd81c09d5d81b4`).
+- No physical-device placement QA has been performed; this remains required before Stage 1 is marked complete.
 
 ## Required QA
 
