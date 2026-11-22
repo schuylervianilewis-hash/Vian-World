@@ -1,7 +1,6 @@
 package com.example.feature.backup
 
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
 import android.appwidget.AppWidgetManager
 import android.graphics.Color
@@ -18,7 +17,6 @@ import com.example.feature.element.ElementPlacement
 import com.example.feature.element.ElementPlacementManager
 import com.example.feature.sidebar.ElementMetadata
 import com.example.feature.sidebar.ElementMetadataStore
-import com.example.core.IconCacheManager
 import com.example.util.HandleEdge
 import com.example.util.HandleShape
 import kotlinx.coroutines.flow.first
