@@ -384,7 +384,13 @@ class SidebarManager private constructor(private val context: Context) : Sidebar
     override fun refreshPages(): SidebarRuntimeState? {
         val current = _activeState.value ?: return null
         val pages = pageManager.getPageStack(current.container)
-        val targetPageId = current.currentPage?.pageId ?: pageManager.getOpeningFaceId(current.containerId)
+        val pageIds = pages.map { it.pageId }.toSet()
+        val selectedPageId = pageManager.getSelectedPageId(current.containerId)
+        val currentPageId = current.currentPage?.pageId
+        val openingFaceId = pageManager.getOpeningFaceId(current.containerId)
+        val targetPageId = selectedPageId?.takeIf { it in pageIds }
+            ?: currentPageId?.takeIf { it in pageIds }
+            ?: openingFaceId?.takeIf { it in pageIds }
         val idx = pages.indexOfFirst { it.pageId == targetPageId }.let { if (it >= 0) it else 0 }
         val page = pages.getOrNull(idx)
         val elements = if (page != null) {
