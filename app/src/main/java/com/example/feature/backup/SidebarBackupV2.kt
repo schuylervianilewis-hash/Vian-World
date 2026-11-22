@@ -1623,6 +1623,10 @@ object SidebarBackupV2 {
         return imported
     }
 
+    private fun taskFingerprint(task: SchedulerTask): String =
+        listOf(task.title, task.note, task.timeMillis.toString(), task.tags, task.status)
+            .joinToString(separator = "\u001F")
+
     private fun restoreNotificationFilters(
         context: Context,
         filters: JSONObject,
