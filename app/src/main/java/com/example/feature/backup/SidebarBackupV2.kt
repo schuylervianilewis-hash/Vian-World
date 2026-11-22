@@ -306,6 +306,7 @@ object SidebarBackupV2 {
             }
             "apps" -> {
                 val pageId = page.pageId
+                val handleIndex = handleId.removePrefix("handle_")
                 val appsRaw = readString(
                     prefs,
                     "sidebar_apps_${containerId}_${pageId}",
@@ -315,7 +316,7 @@ object SidebarBackupV2 {
                 val pageColumns = readInt(
                     prefs,
                     "handle_${containerId}_page_${pageId}_columns",
-                    "handle_${handleId}_page_${pageId}_columns"
+                    "handle_${handleIndex}_page_${pageId}_columns"
                 )
                 data.put("appsJsonPresent", appsRaw != null)
                 if (appsRaw != null) data.put("appsJson", sanitizeWidgetElementArray(context, appsRaw))
@@ -1513,6 +1514,8 @@ object SidebarBackupV2 {
             "sidebar_apps_${containerId}_${pageId}",
             "handle_${containerId}_page_${pageId}_columns"
         )
+        val handleIndex = containerId.removePrefix("handle_").substringBefore("_")
+        keys.add("handle_${handleIndex}_page_${pageId}_columns")
         if (containerId == primaryContainerId || containerId == "sidebar" || containerId == "handle_1") {
             keys.addAll(
                 listOf(
