@@ -78,8 +78,6 @@ object SidebarBackupV2 {
         val primaryContainerId = handleManager.getFirstHandlePrimaryContainerId()
         val containersJson = JSONArray()
         var totalPages = 0
-        var hasSchedulerPage = false
-        var hasAppTrackerPage = false
 
         handles.forEach { handle ->
             HandleGestures.ALL.forEach gestureLoop@ { gesture ->
@@ -109,8 +107,6 @@ object SidebarBackupV2 {
                             page = page
                         )
                     )
-                    if (page.pageType == PageTypes.SCHEDULER) hasSchedulerPage = true
-                    if (page.pageType == PageTypes.APP_TRACKER) hasAppTrackerPage = true
                 }
 
                 containersJson.put(
@@ -144,15 +140,14 @@ object SidebarBackupV2 {
             })
             .put("notificationFilters", exportNotificationFilters(context))
 
-        if (hasSchedulerPage) {
-            payload.put("scheduler", exportScheduler(context, prefs))
-        }
-        if (hasAppTrackerPage) {
-            val whitelist = prefs.getStringSet("app_tracker_whitelist_cache", emptySet()) ?: emptySet()
-            payload.put("appTrackerWhitelist", JSONArray().apply {
-                whitelist.sorted().forEach(::put)
-            })
-        }
+        // These stores are Sidebar-owned persisted state even when their page is not
+        // currently present in a container. Always snapshot them so backup/rollback
+        // cannot silently omit orphaned Scheduler tasks or App Tracker settings.
+        payload.put("scheduler", exportScheduler(context, prefs))
+        val whitelist = prefs.getStringSet("app_tracker_whitelist_cache", emptySet()) ?: emptySet()
+        payload.put("appTrackerWhitelist", JSONArray().apply {
+            whitelist.sorted().forEach(::put)
+        })
 
         require(payload.toString().toByteArray(Charsets.UTF_8).size <= MAX_PAYLOAD_BYTES) {
             "Sidebar backup is too large. Reduce the number or size of custom icons and try again."
