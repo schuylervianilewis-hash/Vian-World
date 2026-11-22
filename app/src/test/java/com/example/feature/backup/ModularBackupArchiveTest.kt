@@ -21,7 +21,7 @@ class ModularBackupArchiveTest {
             "debug",
             mapOf(
                 ModularBackupArchive.MODULE_LAUNCHER to JSONObject().put("schema_version", 2),
-                ModularBackupArchive.MODULE_SIDEBAR to JSONObject().put("schemaVersion", 2)
+                ModularBackupArchive.MODULE_SIDEBAR to JSONObject().put("schemaVersion", 3)
             )
         )
 
