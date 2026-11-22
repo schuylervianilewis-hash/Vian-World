@@ -443,3 +443,20 @@ Capped at 500 lines per file.
   - Verify repeated app/shortcut/widget/action selections remain in the picker until Done, and all children persist after returning to and reopening the folder.
   - Verify ordinary Sidebar Add still returns immediately after one selection.
   - Verify cancellation discards the unsubmitted batch without altering the folder.
+
+
+### Receipt 105 — Verification Addendum (23 November 2026)
+
+* GitHub Actions run: [#454](https://github.com/schuylervianilewis-hash/Vian-World/actions/runs/45081374709), attempt 2.
+* Verification result:
+  - `:launcher:testDebugUnitTest` passed.
+  - `:firewall:testGithubDebugUnitTest` passed.
+  - `:app:testDebugUnitTest` passed, including `ElementSelectionSessionTest`.
+  - `:app:assembleDebug` passed.
+  - APK artifact upload passed.
+* The first attempt failed because Maven Central returned HTTP 429 while Robolectric fetched `android-all-instrumented`; 17 Robolectric tests failed on artifact download. The failed job was rerun and all test/build steps passed on attempt 2.
+* Artifact: `vian-world-debug`, ID `14777536801`, ZIP size 51,774,225 bytes.
+* Extracted APK: 58,914,834 bytes.
+* APK SHA-256: `c60f2afeae814d6d3cee725eb1bdbe147ae2baab414235a91fb564a7d9a751d1`.
+* The APK was built from source implementation commit `28d1a9f9ed1c833d7cc38dbd2a9589ade06b12a3`.
+* Physical-device QA has not been performed. Do not mark Stage 4 fully complete until the folder multi-add acceptance checks pass on-device; bundle pending Stage 1, 2 and 3 device checks as recorded in the staged work order.
