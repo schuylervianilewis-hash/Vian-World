@@ -812,7 +812,9 @@ object SidebarBackupV2 {
             val pageStackJson = JSONArray().apply {
                 restoredStack.forEachIndexed { index, page -> put(page.copy(order = index).toJson()) }
             }.toString()
-            bulkValues[HandleManager.getContainerPagesKey(containerId)] = pageStackJson
+            val pagesKey = HandleManager.getContainerPagesKey(containerId)
+            bulkValues[pagesKey] = pageStackJson
+            bulkRemovals.remove(pagesKey)
             restoreContainerSettings(containerId, container.optJSONObject("settings") ?: JSONObject(), exactRollback, bulkValues, bulkRemovals)
 
             val restoredIds = backupPages
@@ -841,6 +843,7 @@ object SidebarBackupV2 {
                 bulkValues[placementsKey] = JSONArray().apply {
                     placements.forEach { put(it.toJson()) }
                 }.toString()
+                bulkRemovals.remove(placementsKey)
                 if (currentPage.pageType == PageTypes.WIDGET || currentPage.pageType == "single_widget") {
                     warnings.add("Single Android widget page $pageId was preserved as metadata but must be rebound on this device.")
                 }
@@ -865,7 +868,10 @@ object SidebarBackupV2 {
         val metadataKeysAfter = prefs.all.keys.filter { it.startsWith("elem_meta_") }.toSet()
         if (exactRollback) bulkRemovals.addAll(metadataKeysBefore - metadataKeysAfter)
         metadataKeysAfter.forEach { key ->
-            (prefs.all[key] as? String)?.let { bulkValues[key] = it }
+            (prefs.all[key] as? String)?.let {
+                bulkValues[key] = it
+                bulkRemovals.remove(key)
+            }
         }
 
         restoreCustomIconFiles(context, payload.optJSONArray("customIcons") ?: JSONArray(), exactRollback)
@@ -1003,10 +1009,18 @@ object SidebarBackupV2 {
                 val modified = if (data.optBoolean("modifiedPresent", false)) data.optBoolean("modified", false) else false
                 val gridItems = runCatching { JSONArray(grid).length() }.getOrDefault(0)
                 restoredItems += gridItems
-                bulkValues["handle_${containerId}_hybrid_grid_${pageId}"] = grid
-                bulkValues["hg_${containerId}_${pageId}"] = elements
-                bulkValues["handle_${containerId}_hybrid_grid_cols_${pageId}"] = columns
-                bulkValues["handle_${containerId}_hybrid_grid_modified_${pageId}"] = modified
+                val gridKey = "handle_${containerId}_hybrid_grid_${pageId}"
+                val elementsKey = "hg_${containerId}_${pageId}"
+                val columnsKey = "handle_${containerId}_hybrid_grid_cols_${pageId}"
+                val modifiedKey = "handle_${containerId}_hybrid_grid_modified_${pageId}"
+                bulkValues[gridKey] = grid
+                bulkValues[elementsKey] = elements
+                bulkValues[columnsKey] = columns
+                bulkValues[modifiedKey] = modified
+                bulkRemovals.remove(gridKey)
+                bulkRemovals.remove(elementsKey)
+                bulkRemovals.remove(columnsKey)
+                bulkRemovals.remove(modifiedKey)
                 val heightKey = "handle_${containerId}_hybrid_grid_height_${pageId}"
                 if (data.optBoolean("heightPresent", false)) {
                     bulkValues[heightKey] = data.optInt("height", 0)
@@ -1021,15 +1035,21 @@ object SidebarBackupV2 {
                 val grid = if (gridPresent) sanitizeWidgetGridJsonForRestore(data.optString("gridJson", "[]")) else "[]"
                 val columns = if (data.optBoolean("columnsPresent", false)) data.optInt("columns", 4) else 4
                 restoredItems += runCatching { JSONArray(grid).length() }.getOrDefault(0)
-                bulkValues["handle_${containerId}_widgets_grid_${pageId}"] = grid
-                bulkValues["handle_${containerId}_widgets_grid_cols_${pageId}"] = columns
+                val gridKey = "handle_${containerId}_widgets_grid_${pageId}"
+                val columnsKey = "handle_${containerId}_widgets_grid_cols_${pageId}"
+                bulkValues[gridKey] = grid
+                bulkValues[columnsKey] = columns
+                bulkRemovals.remove(gridKey)
+                bulkRemovals.remove(columnsKey)
             }
             "apps" -> {
                 val appsPresent = data.optBoolean("appsJsonPresent", false)
                 val apps = if (appsPresent) sanitizeWidgetElementArrayForRestore(data.optString("appsJson", "[]")) else "[]"
                 val columnsPresent = data.optBoolean("pageColumnsPresent", false)
                 val columnsKey = "handle_${containerId}_page_${pageId}_columns"
-                bulkValues["sidebar_apps_${containerId}_${pageId}"] = apps
+                val appsKey = "sidebar_apps_${containerId}_${pageId}"
+                bulkValues[appsKey] = apps
+                bulkRemovals.remove(appsKey)
                 if (columnsPresent) {
                     bulkValues[columnsKey] = data.optInt("pageColumns", 3)
                     bulkRemovals.remove(columnsKey)
