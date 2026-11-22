@@ -21,7 +21,7 @@ class ModularBackupArchiveTest {
             "debug",
             mapOf(
                 ModularBackupArchive.MODULE_LAUNCHER to JSONObject().put("schema_version", 2),
-                ModularBackupArchive.MODULE_SIDEBAR to JSONObject().put("schemaVersion", 1)
+                ModularBackupArchive.MODULE_SIDEBAR to JSONObject().put("schemaVersion", 2)
             )
         )
 
@@ -33,7 +33,7 @@ class ModularBackupArchiveTest {
         assertEquals("debug", parsed.buildType)
         assertEquals(setOf("launcher", "sidebar"), parsed.modules.keys)
         assertEquals(2, parsed.modules.getValue("launcher").getInt("schema_version"))
-        assertEquals(1, parsed.moduleSchemaVersions.getValue("sidebar"))
+        assertEquals(2, parsed.moduleSchemaVersions.getValue("sidebar"))
     }
 
     @Test
