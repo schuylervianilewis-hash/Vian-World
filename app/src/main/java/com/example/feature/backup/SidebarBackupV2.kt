@@ -826,7 +826,7 @@ object SidebarBackupV2 {
         }
 
         if (payload.has("appTrackerWhitelist")) {
-            restoreAppTrackerWhitelist(prefs, payload.getJSONArray("appTrackerWhitelist"), exactRollback)
+            restoreAppTrackerWhitelist(context, prefs, payload.getJSONArray("appTrackerWhitelist"), exactRollback)
         }
 
         IconCacheManager.invalidateMemoryCache()
@@ -1174,22 +1174,22 @@ object SidebarBackupV2 {
         listOf(task.title, task.note, task.timeMillis.toString(), task.tags, task.status).joinToString("\u0000")
 
     private fun restoreAppTrackerWhitelist(
+        context: Context,
         prefs: SharedPreferences,
         whitelist: JSONArray,
         exactRollback: Boolean
     ) {
-        val incoming = (0 until whitelist.length()).map { whitelist.optString(it) }.filter { it.isNotBlank() }.toSet()
-        val current = if (exactRollback) emptySet() else prefs.getStringSet("app_tracker_whitelist_cache", emptySet())?.toSet().orEmpty()
-        OverlaySyncManager.syncStringSet(prefsContext(prefs), "app_tracker_whitelist_cache", current + incoming)
+        val incoming = (0 until whitelist.length())
+            .map { whitelist.optString(it) }
+            .filter { it.isNotBlank() }
+            .toSet()
+        val current = if (exactRollback) {
+            emptySet()
+        } else {
+            prefs.getStringSet("app_tracker_whitelist_cache", emptySet())?.toSet().orEmpty()
+        }
+        OverlaySyncManager.syncStringSet(context, "app_tracker_whitelist_cache", current + incoming)
     }
-
-    private fun prefsContext(prefs: SharedPreferences): Context {
-        // Kept private to prevent any arbitrary preference name from being supplied by an archive.
-        return cachedContext ?: error("Sidebar restore context is unavailable")
-    }
-
-    @Volatile
-    private var cachedContext: Context? = null
 
     private fun currentSidebarContainerIds(manager: HandleManager): Set<String> =
         manager.getHandleIds().flatMap { id ->
