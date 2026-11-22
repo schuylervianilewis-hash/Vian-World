@@ -1065,7 +1065,7 @@ object SidebarBackupV2 {
                 if (currentPage.isMiniApp || currentPage.miniAppType.isNotBlank()) {
                     warnings.add("Mini-app page metadata was preserved for $pageId, but mini-app runtime data is not included in Sidebar backup.")
                 }
-                if (placements.any { it.customIconUri?.startsWith("content://") == true }) {
+                if (placements.any { it.customIconUri?.startsWith("content://") == true || it.customIconUri?.startsWith("file://") == true }) {
                     warnings.add("Some custom element icons use external content URIs and may need to be selected again after restore.")
                 }
                 if (hasWidgetContent(record)) {
@@ -1306,7 +1306,6 @@ object SidebarBackupV2 {
     }
 
     private fun hasWidgetContent(record: JSONObject): Boolean {
-        if (record.optString("kind") == "widget_page") return true
         val elements = record.optJSONArray("elements") ?: JSONArray()
         if ((0 until elements.length()).any {
                 containsWidgetElementId(elements.optJSONObject(it)?.optString("actionKey").orEmpty())
@@ -1388,8 +1387,11 @@ object SidebarBackupV2 {
                 val file = File(iconDir, safeFileName(id) + ".webp")
                 file.writeBytes(bytes)
                 iconPath = file.absolutePath
-            } else if (exactRollback) {
-                iconPath = ""
+            } else {
+                if (item.optString("iconPath").isNotBlank()) {
+                    warnings.add("Icon file for Sidebar element $id was not embedded and may need to be selected again.")
+                }
+                if (exactRollback) iconPath = ""
             }
 
             ElementMetadataStore.save(
