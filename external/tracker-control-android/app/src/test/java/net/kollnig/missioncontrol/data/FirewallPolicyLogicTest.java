@@ -38,11 +38,11 @@ public class FirewallPolicyLogicTest {
     public void policyPriorityPrecedesEverySecondarySort() {
         List<FirewallPolicyLogic.Entry> apps = new ArrayList<>(Arrays.asList(
                 entry(3, "Excluded", "excluded", 100, 1, 99, 99, 999),
-                entry(2, "Zulu Direct", "direct", 80, 2, 0, 0, 0),
+                entry(0, "Zulu Direct", "direct", 80, 2, 0, 0, 0),
                 entry(1, "Aardvark VPN", "vpn", 70, 3, 50, 60, 800),
-                entry(0, "Zebra Blocked", "blocked", 60, 4, 0, 0, 0)));
+                entry(2, "Zebra Blocked", "blocked", 60, 4, 0, 0, 0)));
         apps.sort(FirewallPolicyLogic.comparator(FirewallPolicyLogic.SORT_TRACKERS_WEEK));
-        assertPackages(apps, "blocked", "vpn", "direct", "excluded");
+        assertPackages(apps, "direct", "vpn", "blocked", "excluded");
     }
 
     @Test
@@ -66,18 +66,25 @@ public class FirewallPolicyLogicTest {
     @Test
     public void installDateAndUidSortAreSecondaryWithinPolicy() {
         List<FirewallPolicyLogic.Entry> apps = new ArrayList<>(Arrays.asList(
-                entry(2, "Old Direct", "direct-old", 10, 50, 0, 0, 0),
-                entry(2, "New Direct", "direct-new", 30, 60, 0, 0, 0),
+                entry(0, "Old Direct", "direct-old", 10, 50, 0, 0, 0),
+                entry(0, "New Direct", "direct-new", 30, 60, 0, 0, 0),
                 entry(1, "Low UID VPN", "vpn-low", 10, 7, 0, 0, 0),
                 entry(1, "High UID VPN", "vpn-high", 30, 90, 0, 0, 0)));
         apps.sort(FirewallPolicyLogic.comparator(FirewallPolicyLogic.SORT_INSTALL_DATE));
-        assertPackages(apps, "vpn-high", "vpn-low", "direct-new", "direct-old");
+        assertPackages(apps, "direct-new", "direct-old", "vpn-high", "vpn-low");
         apps.sort(FirewallPolicyLogic.comparator(FirewallPolicyLogic.SORT_UID));
-        assertPackages(apps, "vpn-low", "vpn-high", "direct-old", "direct-new");
+        assertPackages(apps, "direct-old", "direct-new", "vpn-low", "vpn-high");
     }
 
     @Test
     public void excludedIsNotDirectAndBlockPrecedesRouting() {
+        assertEquals(0, FirewallPolicyLogic.PRIORITY_DIRECT);
+        assertEquals(1, FirewallPolicyLogic.PRIORITY_VPN);
+        assertEquals(2, FirewallPolicyLogic.PRIORITY_BLOCKED);
+        assertEquals(3, FirewallPolicyLogic.PRIORITY_EXCLUDED);
+        assertTrue(FirewallPolicyLogic.PRIORITY_DIRECT < FirewallPolicyLogic.PRIORITY_VPN);
+        assertTrue(FirewallPolicyLogic.PRIORITY_VPN < FirewallPolicyLogic.PRIORITY_BLOCKED);
+        assertTrue(FirewallPolicyLogic.PRIORITY_BLOCKED < FirewallPolicyLogic.PRIORITY_EXCLUDED);
         assertEquals(FirewallPolicyLogic.PRIORITY_BLOCKED,
                 FirewallPolicyLogic.priority(true, true, false));
         assertEquals(FirewallPolicyLogic.PRIORITY_BLOCKED,
