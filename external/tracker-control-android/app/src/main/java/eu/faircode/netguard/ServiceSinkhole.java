@@ -109,7 +109,6 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
@@ -129,9 +128,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.zip.GZIPInputStream;
 
-import javax.net.ssl.HttpsURLConnection;
 
 public class ServiceSinkhole extends VpnService {
     private static final String TAG = "TrackerControl.VPN";
@@ -154,10 +151,6 @@ public class ServiceSinkhole extends VpnService {
     // legitimate case (WG config parse + bounded DNS resolve + handshake +
     // the 3s handover-retry sleep) with margin.
     private static final long WAKELOCK_TIMEOUT_MS = 30_000L;
-
-    // Bounds the update check's network calls so a hung connection cannot stall
-    // the command handler thread (and its wakelock) for the OS default timeout.
-    private static final int UPDATE_CHECK_TIMEOUT_MS = 10_000;
 
     private boolean registeredUser = false;
     private boolean registeredIdleState = false;
@@ -372,7 +365,6 @@ public class ServiceSinkhole extends VpnService {
     private static final int NOTIFY_AUTOSTART = 5;
     private static final int NOTIFY_ERROR = 6;
     private static final int NOTIFY_TRAFFIC = 7;
-    private static final int NOTIFY_UPDATE = 8;
     public static final int NOTIFY_EXTERNAL = 9;
     private static final int NOTIFY_DOH_ERROR = 11;
     private static final int NOTIFY_WG_ERROR = 12;
@@ -1015,71 +1007,7 @@ public class ServiceSinkhole extends VpnService {
             uidToApp.clear();
             uidToPackage.clear();
 
-            // Check for update
-            if (!Util.isPlayStoreInstall(ServiceSinkhole.this)
-                    && !Util.isFDroidInstall()
-                    && prefs.getBoolean("update_check", true))
-                checkUpdate();
-        }
-
-        private void checkUpdate() {
-            StringBuilder json = new StringBuilder();
-            HttpsURLConnection urlConnection = null;
-            try {
-                URL url = new URL(BuildConfig.GITHUB_LATEST_API);
-                urlConnection = (HttpsURLConnection) url.openConnection();
-                urlConnection.setConnectTimeout(UPDATE_CHECK_TIMEOUT_MS);
-                urlConnection.setReadTimeout(UPDATE_CHECK_TIMEOUT_MS);
-                urlConnection.setRequestProperty("Accept-Encoding", "gzip");
-                BufferedReader br;
-                if ("gzip".equals(urlConnection.getContentEncoding()))
-                    br = new BufferedReader(new InputStreamReader(new GZIPInputStream(urlConnection.getInputStream())));
-                else
-                    br = new BufferedReader(new InputStreamReader(urlConnection.getInputStream()));
-
-                String line;
-                while ((line = br.readLine()) != null)
-                    json.append(line);
-                br.close();
-
-            } catch (Throwable ex) {
-                Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-            } finally {
-                if (urlConnection != null)
-                    urlConnection.disconnect();
             }
-
-            try {
-                JSONArray jarray = new JSONArray(json.toString());
-                if (jarray.length() < 1)
-                    return;
-                JSONObject jroot = jarray.getJSONObject(0);
-                // JSONObject jroot = new JSONObject(json.toString());
-                if (jroot.has("tag_name") && jroot.has("html_url") && jroot.has("assets")) {
-                    // Always link to the release page rather than a specific
-                    // asset: the user picks the right download there, and
-                    // the notification doesn't depend on asset ordering.
-                    String url = jroot.getString("html_url");
-                    JSONArray jassets = jroot.getJSONArray("assets");
-                    if (jassets.length() > 0) {
-                        long available = jroot.getLong("tag_name");
-                        String name = (jroot.has("name") && !jroot.isNull("name") && jroot.getString("name").length() > 0)
-                                ? jroot.getString("name")
-                                : getString(R.string.title_version, available);
-                        Log.i(TAG, "Tag " + available + " name " + name + " url " + url);
-
-                        long current = BuildConfig.TRACKERCONTROL_VERSION_CODE;
-                        if (TrackerControlUpdatePolicy.isUpdateAvailable(current, available)) {
-                            Log.i(TAG, "Update available from " + current + " to " + available);
-                            showUpdateNotification(name, url);
-                        } else
-                            Log.i(TAG, "Up-to-date current version " + current);
-                    }
-                }
-            } catch (JSONException ex) {
-                Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
-            }
-        }
 
         private class StartFailedException extends IllegalStateException {
             private final boolean replacementFailure;
@@ -4947,28 +4875,6 @@ public class ServiceSinkhole extends VpnService {
 
     private void clearPrivateDnsBypassNotification() {
         NotificationManagerCompat.from(this).cancel(NOTIFY_PRIVATE_DNS_BYPASS);
-    }
-
-    private void showUpdateNotification(String name, String url) {
-        if (Util.isFDroidInstall())
-            return;
-
-        Intent download = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        PendingIntent pi = PendingIntentCompat.getActivity(this, 0, download, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "notify");
-        builder.setSmallIcon(R.drawable.ic_rocket_white)
-                .setContentTitle(name)
-                .setContentText(getString(R.string.msg_update))
-                .setContentIntent(pi)
-                .setColor(getResources().getColor(R.color.colorTrackerControl))
-                .setOngoing(false)
-                .setAutoCancel(true);
-
-        builder.setCategory(NotificationCompat.CATEGORY_STATUS)
-                .setVisibility(NotificationCompat.VISIBILITY_SECRET);
-
-        Util.notify(this, NOTIFY_UPDATE, builder.build());
     }
 
     private void removeWarningNotifications() {
