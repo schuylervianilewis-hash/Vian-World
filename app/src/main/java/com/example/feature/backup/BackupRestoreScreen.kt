@@ -64,7 +64,7 @@ private val backupModuleChoices = listOf(
     BackupModuleChoice(
         ModularBackupArchive.MODULE_SIDEBAR,
         "Sidebar",
-        "All handles, gestures and settings; every container and full page configuration; page elements; Hybrid/Apps/Widgets Grid content; supported element metadata and icons; Scheduler reminders and App Tracker whitelist."
+        "All handles, gestures and persisted containers; full page configuration and elements; Hybrid/Apps/Widgets Grid content; supported metadata and icons; Scheduler reminders, App Tracker whitelist and notification filters."
     )
 )
 
