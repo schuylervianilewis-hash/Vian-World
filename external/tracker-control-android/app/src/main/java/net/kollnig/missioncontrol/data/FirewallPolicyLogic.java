@@ -18,9 +18,9 @@ public final class FirewallPolicyLogic {
     public static final String SORT_TRACKERS_RECENT = "trackers_recent";
     public static final String SORT_UID = "uid";
 
-    public static final int PRIORITY_BLOCKED = 0;
+    public static final int PRIORITY_DIRECT = 0;
     public static final int PRIORITY_VPN = 1;
-    public static final int PRIORITY_DIRECT = 2;
+    public static final int PRIORITY_BLOCKED = 2;
     public static final int PRIORITY_EXCLUDED = 3;
 
     public static final int QUICK_ACTION_NONE = 0;
