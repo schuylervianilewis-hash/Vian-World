@@ -133,6 +133,7 @@ object SidebarBackupV2 {
             .put("schemaVersion", SCHEMA_VERSION)
             .put("handles", handlesJson)
             .put("containers", containersJson)
+            .put("globalSettings", exportGlobalSettings(prefs))
             .put("elementMetadata", exportAllElementMetadata(context, prefs))
             .put("customIcons", exportCustomIconFiles(context))
             .put("savedLinkIds", JSONArray().apply {
@@ -161,11 +162,23 @@ object SidebarBackupV2 {
         containerId: String
     ): JSONObject {
         return JSONObject()
-            .put("sidebarColor", readSetting(prefs, "handle_${containerId}_sidebar_color", "sidebar_color", true))
-            .put("sidebarTransparency", readSetting(prefs, "handle_${containerId}_sidebar_transparency", "sidebar_transparency", true))
-            .put("wrapContent", readSetting(prefs, "handle_${containerId}_sidebar_wrap_content", "sidebar_wrap_content", true))
-            .put("height", readSetting(prefs, "handle_${containerId}_sidebar_height", "sidebar_height", true))
-            .put("columns", readSetting(prefs, "handle_${containerId}_columns", "sidebar_columns", true))
+            .put("sidebarColor", readSetting(prefs, "handle_${containerId}_sidebar_color", "handle_${containerId}_sidebar_color", false))
+            .put("sidebarTransparency", readSetting(prefs, "handle_${containerId}_sidebar_transparency", "handle_${containerId}_sidebar_transparency", false))
+            .put("wrapContent", readSetting(prefs, "handle_${containerId}_sidebar_wrap_content", "handle_${containerId}_sidebar_wrap_content", false))
+            .put("height", readSetting(prefs, "handle_${containerId}_sidebar_height", "handle_${containerId}_sidebar_height", false))
+            .put("width", readSetting(prefs, "handle_${containerId}_sidebar_width", "handle_${containerId}_sidebar_width", false))
+            .put("columns", readSetting(prefs, "handle_${containerId}_columns", "handle_${containerId}_columns", false))
+    }
+
+    private fun exportGlobalSettings(prefs: SharedPreferences): JSONObject {
+        return JSONObject()
+            .put("sidebarColor", readSetting(prefs, "sidebar_color", "sidebar_color", false))
+            .put("sidebarTransparency", readSetting(prefs, "sidebar_transparency", "sidebar_transparency", false))
+            .put("wrapContent", readSetting(prefs, "sidebar_wrap_content", "sidebar_wrap_content", false))
+            .put("height", readSetting(prefs, "sidebar_height", "sidebar_height", false))
+            .put("width", readSetting(prefs, "sidebar_width", "sidebar_width", false))
+            .put("columns", readSetting(prefs, "sidebar_columns", "sidebar_columns", false))
+            .put("positionLeft", readSetting(prefs, "sidebar_position_left", "sidebar_position_left", false))
     }
 
     private fun readSetting(
@@ -540,6 +553,7 @@ object SidebarBackupV2 {
             require(seenContent == pagesById.keys) { "A configured page is missing its content record" }
         }
 
+        validateGlobalSettings(payload.optJSONObject("globalSettings") ?: error("Global Sidebar settings are missing"))
         validateMetadata(payload.optJSONArray("elementMetadata") ?: JSONArray())
         validateCustomIcons(payload.optJSONArray("customIcons") ?: JSONArray())
         validateStringArray(payload.optJSONArray("savedLinkIds") ?: JSONArray(), 500, 128, "saved link")
@@ -572,8 +586,47 @@ object SidebarBackupV2 {
         if (wrap.optBoolean("present")) require(wrap.opt("value") is Boolean) { "Invalid Sidebar wrap setting" }
         val height = settings.optJSONObject("height") ?: error("Sidebar height setting is missing")
         if (height.optBoolean("present")) require(height.optInt("value", -1) in 0..2000) { "Invalid Sidebar height" }
+        val width = settings.optJSONObject("width") ?: error("Sidebar width setting is missing")
+        if (width.optBoolean("present")) require(width.optInt("value", -1) in 0..2000) { "Invalid Sidebar width" }
         val columns = settings.optJSONObject("columns") ?: error("Sidebar columns setting is missing")
         if (columns.optBoolean("present")) require(columns.optInt("value", -1) in 1..12) { "Invalid Sidebar columns" }
+    }
+
+    private fun validateGlobalSettings(settings: JSONObject) {
+        val color = settings.optJSONObject("sidebarColor") ?: error("Global Sidebar color setting is missing")
+        if (color.optBoolean("present")) require(
+            color.optString("value").length <= 32 && runCatching { Color.parseColor(color.optString("value")) }.isSuccess
+        ) { "Invalid global Sidebar color" }
+        val transparency = settings.optJSONObject("sidebarTransparency") ?: error("Global Sidebar transparency setting is missing")
+        if (transparency.optBoolean("present")) require(transparency.optDouble("value", -1.0) in 0.0..1.0) {
+            "Invalid global Sidebar transparency"
+        }
+        val wrap = settings.optJSONObject("wrapContent") ?: error("Global Sidebar wrap setting is missing")
+        if (wrap.optBoolean("present")) require(wrap.opt("value") is Boolean) { "Invalid global Sidebar wrap setting" }
+        val height = settings.optJSONObject("height") ?: error("Global Sidebar height setting is missing")
+        if (height.optBoolean("present")) require(height.optInt("value", -1) in 0..2000) { "Invalid global Sidebar height" }
+        val width = settings.optJSONObject("width") ?: error("Global Sidebar width setting is missing")
+        if (width.optBoolean("present")) require(width.optInt("value", -1) in 0..2000) { "Invalid global Sidebar width" }
+        val columns = settings.optJSONObject("columns") ?: error("Global Sidebar columns setting is missing")
+        if (columns.optBoolean("present")) require(columns.optInt("value", -1) in 1..12) { "Invalid global Sidebar columns" }
+        val positionLeft = settings.optJSONObject("positionLeft") ?: error("Global Sidebar position setting is missing")
+        if (positionLeft.optBoolean("present")) require(positionLeft.opt("value") is Boolean) {
+            "Invalid global Sidebar position setting"
+        }
+    }
+
+    private fun restoreGlobalSettings(
+        settings: JSONObject,
+        bulkValues: MutableMap<String, Any>,
+        bulkRemovals: MutableSet<String>
+    ) {
+        restoreSetting(settings, "sidebarColor", "sidebar_color", bulkValues, bulkRemovals)
+        restoreSetting(settings, "sidebarTransparency", "sidebar_transparency", bulkValues, bulkRemovals)
+        restoreSetting(settings, "wrapContent", "sidebar_wrap_content", bulkValues, bulkRemovals)
+        restoreSetting(settings, "height", "sidebar_height", bulkValues, bulkRemovals)
+        restoreSetting(settings, "width", "sidebar_width", bulkValues, bulkRemovals)
+        restoreSetting(settings, "columns", "sidebar_columns", bulkValues, bulkRemovals)
+        restoreSetting(settings, "positionLeft", "sidebar_position_left", bulkValues, bulkRemovals)
     }
 
     private fun validatePageContent(record: JSONObject, page: SidebarPage) {
@@ -762,6 +815,7 @@ object SidebarBackupV2 {
         val previousContainerIds = currentSidebarContainerIds(manager)
 
         SidebarBackupModule.restoreHandles(context, payload.getJSONArray("handles"), exactRollback)
+        restoreGlobalSettings(payload.getJSONObject("globalSettings"), bulkValues, bulkRemovals)
 
         if (exactRollback) {
             previousContainerIds.filterNot { it in backupContainerIds }
@@ -958,6 +1012,7 @@ object SidebarBackupV2 {
         restoreSetting(settings, "sidebarTransparency", "handle_${containerId}_sidebar_transparency", bulkValues, bulkRemovals)
         restoreSetting(settings, "wrapContent", "handle_${containerId}_sidebar_wrap_content", bulkValues, bulkRemovals)
         restoreSetting(settings, "height", "handle_${containerId}_sidebar_height", bulkValues, bulkRemovals)
+        restoreSetting(settings, "width", "handle_${containerId}_sidebar_width", bulkValues, bulkRemovals)
         restoreSetting(settings, "columns", "handle_${containerId}_columns", bulkValues, bulkRemovals)
     }
 
