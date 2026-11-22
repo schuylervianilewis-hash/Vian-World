@@ -336,6 +336,17 @@ object ElementMetadataStore {
                 } catch (e: Exception) {}
             }
 
+            fun extractIdsFromPlacementJson(jsonStr: String?) {
+                if (jsonStr.isNullOrEmpty()) return
+                try {
+                    val arr = JSONArray(jsonStr)
+                    for (i in 0 until arr.length()) {
+                        val actionKey = arr.optJSONObject(i)?.optString("actionKey")
+                        if (!actionKey.isNullOrEmpty()) allElementIds.add(actionKey)
+                    }
+                } catch (e: Exception) {}
+            }
+
             fun extractIdsFromHybridJson(jsonStr: String?) {
                 if (jsonStr.isNullOrEmpty()) return
                 try {
@@ -354,6 +365,8 @@ object ElementMetadataStore {
                 if (value is String) {
                     if (key.startsWith("sidebar_apps") || key.endsWith("_apps") || key.startsWith("hg_")) {
                         extractIdsFromJsonArray(value)
+                    } else if (key.startsWith("handle_") && key.contains("_page_") && key.endsWith("_elements")) {
+                        extractIdsFromPlacementJson(value)
                     } else if (
                         (key.startsWith("hybrid_grid_") || key.contains("_hybrid_grid_")) &&
                         !key.startsWith("hybrid_grid_cols_") &&
