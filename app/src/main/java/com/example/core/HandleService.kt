@@ -86,8 +86,12 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                     applyOverlayAccessPolicy()
                 }
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
-                    LogKeeper.logLifecycle(context, "HandleService", "ACTION_SYNC_PREF", "Syncing preferences from Heavy process")
-                    handleSyncPrefIntent(intent)
+                    val type = intent.getStringExtra(OverlaySyncManager.EXTRA_TYPE) ?: ""
+                    val useBroadcastFallback = intent.getBooleanExtra(OverlaySyncManager.EXTRA_BULK_FALLBACK, false)
+                    if (type != "SYNC_BULK_FILE" || useBroadcastFallback) {
+                        LogKeeper.logLifecycle(context, "HandleService", "ACTION_SYNC_PREF", "Syncing preferences from Heavy process")
+                        handleSyncPrefIntent(intent)
+                    }
                 }
             }
         }
@@ -276,11 +280,7 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
         } else {
             when (intent.action) {
                 OverlaySyncManager.ACTION_SYNC_PREF -> {
-                    // Large bulk-sync payloads are applied by the package broadcast receiver
-                    // after this start request ensures the resident service is running.
-                    if (intent.getStringExtra(OverlaySyncManager.EXTRA_TYPE) != "SYNC_BULK_FILE") {
-                        handleSyncPrefIntent(intent)
-                    }
+                    handleSyncPrefIntent(intent)
                 }
                 ACTION_RELOAD_HANDLES -> {
                     applyOverlayAccessPolicy()
