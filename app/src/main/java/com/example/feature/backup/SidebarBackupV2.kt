@@ -1265,8 +1265,9 @@ object SidebarBackupV2 {
                 val elements = if (elementsPresent) JSONArray(data.optString("elementsJson", "[]")).toString() else "[]"
                 val columns = if (data.optBoolean("columnsPresent", false)) data.optInt("columns", 4) else 4
                 val modified = if (data.optBoolean("modifiedPresent", false)) data.optBoolean("modified", false) else false
-                val gridItems = runCatching { JSONArray(grid).length() }.getOrDefault(0)
-                restoredItems += gridItems
+                val gridItemCount = runCatching { JSONArray(grid).length() }.getOrDefault(0)
+                val elementCount = runCatching { JSONArray(elements).length() }.getOrDefault(0)
+                restoredItems += maxOf(gridItemCount, elementCount)
                 val gridKey = "handle_${containerId}_hybrid_grid_${pageId}"
                 val elementsKey = "hg_${containerId}_${pageId}"
                 val columnsKey = "handle_${containerId}_hybrid_grid_cols_${pageId}"
