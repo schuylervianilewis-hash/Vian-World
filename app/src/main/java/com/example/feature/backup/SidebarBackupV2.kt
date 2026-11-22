@@ -1265,8 +1265,8 @@ object SidebarBackupV2 {
         val data = record.optJSONObject("data") ?: JSONObject()
         val pageId = page.pageId
         var restoredItems = 0
-        val placementsPresent = record.optBoolean("elementsPresent", false)
         val placements = record.optJSONArray("elements") ?: JSONArray()
+        val placementsPresent = if (record.has("elementsPresent")) record.optBoolean("elementsPresent") else placements.length() > 0
         val placementsKey = HandleManager.getContainerPageElementsKey(containerId, pageId)
         if (placementsPresent) {
             val sanitizedPlacements = JSONArray()
