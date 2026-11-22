@@ -290,6 +290,15 @@ object SidebarBackupV2 {
                     "${containerId}_widgets_grid_cols_${pageId}",
                     "widgets_grid_cols_${pageId}".takeIf { primary }
                 )
+                val widgetElementsRaw = readString(
+                    prefs,
+                    "wg_${containerId}_${pageId}",
+                    "wg_${pageId}".takeIf { primary }
+                )
+                data.put("widgetElementsJsonPresent", widgetElementsRaw != null)
+                if (widgetElementsRaw != null) {
+                    data.put("widgetElementsJson", sanitizeWidgetElementArray(context, widgetElementsRaw))
+                }
                 data.put("gridJsonPresent", gridRaw != null)
                 if (gridRaw != null) data.put("gridJson", sanitizeWidgetGridJson(context, gridRaw))
                 data.put("columnsPresent", columns != null)
@@ -821,6 +830,7 @@ object SidebarBackupV2 {
             "widgets_grid" -> {
                 validateOptionalGrid(data, "gridJsonPresent", "gridJson")
                 validateOptionalInt(data, "columnsPresent", "columns", 1..12)
+                validateOptionalStringArray(data, "widgetElementsJsonPresent", "widgetElementsJson", MAX_GRID_ITEMS, 512)
             }
             "apps" -> {
                 validateOptionalStringArray(data, "appsJsonPresent", "appsJson", MAX_GRID_ITEMS, 512)
@@ -1243,6 +1253,7 @@ object SidebarBackupV2 {
                 "widgets_grid" -> {
                     bulkRemovals.add("widgets_grid_${pageId}")
                     bulkRemovals.add("widgets_grid_cols_${pageId}")
+                    bulkRemovals.add("wg_${pageId}")
                 }
             }
         }
@@ -1281,13 +1292,26 @@ object SidebarBackupV2 {
                 val gridPresent = data.optBoolean("gridJsonPresent", false)
                 val grid = if (gridPresent) sanitizeWidgetGridJsonForRestore(data.optString("gridJson", "[]")) else "[]"
                 val columns = if (data.optBoolean("columnsPresent", false)) data.optInt("columns", 4) else 4
+                val widgetElementsPresent = data.optBoolean("widgetElementsJsonPresent", false)
+                val widgetElements = if (widgetElementsPresent) {
+                    sanitizeWidgetElementArrayForRestore(data.optString("widgetElementsJson", "[]"))
+                } else "[]"
                 restoredItems += runCatching { JSONArray(grid).length() }.getOrDefault(0)
+                restoredItems += runCatching { JSONArray(widgetElements).length() }.getOrDefault(0)
                 val gridKey = "handle_${containerId}_widgets_grid_${pageId}"
                 val columnsKey = "handle_${containerId}_widgets_grid_cols_${pageId}"
+                val widgetElementsKey = "wg_${containerId}_${pageId}"
                 bulkValues[gridKey] = grid
                 bulkValues[columnsKey] = columns
                 bulkRemovals.remove(gridKey)
                 bulkRemovals.remove(columnsKey)
+                if (widgetElementsPresent) {
+                    bulkValues[widgetElementsKey] = widgetElements
+                    bulkRemovals.remove(widgetElementsKey)
+                } else {
+                    bulkValues.remove(widgetElementsKey)
+                    bulkRemovals.add(widgetElementsKey)
+                }
             }
             "apps" -> {
                 val appsPresent = data.optBoolean("appsJsonPresent", false)
@@ -1329,7 +1353,7 @@ object SidebarBackupV2 {
                 containsWidgetElementId(elements.optJSONObject(it)?.optString("actionKey").orEmpty())
             }) return true
         val data = record.optJSONObject("data") ?: return false
-        val rawValues = listOf("gridJson", "appsJson", "elementsJson")
+        val rawValues = listOf("gridJson", "appsJson", "elementsJson", "widgetElementsJson")
         return rawValues.any { key ->
             val raw = data.optString(key)
             if (raw.isBlank()) false else runCatching {
