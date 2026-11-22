@@ -1006,8 +1006,7 @@ public class ServiceSinkhole extends VpnService {
             trackerCache.clear();
             uidToApp.clear();
             uidToPackage.clear();
-
-            }
+        }
 
         private class StartFailedException extends IllegalStateException {
             private final boolean replacementFailure;
