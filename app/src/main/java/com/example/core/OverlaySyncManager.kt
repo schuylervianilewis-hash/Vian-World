@@ -122,7 +122,10 @@ object OverlaySyncManager {
             putExtra(EXTRA_BULK_FILE_PATH, syncFile.absolutePath)
             putExtra(EXTRA_BULK_FALLBACK, !serviceStarted)
         }
-        runCatching { context.sendBroadcast(broadcastIntent) }
+        context.sendBroadcast(broadcastIntent)
+        if (!serviceStarted) {
+            context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName))
+        }
     }
 
     fun applyBulkFile(context: Context, prefName: String, path: String): Boolean {
@@ -161,11 +164,7 @@ object OverlaySyncManager {
             require(key.isNotBlank() && key.length <= 512) { "Invalid bulk preference removal key" }
             editor.remove(key)
         }
-        val committed = editor.commit()
-        if (committed) {
-            context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName))
-        }
-        return committed
+        return editor.commit()
     }
 
     private fun putValue(editor: SharedPreferences.Editor, key: String, value: Any) {
