@@ -381,25 +381,26 @@ object ElementMetadataStore {
                 }
             }
 
-            // Also inspect nested folder items
-            val folderItems = mutableSetOf<String>()
-            for (id in allElementIds) {
-                if (id.startsWith("folder:")) {
-                    try {
-                        val parts = id.split(":", limit = 3)
-                        if (parts.size >= 3) {
-                            val obj = JSONObject(parts[2])
-                            val itemsArr = obj.optJSONArray("items")
-                            if (itemsArr != null) {
-                                for (j in 0 until itemsArr.length()) {
-                                    folderItems.add(itemsArr.getString(j))
-                                }
+            // Also inspect nested folder items, including folders nested inside folders.
+            fun collectNestedFolderItems(id: String, depth: Int = 0) {
+                if (depth >= 10 || !id.startsWith("folder:")) return
+                try {
+                    val parts = id.split(":", limit = 3)
+                    if (parts.size >= 3) {
+                        val obj = JSONObject(parts[2])
+                        val itemsArr = obj.optJSONArray("items") ?: return
+                        for (j in 0 until itemsArr.length()) {
+                            val childId = itemsArr.optString(j)
+                            if (childId.isNotBlank() && allElementIds.add(childId)) {
+                                collectNestedFolderItems(childId, depth + 1)
                             }
                         }
-                    } catch (e: Exception) {}
+                    }
+                } catch (e: Exception) {
+                    LogKeeper.writeLog(TAG, "Error parsing nested folder metadata: ${e.message}")
                 }
             }
-            allElementIds.addAll(folderItems)
+            allElementIds.toList().forEach { collectNestedFolderItems(it) }
 
             val pm = context.packageManager
             for (rawId in allElementIds) {
