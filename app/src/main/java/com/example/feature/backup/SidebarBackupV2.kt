@@ -325,27 +325,23 @@ object SidebarBackupV2 {
     }
 
     private fun sanitizeWidgetGridJson(context: Context, source: String): String {
-        return runCatching {
-            val items = JSONArray(source)
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            for (index in 0 until items.length()) {
-                val item = items.optJSONObject(index) ?: continue
-                item.put("id", sanitizeWidgetElementId(context, item.optString("id"), appWidgetManager))
-            }
-            items.toString()
-        }.getOrDefault("[]")
+        val items = JSONArray(source)
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: error("Invalid grid placement")
+            item.put("id", sanitizeWidgetElementId(context, item.optString("id"), appWidgetManager))
+        }
+        return items.toString()
     }
 
     private fun sanitizeWidgetElementArray(context: Context, source: String): String {
-        return runCatching {
-            val items = JSONArray(source)
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            for (index in 0 until items.length()) {
-                val raw = items.optString(index)
-                if (raw.startsWith("widget:")) items.put(index, sanitizeWidgetElementId(context, raw, appWidgetManager))
-            }
-            items.toString()
-        }.getOrDefault("[]")
+        val items = JSONArray(source)
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        for (index in 0 until items.length()) {
+            val raw = items.optString(index)
+            if (raw.startsWith("widget:")) items.put(index, sanitizeWidgetElementId(context, raw, appWidgetManager))
+        }
+        return items.toString()
     }
 
     private fun sanitizeWidgetElementId(
@@ -681,8 +677,10 @@ object SidebarBackupV2 {
 
     private fun validateMetadata(metadata: JSONArray) {
         require(metadata.length() <= MAX_METADATA) { "Too many element metadata records" }
+        val seenIds = mutableSetOf<String>()
         for (i in 0 until metadata.length()) {
             val item = metadata.optJSONObject(i) ?: error("Invalid element metadata")
+            require(seenIds.add(item.optString("id"))) { "Duplicate element metadata ID" }
             require(item.optString("id").length in 1..512) { "Invalid metadata element ID" }
             require(item.optString("type") in setOf("app", "link", "pwa")) { "Unsupported element metadata type" }
             require(item.optString("target").length in 1..4096) { "Invalid metadata target" }
@@ -700,9 +698,11 @@ object SidebarBackupV2 {
     private fun validateCustomIcons(icons: JSONArray) {
         require(icons.length() <= MAX_CUSTOM_ICONS) { "Too many custom icon files" }
         var total = 0L
+        val seenNames = mutableSetOf<String>()
         for (i in 0 until icons.length()) {
             val item = icons.optJSONObject(i) ?: error("Invalid custom icon")
             val name = item.optString("fileName")
+            require(seenNames.add(name)) { "Duplicate custom icon filename" }
             require(safeIconNamePattern.matches(name)) { "Invalid custom icon filename" }
             val encoded = item.optString("base64")
             require(encoded.length in 1..400_000) { "Custom icon is too large" }
@@ -716,8 +716,10 @@ object SidebarBackupV2 {
     private fun validateScheduler(scheduler: JSONObject) {
         val tasks = scheduler.optJSONArray("tasks") ?: error("Scheduler task list is missing")
         require(tasks.length() <= 10000) { "Too many Scheduler reminders" }
+        val taskIds = mutableSetOf<Int>()
         for (i in 0 until tasks.length()) {
             val task = tasks.optJSONObject(i) ?: error("Invalid Scheduler reminder")
+            require(taskIds.add(task.optInt("id", -1))) { "Duplicate Scheduler reminder ID" }
             require(task.optInt("id", -1) >= 0) { "Invalid Scheduler reminder ID" }
             require(task.optString("title").length <= 1000) { "Scheduler title is too long" }
             require(task.optString("note").length <= 5000) { "Scheduler note is too long" }
@@ -789,7 +791,10 @@ object SidebarBackupV2 {
             pageManager.savePageStack(containerId, restoredStack)
             restoreContainerSettings(context, prefs, containerId, container.optJSONObject("settings") ?: JSONObject(), exactRollback)
 
-            val restoredIds = restoredStack.map { it.pageId }.toSet()
+            val restoredIds = backupPages
+                .filter { saved -> restoredStack.any { it.pageId == saved.pageId && it.pageType == saved.pageType } }
+                .map { it.pageId }
+                .toSet()
             restoreContainerPageReference(pageManager, container, "openingFaceId", containerId, restoredIds, exactRollback, warnings)
             restoreContainerPageReference(pageManager, container, "selectedPageId", containerId, restoredIds, exactRollback, warnings)
 
@@ -806,6 +811,18 @@ object SidebarBackupV2 {
 
                 val placementsJson = record.getJSONArray("elements")
                 val placements = (0 until placementsJson.length()).map { ElementPlacement.fromJson(placementsJson.getJSONObject(it)) }
+                if (currentPage.pageType == PageTypes.WIDGET || currentPage.pageType == "single_widget") {
+                    warnings.add("Single Android widget page $pageId was preserved as metadata but must be rebound on this device.")
+                }
+                if (currentPage.isMiniApp || currentPage.miniAppType.isNotBlank()) {
+                    warnings.add("Mini-app page metadata was preserved for $pageId, but mini-app runtime data is not included in Sidebar backup.")
+                }
+                if (placements.any { it.customIconUri?.startsWith("content://") == true }) {
+                    warnings.add("Some custom element icons use external content URIs and may need to be selected again after restore.")
+                }
+                if (hasWidgetContent(record)) {
+                    warnings.add("Android widget positions/provider hints were preserved; widget instances must be rebound on this device.")
+                }
                 ElementPlacementManager.getInstance(context).saveElements(containerId, pageId, placements)
                 restoredPlacements += placements.size
                 restoredGridItems += restorePageData(context, prefs, containerId, handleId, currentPage, record)
@@ -986,6 +1003,29 @@ object SidebarBackupV2 {
             }
         }
         return restoredItems
+    }
+
+    private fun hasWidgetContent(record: JSONObject): Boolean {
+        val elements = record.optJSONArray("elements") ?: JSONArray()
+        if ((0 until elements.length()).any { elements.optJSONObject(it)?.optString("actionKey")?.startsWith("widget:") == true }) {
+            return true
+        }
+        val data = record.optJSONObject("data") ?: return false
+        val rawValues = listOf("gridJson", "appsJson", "elementsJson")
+        return rawValues.any { key ->
+            val raw = data.optString(key)
+            if (raw.isBlank()) false else runCatching {
+                val array = JSONArray(raw)
+                (0 until array.length()).any { index ->
+                    val item = array.opt(index)
+                    when (item) {
+                        is JSONObject -> item.optString("id").startsWith("widget:")
+                        is String -> item.startsWith("widget:")
+                        else -> false
+                    }
+                }
+            }.getOrDefault(false)
+        }
     }
 
     private fun sanitizeWidgetGridJsonForRestore(source: String): String {
