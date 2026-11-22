@@ -618,18 +618,76 @@ object SidebarBackupV2 {
         }
     }
 
-    private fun restoreHandleSettings(
+    private fun restoreHandleConfigs(
         handles: JSONArray,
+        previousHandleIds: Set<String>,
+        previousPrefKeys: Set<String>,
+        exactRollback: Boolean,
         bulkValues: MutableMap<String, Any>,
         bulkRemovals: MutableSet<String>
     ) {
-        for (index in 0 until handles.length()) {
-            val item = handles.getJSONObject(index)
-            val handleIndex = item.getString("id").removePrefix("handle_")
+        val backupIds = mutableListOf<String>()
+        for (i in 0 until handles.length()) {
+            val item = handles.getJSONObject(i)
+            val id = item.getString("id")
+            val index = id.removePrefix("handle_").toInt()
+            backupIds.add(id)
+
+            val gestures = item.getJSONObject("gestures")
+            val actions = HandleGestures.ALL.associateWith { gesture ->
+                gestures.optString(gesture, HandleManager.ACTION_NONE)
+            }.toMutableMap()
+            if (id == "handle_1" && actions.values.none { it == HandleManager.ACTION_OPEN_SIDEBAR }) {
+                actions[HandleGestures.SWIPE_LEFT] = HandleManager.ACTION_OPEN_SIDEBAR
+            }
+
+            val handleValues = linkedMapOf<String, Any>(
+                "handle_name_$index" to item.optString("name", "Handle $index").take(100),
+                "handle_enabled_$index" to item.optBoolean("enabled", true),
+                "handle_edge_$index" to item.getString("edge"),
+                "handle_pos_$index" to item.optDouble("position", 0.5).toFloat().coerceIn(0f, 1f),
+                "handle_width_$index" to item.optInt("widthDp", 12).coerceIn(4, 200),
+                "handle_height_$index" to item.optInt("heightDp", 120).coerceIn(4, 400),
+                "handle_color_$index" to item.optInt("color", Color.parseColor("#242962ff")),
+                "handle_shape_$index" to item.getString("shape"),
+                "handle_alpha_$index" to item.optInt("alphaPercent", 14).coerceIn(0, 100)
+            )
+            handleValues.forEach { (key, value) ->
+                bulkValues[key] = value
+                bulkRemovals.remove(key)
+            }
+            actions.forEach { (gesture, action) ->
+                val key = HandleManager.getGesturePrefKey(index, gesture)
+                bulkValues[key] = action
+                bulkRemovals.remove(key)
+            }
+
             val settings = item.getJSONObject("settings")
-            restoreSetting(settings, "columns", "handle_${handleIndex}_columns", bulkValues, bulkRemovals)
-            restoreSetting(settings, "sidebarColor", "handle_${handleIndex}_sidebar_color", bulkValues, bulkRemovals)
-            restoreSetting(settings, "sidebarTransparency", "handle_${handleIndex}_sidebar_transparency", bulkValues, bulkRemovals)
+            restoreSetting(settings, "columns", "handle_${index}_columns", bulkValues, bulkRemovals)
+            restoreSetting(settings, "sidebarColor", "handle_${index}_sidebar_color", bulkValues, bulkRemovals)
+            restoreSetting(settings, "sidebarTransparency", "handle_${index}_sidebar_transparency", bulkValues, bulkRemovals)
+        }
+
+        val mergedIds = if (exactRollback) {
+            backupIds.distinct().toMutableList()
+        } else {
+            (backupIds + previousHandleIds.filterNot { it in backupIds }).distinct().toMutableList()
+        }
+        if ("handle_1" !in mergedIds) mergedIds.add(0, "handle_1")
+        bulkValues[HandleManager.KEY_HANDLE_IDS] = mergedIds.joinToString(",")
+        bulkValues[HandleManager.KEY_HANDLES_COUNT] = mergedIds.size
+        bulkRemovals.remove(HandleManager.KEY_HANDLE_IDS)
+        bulkRemovals.remove(HandleManager.KEY_HANDLES_COUNT)
+
+        if (exactRollback) {
+            previousHandleIds.filterNot { it in backupIds }.forEach { staleId ->
+                val index = staleId.removePrefix("handle_")
+                val prefix = "handle_${index}_"
+                previousPrefKeys.filter { it.startsWith(prefix) }.forEach { key ->
+                    bulkValues.remove(key)
+                    bulkRemovals.add(key)
+                }
+            }
         }
     }
 
