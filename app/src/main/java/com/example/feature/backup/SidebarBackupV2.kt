@@ -819,6 +819,7 @@ object SidebarBackupV2 {
 
     private fun validatePageContent(record: JSONObject, page: SidebarPage, schemaVersion: Int) {
         val elements = record.optJSONArray("elements") ?: error("Page element placements are missing")
+        if (schemaVersion >= 3) require(record.has("elementsPresent")) { "Page element presence flag is missing" }
         val elementsPresent = if (record.has("elementsPresent")) record.optBoolean("elementsPresent") else elements.length() > 0
         if (!elementsPresent) require(elements.length() == 0) { "Absent page elements cannot contain records" }
         require(elements.length() <= MAX_PAGE_ELEMENTS) { "Too many elements on a Sidebar page" }
