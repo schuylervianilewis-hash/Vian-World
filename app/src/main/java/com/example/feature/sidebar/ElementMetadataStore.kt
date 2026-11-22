@@ -356,6 +356,9 @@ object ElementMetadataStore {
                         extractIdsFromJsonArray(value)
                     } else if (
                         (key.startsWith("hybrid_grid_") || key.contains("_hybrid_grid_")) &&
+                        !key.startsWith("hybrid_grid_cols_") &&
+                        !key.startsWith("hybrid_grid_modified_") &&
+                        !key.startsWith("hybrid_grid_height_") &&
                         !key.contains("_hybrid_grid_cols_") &&
                         !key.contains("_hybrid_grid_modified_") &&
                         !key.contains("_hybrid_grid_height_")
