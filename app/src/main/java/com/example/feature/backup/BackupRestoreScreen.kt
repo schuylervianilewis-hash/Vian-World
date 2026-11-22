@@ -64,7 +64,7 @@ private val backupModuleChoices = listOf(
     BackupModuleChoice(
         ModularBackupArchive.MODULE_SIDEBAR,
         "Sidebar",
-        "All handles and gestures, every container and full page configuration, page elements, Hybrid/Apps/Widgets Grid content, supported element metadata and icons, Scheduler reminders and App Tracker whitelist."
+        "All handles, gestures and settings; every container and full page configuration; page elements; Hybrid/Apps/Widgets Grid content; supported element metadata and icons; Scheduler reminders and App Tracker whitelist."
     )
 )
 
@@ -243,7 +243,7 @@ fun BackupRestoreScreen(onBack: () -> Unit) {
                             }
                         }
                         Text(
-                            "Not included: WireGuard profiles or secrets, floating mini-app and Reader/EPUB content, PWA package/site data, App Lock credentials and biometric enrollment, pinned shortcut IDs, and live system state. Android widget positions/provider hints are preserved, but widgets must be rebound on this device.",
+                            "Not included: WireGuard profiles or secrets, floating mini-app runtime data, Reader/EPUB content, PWA package/site data, App Lock credentials and biometric enrollment, pinned shortcut IDs, active notifications and media sessions. Android widget positions/provider hints are preserved, but widget instances must be rebound on this device.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
