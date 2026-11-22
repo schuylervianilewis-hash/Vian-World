@@ -673,7 +673,15 @@ object SidebarBackupV2 {
 
             val settings = item.getJSONObject("settings")
             restoreSetting(settings, "columns", "handle_${index}_columns", bulkValues, bulkRemovals)
-            restoreSetting(settings, "legacyEdge", "handle_${index}_edge", bulkValues, bulkRemovals)
+            val legacyEdge = settings.getJSONObject("legacyEdge")
+            val legacyEdgeKey = "handle_${index}_edge"
+            if (legacyEdge.optBoolean("present")) {
+                bulkValues[legacyEdgeKey] = legacyEdge.optString("value").lowercase()
+                bulkRemovals.remove(legacyEdgeKey)
+            } else {
+                bulkValues.remove(legacyEdgeKey)
+                bulkRemovals.add(legacyEdgeKey)
+            }
             restoreSetting(settings, "sidebarColor", "handle_${index}_sidebar_color", bulkValues, bulkRemovals)
             restoreSetting(settings, "sidebarTransparency", "handle_${index}_sidebar_transparency", bulkValues, bulkRemovals)
         }
@@ -1083,8 +1091,13 @@ object SidebarBackupV2 {
         IconCacheManager.invalidateMemoryCache()
         context.sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").setPackage(context.packageName))
 
+        val metadataCount = payload.optJSONArray("elementMetadata")?.length() ?: 0
+        val iconCount = payload.optJSONArray("customIcons")?.length() ?: 0
+        val savedLinkCount = payload.optJSONArray("savedLinkIds")?.length() ?: 0
+        val appTrackerCount = payload.optJSONArray("appTrackerWhitelist")?.length() ?: 0
         val details = listOf(
-            "Sidebar: restored $restoredContainers containers, $restoredPages pages, $restoredPlacements page elements, $restoredGridItems grid items and $schedulerCount Scheduler reminders."
+            "Sidebar: restored $restoredContainers containers, $restoredPages pages, $restoredPlacements page elements, $restoredGridItems grid items and $schedulerCount Scheduler reminders.",
+            "Sidebar metadata: processed $metadataCount element records, $iconCount custom icons, $savedLinkCount saved links and $appTrackerCount App Tracker whitelist entries."
         )
         return RestoreResult(warnings.toList(), details)
     }
