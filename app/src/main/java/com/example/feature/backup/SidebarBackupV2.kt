@@ -1555,7 +1555,14 @@ object SidebarBackupV2 {
 
     private fun currentContainerIds(manager: HandleManager): Set<String> =
         manager.getHandleIds().flatMap { id ->
-            HandleGestures.ALL.map { gesture -> HandleManager.getContainerId(id, gesture) }
+            HandleGestures.ALL.mapNotNull { gesture ->
+                val handle = manager.getHandle(id) ?: return@mapNotNull null
+                if (handle.getActionForGesture(gesture) == HandleManager.ACTION_OPEN_SIDEBAR) {
+                    HandleManager.getContainerId(id, gesture)
+                } else {
+                    null
+                }
+            }
         }.toSet()
 
     private fun clearContainerData(
