@@ -491,6 +491,11 @@ class HandleService : Service(), SharedPreferences.OnSharedPreferenceChangeListe
                 targetPrefs.edit().putStringSet(key, set).commit()
             }
             "REMOVE" -> targetPrefs.edit().remove(key).commit()
+            "RELOAD_ALL" -> {
+                // Backup restore and other bulk preference writes need to refresh the
+                // currently visible Sidebar state, not only reattach trigger handles.
+                SidebarManager.getInstance(this).refreshPages()
+            }
             "SYNC_HANDLE" -> {
                 val bundle = intent.extras
                 if (bundle != null) {
