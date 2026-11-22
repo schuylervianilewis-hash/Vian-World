@@ -91,6 +91,7 @@ class SidebarBackupV2Test {
                 if (actionGesture == gesture) HandleManager.ACTION_OPEN_SIDEBAR else HandleManager.ACTION_NONE
             )
         }
+        fun absentSetting() = JSONObject().put("present", false)
         val handle = JSONObject()
             .put("id", handleId)
             .put("name", "Handle 1")
@@ -102,6 +103,10 @@ class SidebarBackupV2Test {
             .put("color", 0)
             .put("shape", HandleShape.SLANTED_BLOCK.name)
             .put("alphaPercent", 14)
+            .put("settings", JSONObject()
+                .put("columns", absentSetting())
+                .put("sidebarColor", absentSetting())
+                .put("sidebarTransparency", absentSetting()))
             .put("gestures", gestures)
 
         val pageData = JSONObject()
@@ -118,7 +123,6 @@ class SidebarBackupV2Test {
             .put("elements", JSONArray())
             .put("data", pageData)
 
-        fun absentSetting() = JSONObject().put("present", false)
         val settings = JSONObject()
             .put("sidebarColor", absentSetting())
             .put("sidebarTransparency", absentSetting())
