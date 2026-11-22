@@ -110,7 +110,8 @@ object OverlaySyncManager {
             putExtra(EXTRA_PREF_NAME, prefName)
             putExtra(EXTRA_BULK_FILE_PATH, syncFile.absolutePath)
         }
-        runCatching { context.startService(serviceIntent) }
+        val serviceStarted = runCatching { context.startService(serviceIntent) }
+            .getOrNull() != null
 
         val broadcastIntent = Intent(ACTION_SYNC_PREF).apply {
             setPackage(context.packageName)
@@ -119,6 +120,7 @@ object OverlaySyncManager {
             putExtra(EXTRA_TYPE, "SYNC_BULK_FILE")
             putExtra(EXTRA_PREF_NAME, prefName)
             putExtra(EXTRA_BULK_FILE_PATH, syncFile.absolutePath)
+            putExtra(EXTRA_BULK_FALLBACK, !serviceStarted)
         }
         runCatching { context.sendBroadcast(broadcastIntent) }
     }
@@ -174,6 +176,7 @@ object OverlaySyncManager {
     }
 
     const val EXTRA_BULK_FILE_PATH = "extra_bulk_file_path"
+    const val EXTRA_BULK_FALLBACK = "extra_bulk_fallback"
 
     fun triggerReload(context: Context) {
         sendSync(context, "", "", "RELOAD_ALL", "FloatingReaderPrefs")
