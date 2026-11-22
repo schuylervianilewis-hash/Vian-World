@@ -1068,8 +1068,8 @@ public class ServiceSinkhole extends VpnService {
                                 : getString(R.string.title_version, available);
                         Log.i(TAG, "Tag " + available + " name " + name + " url " + url);
 
-                        long current = Util.getSelfVersionCode(ServiceSinkhole.this);
-                        if (current < available) {
+                        long current = BuildConfig.TRACKERCONTROL_VERSION_CODE;
+                        if (TrackerControlUpdatePolicy.isUpdateAvailable(current, available)) {
                             Log.i(TAG, "Update available from " + current + " to " + available);
                             showUpdateNotification(name, url);
                         } else
