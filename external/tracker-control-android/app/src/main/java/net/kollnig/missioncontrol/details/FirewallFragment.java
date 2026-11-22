@@ -26,6 +26,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.util.Log;
 import android.widget.ImageView;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -145,18 +146,18 @@ public class FirewallFragment extends Fragment {
         LinearLayout actions = new LinearLayout(context);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER);
-        MaterialButton blockAll = globalButton(context, R.string.firewall_block_all, ACTION_BLOCK);
-        MaterialButton vpnAll = globalButton(context, R.string.firewall_vpn_all, ACTION_VPN);
         MaterialButton directAll = globalButton(context, R.string.firewall_direct_all, ACTION_DIRECT);
-        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        blockParams.setMargins(dp(2), 0, dp(2), 0);
-        actions.addView(blockAll, blockParams);
-        LinearLayout.LayoutParams vpnParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        vpnParams.setMargins(dp(2), 0, dp(2), 0);
-        actions.addView(vpnAll, vpnParams);
+        MaterialButton vpnAll = globalButton(context, R.string.firewall_vpn_all, ACTION_VPN);
+        MaterialButton blockAll = globalButton(context, R.string.firewall_block_all, ACTION_BLOCK);
         LinearLayout.LayoutParams directParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
         directParams.setMargins(dp(2), 0, dp(2), 0);
         actions.addView(directAll, directParams);
+        LinearLayout.LayoutParams vpnParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        vpnParams.setMargins(dp(2), 0, dp(2), 0);
+        actions.addView(vpnAll, vpnParams);
+        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        blockParams.setMargins(dp(2), 0, dp(2), 0);
+        actions.addView(blockAll, blockParams);
         root.addView(actions, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -1057,9 +1058,27 @@ public class FirewallFragment extends Fragment {
             MaterialCheckBox block = rowChoice(context, R.string.firewall_block);
             MaterialCheckBox vpn = rowChoice(context, R.string.firewall_vpn);
             MaterialCheckBox direct = rowChoice(context, R.string.firewall_direct);
-            buttons.addView(block, new LinearLayout.LayoutParams(dp(60), dp(48)));
-            buttons.addView(vpn, new LinearLayout.LayoutParams(dp(54), dp(48)));
             buttons.addView(direct, new LinearLayout.LayoutParams(dp(64), dp(48)));
+
+            // The checkbox itself stays disabled when no remote tunnel is usable.
+            // A transparent sibling surface receives taps solely to explain why.
+            FrameLayout vpnContainer = new FrameLayout(context);
+            buttons.addView(vpnContainer, new LinearLayout.LayoutParams(dp(54), dp(48)));
+            vpnContainer.addView(vpn, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            View vpnUnavailableTap = new View(context);
+            vpnUnavailableTap.setBackgroundColor(Color.TRANSPARENT);
+            vpnUnavailableTap.setClickable(true);
+            vpnUnavailableTap.setFocusable(true);
+            vpnUnavailableTap.setContentDescription(
+                    context.getString(R.string.app_route_unavailable_no_vpn));
+            vpnUnavailableTap.setOnClickListener(view -> Toast.makeText(context,
+                    R.string.app_route_unavailable_no_vpn, Toast.LENGTH_LONG).show());
+            vpnUnavailableTap.setVisibility(View.GONE);
+            vpnContainer.addView(vpnUnavailableTap, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            buttons.addView(block, new LinearLayout.LayoutParams(dp(60), dp(48)));
 
             LinearLayout expanded = new LinearLayout(context);
             expanded.setOrientation(LinearLayout.VERTICAL);
@@ -1068,7 +1087,7 @@ public class FirewallFragment extends Fragment {
             root.addView(expanded, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             return new FirewallViewHolder(root, header, icon, name, status,
-                    block, vpn, direct, expanded);
+                    block, vpn, direct, vpnUnavailableTap, expanded);
         }
 
         @Override
@@ -1103,6 +1122,8 @@ public class FirewallFragment extends Fragment {
             boolean canChangeNetwork = canManage && !internetPauseActive;
             holder.block.setEnabled(canChangeNetwork);
             holder.vpn.setEnabled(canChangeNetwork && remoteVpnAvailable);
+            holder.vpnUnavailableTap.setVisibility(
+                    canChangeNetwork && !remoteVpnAvailable ? View.VISIBLE : View.GONE);
             holder.direct.setEnabled(canChangeNetwork);
             setQuickChoice(holder.block, blockSelected);
             setQuickChoice(holder.vpn, vpnSelected);
@@ -1222,12 +1243,13 @@ public class FirewallFragment extends Fragment {
         final MaterialCheckBox block;
         final MaterialCheckBox vpn;
         final MaterialCheckBox direct;
+        final View vpnUnavailableTap;
         final LinearLayout expanded;
         String boundPackage;
 
         FirewallViewHolder(View itemView, LinearLayout header, ImageView icon,
                 TextView name, TextView status, MaterialCheckBox block, MaterialCheckBox vpn,
-                MaterialCheckBox direct, LinearLayout expanded) {
+                MaterialCheckBox direct, View vpnUnavailableTap, LinearLayout expanded) {
             super(itemView);
             this.header = header;
             this.icon = icon;
@@ -1236,6 +1258,7 @@ public class FirewallFragment extends Fragment {
             this.block = block;
             this.vpn = vpn;
             this.direct = direct;
+            this.vpnUnavailableTap = vpnUnavailableTap;
             this.expanded = expanded;
         }
     }
