@@ -656,7 +656,8 @@ fun HybridGridEditorCanvas(
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            resizeDx += dragAmount.xresizeDy += dragAmount.y
+                                            resizeDx += dragAmount.x
+                                        resizeDy += dragAmount.y
                                             val previewCols = (currentWidthPx / cellWidthPx).roundToInt()
                                                 .coerceIn(minimumSpan.cols, maxOf(minimumSpan.cols, cols - item.x))
                                             val previewRows = (currentHeightPx / cellHeightPx).roundToInt()
