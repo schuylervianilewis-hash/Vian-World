@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.core.LogKeeper
 import com.example.feature.sidebar.GridWidgetItem
+import com.example.feature.sidebar.GridEditorLayoutPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
