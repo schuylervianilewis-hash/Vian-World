@@ -98,6 +98,23 @@ public class FirewallPolicyLogicTest {
     }
 
     @Test
+    public void systemOnlyFilteredRowsKeepPolicyGroupOrderAndStableNameOrder() {
+        // Filtering to system apps must not change the global policy grouping:
+        // Direct -> VPN -> Blocked -> Excluded. Secondary ordering remains active.
+        List<FirewallPolicyLogic.Entry> systemOnly = new ArrayList<>(Arrays.asList(
+                entry(3, "System Excluded", "android.excluded", 1, 40, 0, 0, 0),
+                entry(2, "System Blocked Z", "android.blocked.z", 1, 30, 0, 0, 0),
+                entry(0, "System Direct B", "android.direct.b", 1, 20, 0, 0, 0),
+                entry(1, "System VPN", "android.vpn", 1, 10, 0, 0, 0),
+                entry(2, "System Blocked A", "android.blocked.a", 1, 31, 0, 0, 0),
+                entry(0, "System Direct A", "android.direct.a", 1, 21, 0, 0, 0)));
+        systemOnly.sort(FirewallPolicyLogic.comparator(FirewallPolicyLogic.SORT_NAME));
+        assertPackages(systemOnly, "android.direct.a", "android.direct.b",
+                "android.vpn", "android.blocked.a", "android.blocked.z",
+                "android.excluded");
+    }
+
+    @Test
     public void exposesAllLiveTrackerSortModesAndInstallDate() {
         assertTrue(FirewallPolicyLogic.isSupportedSort(FirewallPolicyLogic.SORT_NAME));
         assertTrue(FirewallPolicyLogic.isSupportedSort(FirewallPolicyLogic.SORT_INSTALL_DATE));

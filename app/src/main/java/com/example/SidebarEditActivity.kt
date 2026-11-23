@@ -30,6 +30,7 @@ class SidebarEditActivity : ComponentActivity() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: EditAdapter
+    private lateinit var itemTouchHelper: ItemTouchHelper
     private lateinit var prefs: android.content.SharedPreferences
     val localIds = mutableListOf<String>()
     private var folderUuid: String? = null
@@ -439,9 +440,10 @@ class SidebarEditActivity : ComponentActivity() {
             }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
-            override fun isLongPressDragEnabled(): Boolean = true
+            override fun isLongPressDragEnabled(): Boolean = false
         }
-        ItemTouchHelper(callback).attachToRecyclerView(recyclerView)
+        itemTouchHelper = ItemTouchHelper(callback)
+        itemTouchHelper.attachToRecyclerView(recyclerView)
     }
 
     inner class EditAdapter : RecyclerView.Adapter<EditAdapter.ViewHolder>() {
@@ -450,6 +452,7 @@ class SidebarEditActivity : ComponentActivity() {
             val iconView: ImageView = view.findViewById(1)
             val nameView: TextView = view.findViewById(2)
             val btnRemove: ImageView = view.findViewById(3)
+            val dragHandle: ImageView = view.findViewById(4)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -489,6 +492,16 @@ class SidebarEditActivity : ComponentActivity() {
             contentLayout.addView(iconView)
             contentLayout.addView(nameView)
             
+            val dragHandle = ImageView(this@SidebarEditActivity).apply {
+                id = 4
+                setImageResource(android.R.drawable.ic_menu_sort_by_size)
+                layoutParams = FrameLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt()).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                }
+                setColorFilter(Color.WHITE)
+                contentDescription = "Drag to reorder"
+            }
+
             val btnRemove = ImageView(this@SidebarEditActivity).apply {
                 id = 3
                 setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
@@ -499,6 +512,7 @@ class SidebarEditActivity : ComponentActivity() {
             }
 
             layout.addView(contentLayout)
+            layout.addView(dragHandle)
             layout.addView(btnRemove)
 
             return ViewHolder(layout)
@@ -584,6 +598,13 @@ class SidebarEditActivity : ComponentActivity() {
                     }
                     startActivityForResult(intent, 200)
                 }
+            }
+            holder.dragHandle.setOnTouchListener { _, event ->
+                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN
+                        && holder.bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                    itemTouchHelper.startDrag(holder)
+                }
+                false
             }
             holder.btnRemove.setOnClickListener {
                 val pos = holder.bindingAdapterPosition

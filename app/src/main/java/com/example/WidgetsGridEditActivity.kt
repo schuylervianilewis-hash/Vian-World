@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -227,7 +228,29 @@ fun WidgetGridEditor(
         ) {
             Text("Columns: $cols", color = Color.LightGray)
             Row {
-                IconButton(onClick = { if (cols > 1) cols-- }) {
+                IconButton(onClick = {
+                    val nextCols = cols - 1
+                    if (nextCols < 1) return@IconButton
+                    val nextCellDp = ((androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32f) / nextCols).coerceAtLeast(1f)
+                    val nextSpans = items.map { item ->
+                        val widgetId = if (item.id.startsWith("widget:"))
+                            item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() else null
+                        val info = try { widgetId?.let { appWidgetManager.getAppWidgetInfo(it) } }
+                            catch (_: Exception) { null }
+                        val minW = if (info != null && android.os.Build.VERSION.SDK_INT >= 16 && info.minResizeWidth > 0)
+                            minOf(info.minWidth, info.minResizeWidth) else info?.minWidth ?: 0
+                        val minH = if (info != null && android.os.Build.VERSION.SDK_INT >= 16 && info.minResizeHeight > 0)
+                            minOf(info.minHeight, info.minResizeHeight) else info?.minHeight ?: 0
+                        GridEditorLayoutPolicy.effectiveSpan(item.cols, item.rows, nextCols,
+                            nextCellDp, nextCellDp, minW, minH)
+                    }
+                    if (GridEditorLayoutPolicy.canFitColumns(items, nextSpans, nextCols)) {
+                        cols = nextCols
+                    } else {
+                        Toast.makeText(context, "Cannot reduce columns: an item would be clipped",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }) {
                     Icon(painter = androidx.compose.ui.res.painterResource(android.R.drawable.ic_media_rew), contentDescription = "Decrease", tint = Color.White)
                 }
                 IconButton(onClick = { if (cols < 8) cols++ }) {
@@ -272,11 +295,27 @@ fun GridEditorCanvas(
     onUpdateItems: (List<GridWidgetItem>) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(2000.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().heightIn(min = 2000.dp)) {
         val cellWidth = maxWidth / cols
         val cellHeight = cellWidth // Square cells
         val cellWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { cellWidth.toPx() }
         val cellHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { cellHeight.toPx() }
+        val effectiveSpans = items.map { item ->
+            val widgetId = if (item.id.startsWith("widget:"))
+                item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() else null
+            val info = try { widgetId?.let { appWidgetManager.getAppWidgetInfo(it) } }
+                catch (_: Exception) { null }
+            val minW = if (info != null && android.os.Build.VERSION.SDK_INT >= 16 && info.minResizeWidth > 0)
+                minOf(info.minWidth, info.minResizeWidth) else info?.minWidth ?: 0
+            val minH = if (info != null && android.os.Build.VERSION.SDK_INT >= 16 && info.minResizeHeight > 0)
+                minOf(info.minHeight, info.minResizeHeight) else info?.minHeight ?: 0
+            GridEditorLayoutPolicy.effectiveSpan(item.cols, item.rows, cols,
+                cellWidth.value, cellHeight.value, minW, minH)
+        }
+        val gridRows = maxOf(25, (items.indices.maxOfOrNull {
+            items[it].y + effectiveSpans[it].rows
+        } ?: 0) + 2)
+        Spacer(modifier = Modifier.height(cellHeight * gridRows))
 
         // Draw grid lines
         for (i in 0..cols) {
@@ -288,7 +327,7 @@ fun GridEditorCanvas(
                     .background(Color(0xFF2E2E2E))
             )
         }
-        for (i in 0..40) {
+        for (i in 0..gridRows) {
             Box(
                 modifier = Modifier
                     .offset(y = cellHeight * i)
@@ -303,13 +342,32 @@ fun GridEditorCanvas(
                 var offsetX by remember { mutableFloatStateOf(item.x * cellWidthPx) }
                 var offsetY by remember { mutableFloatStateOf(item.y * cellHeightPx) }
                 var isDragging by remember { mutableStateOf(false) }
-                
+                var isDropValid by remember { mutableStateOf(true) }
+                val itemSpan = effectiveSpans.getOrElse(index) {
+                    GridEditorLayoutPolicy.Span(item.cols, item.rows)
+                }
+                val widgetIdForMin = if (item.id.startsWith("widget:"))
+                    item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() else null
+                val widgetInfoForMin = try {
+                    widgetIdForMin?.let { appWidgetManager.getAppWidgetInfo(it) }
+                } catch (_: Exception) { null }
+                val minWidthForResize = if (widgetInfoForMin != null
+                        && android.os.Build.VERSION.SDK_INT >= 16 && widgetInfoForMin.minResizeWidth > 0)
+                    minOf(widgetInfoForMin.minWidth, widgetInfoForMin.minResizeWidth)
+                else widgetInfoForMin?.minWidth ?: 0
+                val minHeightForResize = if (widgetInfoForMin != null
+                        && android.os.Build.VERSION.SDK_INT >= 16 && widgetInfoForMin.minResizeHeight > 0)
+                    minOf(widgetInfoForMin.minHeight, widgetInfoForMin.minResizeHeight)
+                else widgetInfoForMin?.minHeight ?: 0
+                val minimumSpan = GridEditorLayoutPolicy.effectiveSpan(1, 1, cols,
+                    cellWidth.value, cellHeight.value, minWidthForResize, minHeightForResize)
+
                 var resizeDx by remember { mutableFloatStateOf(0f) }
                 var resizeDy by remember { mutableFloatStateOf(0f) }
                 var isResizing by remember { mutableStateOf(false) }
 
-                val currentWidthPx = (item.cols * cellWidthPx + resizeDx).coerceAtLeast(cellWidthPx)
-                val currentHeightPx = (item.rows * cellHeightPx + resizeDy).coerceAtLeast(cellHeightPx)
+                val currentWidthPx = (itemSpan.cols * cellWidthPx + resizeDx).coerceAtLeast(cellWidthPx)
+                val currentHeightPx = (itemSpan.rows * cellHeightPx + resizeDy).coerceAtLeast(cellHeightPx)
 
                 val zIndex = if (isDragging || isResizing) 10f else 1f
 
@@ -322,45 +380,67 @@ fun GridEditorCanvas(
                         )
                         .zIndex(zIndex)
                         .padding(2.dp)
-                        .background(if (isDragging) Color(0xCC4CAF50) else Color(0xDD2E7D32), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                        .border(2.dp, if (isDragging) Color.White else Color(0xFF4CAF50), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                        .pointerInput(item.id, index) {
-                            detectDragGestures(
-                                onDragStart = { 
-                                    isDragging = true
-                                    onInteractionStateChange(true)
-                                    LogKeeper.writeLog("WidgetsGridEdit", "Drag started for ${item.id} at (${item.x}, ${item.y})")
-                                },
-                                onDragEnd = {
-                                    isDragging = false
-                                    onInteractionStateChange(false)
-                                    // Snap to grid
-                                    val gridX = (offsetX / cellWidthPx).roundToInt().coerceIn(0, maxOf(0, cols - item.cols))
-                                    val gridY = (offsetY / cellHeightPx).roundToInt().coerceAtLeast(0)
-                                    offsetX = gridX * cellWidthPx
-                                    offsetY = gridY * cellHeightPx
-                                    
-                                    LogKeeper.writeLog("WidgetsGridEdit", "Dropped ${item.id} -> snapped to ($gridX, $gridY)")
-                                    val newItems = items.toMutableList()
-                                    if (index in newItems.indices) {
-                                        newItems[index] = item.copy(x = gridX, y = gridY)
-                                        onUpdateItems(newItems)
-                                    }
-                                },
-                                onDragCancel = {
-                                    isDragging = false
-                                    onInteractionStateChange(false)
-                                    offsetX = item.x * cellWidthPx
-                                    offsetY = item.y * cellHeightPx
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    offsetX = (offsetX + dragAmount.x).coerceIn(0f, (cols - item.cols) * cellWidthPx)
-                                    offsetY = (offsetY + dragAmount.y).coerceAtLeast(0f)
-                                }
-                            )
-                        }
+                        .background(if ((isDragging || isResizing) && !isDropValid) Color(0xCCB71C1C) else if (isDragging || isResizing) Color(0xCC4CAF50) else Color(0xDD2E7D32), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .border(2.dp, if ((isDragging || isResizing) && !isDropValid) Color.Red else if (isDragging || isResizing) Color.White else Color(0xFF4CAF50), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        
                 ) {
+                    // Dedicated drag grip leaves the card body available for normal scrolling.
+                    IconButton(
+                        onClick = {},
+                        modifier = Modifier.align(Alignment.TopStart).size(28.dp)
+                            .pointerInput(item.id, index, items, effectiveSpans) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        isDragging = true
+                                        isDropValid = true
+                                        onInteractionStateChange(true)
+                                    },
+                                    onDragEnd = {
+                                        isDragging = false
+                                        onInteractionStateChange(false)
+                                        val gx = (offsetX / cellWidthPx).roundToInt()
+                                            .coerceIn(0, maxOf(0, cols - itemSpan.cols))
+                                        val gy = (offsetY / cellHeightPx).roundToInt().coerceAtLeast(0)
+                                        if (GridEditorLayoutPolicy.canPlace(items, effectiveSpans,
+                                                index, gx, gy, itemSpan, cols)) {
+                                            offsetX = gx * cellWidthPx
+                                            offsetY = gy * cellHeightPx
+                                            val moved = items.toMutableList()
+                                            if (index in moved.indices) {
+                                                moved[index] = item.copy(x = gx, y = gy)
+                                                onUpdateItems(moved)
+                                            }
+                                        } else {
+                                            offsetX = item.x * cellWidthPx
+                                            offsetY = item.y * cellHeightPx
+                                            Toast.makeText(context, "Position overlaps another item",
+                                                Toast.LENGTH_SHORT).show()
+                                        }
+                                        isDropValid = true
+                                    },
+                                    onDragCancel = {
+                                        isDragging = false
+                                        onInteractionStateChange(false)
+                                        isDropValid = true
+                                        offsetX = item.x * cellWidthPx
+                                        offsetY = item.y * cellHeightPx
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        offsetX = (offsetX + amount.x).coerceIn(
+                                            0f, maxOf(0, cols - itemSpan.cols) * cellWidthPx)
+                                        offsetY = (offsetY + amount.y).coerceAtLeast(0f)
+                                        val gx = (offsetX / cellWidthPx).roundToInt()
+                                        val gy = (offsetY / cellHeightPx).roundToInt()
+                                        isDropValid = GridEditorLayoutPolicy.canPlace(items, effectiveSpans,
+                                            index, gx, gy, itemSpan, cols)
+                                    }
+                                )
+                            }
+                    ) {
+                        Icon(Icons.Default.DragHandle, contentDescription = "Drag to move", tint = Color.White)
+                    }
+
                     // Delete button
                     IconButton(
                         onClick = {
@@ -407,29 +487,48 @@ fun GridEditorCanvas(
                                         isResizing = false
                                         onInteractionStateChange(false)
                                         // Snap resize to grid
-                                        val finalCols = ((currentWidthPx) / cellWidthPx).roundToInt().coerceIn(1, maxOf(1, cols - item.x))
-                                        val finalRows = ((currentHeightPx) / cellHeightPx).roundToInt().coerceAtLeast(1)
+                                        val finalCols = ((currentWidthPx) / cellWidthPx).roundToInt()
+                                                .coerceIn(minimumSpan.cols, maxOf(minimumSpan.cols, cols - item.x))
+                                            val finalRows = ((currentHeightPx) / cellHeightPx).roundToInt()
+                                                .coerceAtLeast(minimumSpan.rows)
                                         
                                         resizeDx = 0f
                                         resizeDy = 0f
                                         
-                                        val newItems = items.toMutableList()
-                                        if (index in newItems.indices) {
-                                            newItems[index] = item.copy(cols = finalCols, rows = finalRows)
-                                            LogKeeper.writeLog("WidgetsGridEdit", "Resized ${item.id} -> ${finalCols}x${finalRows}")
-                                            onUpdateItems(newItems)
-                                        }
+                                        val targetSpan = GridEditorLayoutPolicy.effectiveSpan(finalCols, finalRows,
+                                                cols, cellWidth.value, cellHeight.value,
+                                                minWidthForResize, minHeightForResize)
+                                            val valid = GridEditorLayoutPolicy.canPlace(items, effectiveSpans,
+                                                index, item.x, item.y, targetSpan, cols)
+                                            val newItems = items.toMutableList()
+                                            if (index in newItems.indices && valid) {
+                                                newItems[index] = item.copy(cols = finalCols, rows = finalRows)
+                                                LogKeeper.writeLog("WidgetsGridEdit", "Resized ${item.id} -> ${finalCols}x${finalRows}")
+                                                onUpdateItems(newItems)
+                                            } else if (!valid) {
+                                                Toast.makeText(context, "Resize overlaps another item",
+                                                    Toast.LENGTH_SHORT).show()
+                                            }
                                     },
                                     onDragCancel = {
                                         isResizing = false
                                         onInteractionStateChange(false)
+                                        isDropValid = true
                                         resizeDx = 0f
                                         resizeDy = 0f
                                     },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
-                                        resizeDx += dragAmount.x
-                                        resizeDy += dragAmount.y
+                                        resizeDx += dragAmount.xresizeDy += dragAmount.y
+                                        val previewCols = (currentWidthPx / cellWidthPx).roundToInt()
+                                            .coerceIn(minimumSpan.cols, maxOf(minimumSpan.cols, cols - item.x))
+                                        val previewRows = (currentHeightPx / cellHeightPx).roundToInt()
+                                            .coerceAtLeast(minimumSpan.rows)
+                                        val previewSpan = GridEditorLayoutPolicy.effectiveSpan(
+                                            previewCols, previewRows, cols, cellWidth.value, cellHeight.value,
+                                            minWidthForResize, minHeightForResize)
+                                        isDropValid = GridEditorLayoutPolicy.canPlace(items, effectiveSpans,
+                                            index, item.x, item.y, previewSpan, cols)
                                     }
                                 )
                             },

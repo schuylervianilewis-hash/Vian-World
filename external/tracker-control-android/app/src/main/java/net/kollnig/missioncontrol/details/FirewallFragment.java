@@ -403,15 +403,40 @@ public class FirewallFragment extends Fragment {
     private void applyGlobalAction(String action) {
         if (!isAdded() || blockPerAppPolicyEdit())
             return;
+        // Bulk actions operate on the exact rows currently shown, including system
+        // apps when the System filter is selected. Never act on hidden/search-excluded rows.
+        List<Rule> visible = adapter == null
+                ? Collections.emptyList() : adapter.snapshotItems();
+        Map<Integer, Integer> uidCounts = new HashMap<>();
+        for (Rule rule : allRules)
+            if (rule.pkg)
+                uidCounts.put(rule.uid, uidCounts.getOrDefault(rule.uid, 0) + 1);
+
         List<Rule> targets = new ArrayList<>();
-        for (Rule rule : allRules) {
-            if (rule.pkg && !rule.system
-                    && !InternetPermissionPolicy.isProtectedIdentity(
-                            requireContext(), rule.packageName, rule.uid))
-                targets.add(rule);
+        int skippedSharedUid = 0;
+        for (Rule rule : visible) {
+            if (!rule.pkg || InternetPermissionPolicy.isProtectedIdentity(
+                    requireContext(), rule.packageName, rule.uid))
+                continue;
+            // A UID-level firewall decision can affect every package sharing that UID.
+            // Skip shared identities rather than changing apps hidden by the current filter.
+            if (uidCounts.getOrDefault(rule.uid, 0) > 1) {
+                skippedSharedUid++;
+                continue;
+            }
+            targets.add(rule);
         }
-        if (targets.isEmpty())
+        if (targets.isEmpty()) {
+            if (skippedSharedUid > 0)
+                Toast.makeText(requireContext(),
+                        "No eligible visible apps; shared-UID apps were skipped for safety",
+                        Toast.LENGTH_LONG).show();
             return;
+        }
+        if (skippedSharedUid > 0)
+            Toast.makeText(requireContext(),
+                    "Shared-UID apps skipped for safety: " + skippedSharedUid,
+                    Toast.LENGTH_LONG).show();
 
         SharedPreferences routePrefs = requireContext().getSharedPreferences(
                 Rule.PREF_WG_ROUTE, Context.MODE_PRIVATE);
@@ -979,6 +1004,10 @@ public class FirewallFragment extends Fragment {
 
     private final class FirewallAdapter extends RecyclerView.Adapter<FirewallViewHolder> {
         private final List<Rule> items = new ArrayList<>();
+
+        List<Rule> snapshotItems() {
+            return new ArrayList<>(items);
+        }
 
         void setItems(List<Rule> values) {
             final List<Rule> nextItems = new ArrayList<>(values);

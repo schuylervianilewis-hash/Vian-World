@@ -493,3 +493,48 @@ Capped at 500 lines per file.
   6. Verify normal Sidebar Add still returns after one selection.
   7. Verify Hybrid Grid App/PWA/Action direct-add still leaves its picker open and writes to the grid, and Widget Grid continuous-add behavior is unchanged.
 * Known limitation: CI validates compilation and automated tests, not real picker interactions, Android widget configuration, or on-device persistence.
+
+
+---
+
+### Receipt 111 — Stage 5 Editor Controls and Shield System-App Corrections
+
+* Timestamp: 2026-11-24
+* One-line summary: Make grid editing explicit and collision-safe, and correct Shield's system-app default-deny and bulk-action scope.
+* Exact files touched:
+  - `app/src/main/java/com/example/SidebarEditActivity.kt`
+  - `app/src/main/java/com/example/WidgetsGridEditActivity.kt`
+  - `app/src/main/java/com/example/HybridGridEditActivity.kt`
+  - `app/src/main/java/com/example/feature/sidebar/GridEditorLayoutPolicy.kt` (new)
+  - `app/src/test/java/com/example/feature/sidebar/GridEditorLayoutPolicyTest.kt` (new)
+  - `external/tracker-control-android/app/src/main/java/net/kollnig/missioncontrol/data/InternetPermissionPolicy.java`
+  - `external/tracker-control-android/app/src/main/java/net/kollnig/missioncontrol/details/FirewallFragment.java`
+  - `external/tracker-control-android/app/src/test/java/net/kollnig/missioncontrol/data/FirewallPolicyLogicTest.java`
+  - `external/tracker-control-android/app/src/test/java/net/kollnig/missioncontrol/data/InternetPermissionPolicyTest.java`
+  - `receipts/RECEIPTS_100.md`
+* Implemented:
+  - Sidebar list editor uses a dedicated drag grip; long-press drag on the full card is disabled so normal list scrolling remains available.
+  - Widgets Grid and Hybrid Grid use a dedicated drag grip instead of making the whole card a drag surface. Normal card/empty-canvas swipes remain available for scrolling.
+  - Both grid editors calculate effective widget spans from provider minimum dimensions, size the canvas from the occupied item extents with a minimum work area and trailing space, and draw matching row guides.
+  - Added shared half-open rectangle geometry policy for move/resize bounds and overlap checks. Invalid moves/resizes are rejected, return to the previous geometry, and show concise feedback; valid operations persist through the existing callbacks.
+  - Column reduction checks effective spans before changing the column count.
+  - Shield automatic default-deny no longer exempts all system packages solely because they carry system flags. The app's own UID and explicitly critical Android/network identities remain exempt; shared-UID packages remain outside automatic reconciliation.
+  - Shield bulk actions now target the currently visible, filtered/search-matched list, including system apps, rather than silently excluding system apps and acting on hidden rows. Shared-UID groups and protected identities are skipped for safety.
+  - Added regression coverage for grid overlap/bounds/provider minimum spans/column fit, system-only policy ordering, and system-app default-deny eligibility.
+* Verification:
+  - GitHub API source transformations were checked for unique expected anchors before creating blobs.
+  - Automated build/test verification is pending CI for the resulting commit; no passing build/test claim is made here.
+  - Physical-device QA remains pending and must be bundled with the previously deferred Stage 1–4 checks.
+* On-device QA required:
+  1. Verify Sidebar drag starts only from the grip and normal vertical scrolling works.
+  2. In Widgets Grid and Hybrid Grid, verify grip drag, resize handle, delete, folder edit, normal scrolling, and empty-canvas scrolling.
+  3. Try valid moves/resizes, partial and full overlaps, edge-adjacent placements, and out-of-bounds placements; invalid operations must not persist.
+  4. Verify tall layouts remain scrollable and the grid guides extend to the actual item extents.
+  5. Attempt to reduce columns below an item's effective widget minimum; confirm the change is rejected and existing layout data remains unchanged.
+  6. Verify app/container/page isolation, add/reload behavior, and save/reopen persistence for both grid editors.
+  7. In Shield, inspect System-only and User-only filters, verify Direct → VPN → Blocked → Excluded order under each supported sort mode, and verify Block All affects only the currently visible eligible rows.
+  8. Verify a non-critical system app without INTERNET permission is auto-blocked, while critical platform identities and shared-UID apps remain protected from automatic deny.
+* Known limitations:
+  - Absence of INTERNET permission is a technical proxy for no direct network access, not a semantic guarantee that the app is unneeded. OEM-specific dependencies still require device QA.
+  - Shared-UID bulk targets are deliberately skipped rather than partially applying a UID-wide policy.
+  - CI does not replace Android device testing.

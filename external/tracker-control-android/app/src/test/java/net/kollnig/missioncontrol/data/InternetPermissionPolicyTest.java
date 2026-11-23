@@ -20,6 +20,18 @@ public class InternetPermissionPolicyTest {
     }
 
     @Test
+    public void appsWithoutInternetPermissionRemainEligibleForAutomaticDeny() {
+        // System classification is not an automatic exemption. Only explicit
+        // critical identities and the app's own UID are exempt in reconciliation.
+        assertTrue(InternetPermissionPolicy.shouldAutoBlock(
+                false, false, false, false, false));
+        assertFalse(InternetPermissionPolicy.shouldAutoBlock(
+                false, false, false, false, true));
+        assertFalse(InternetPermissionPolicy.shouldAutoBlock(
+                true, false, false, false, false));
+    }
+
+    @Test
     public void automaticDenyIsNotReleasedForTemporaryInventoryGap() {
         assertFalse(InternetPermissionPolicy.shouldReleaseAutomaticBlock(false, false, false));
         assertFalse(InternetPermissionPolicy.shouldReleaseAutomaticBlock(true, false, true));

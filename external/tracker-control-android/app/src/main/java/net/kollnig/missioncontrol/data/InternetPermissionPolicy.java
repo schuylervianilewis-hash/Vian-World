@@ -232,11 +232,10 @@ public final class InternetPermissionPolicy {
     }
 
     private static boolean isAutomaticDenyExempt(PackageInfo info, int uid) {
-        int flags = info.applicationInfo.flags;
-        boolean systemPackage = (flags & (ApplicationInfo.FLAG_SYSTEM
-                | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
-        return systemPackage || uid == Process.myUid()
-                || isCriticalSystemPackage(info.packageName);
+        // System status alone is not evidence that an app needs network access.
+        // Keep only the app's own UID and explicitly critical platform/network
+        // identities exempt; shared UIDs are handled separately by reconcile().
+        return uid == Process.myUid() || isCriticalSystemPackage(info.packageName);
     }
 
     static boolean shouldAutoBlock(boolean sharedUid, boolean hasInternetPermission,
