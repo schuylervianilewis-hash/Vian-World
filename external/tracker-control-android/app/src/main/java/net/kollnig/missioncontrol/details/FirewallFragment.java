@@ -53,6 +53,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -339,18 +340,18 @@ public class FirewallFragment extends Fragment {
         final InternetBlocklist internet = InternetBlocklist.getInstance(requireContext());
         final Comparator<FirewallPolicyLogic.Entry> comparator =
                 FirewallPolicyLogic.comparator(sortMode);
-        final Map<String, FirewallPolicyLogic.Entry> entries = new HashMap<>();
+        final Map<Rule, FirewallPolicyLogic.Entry> entries = new IdentityHashMap<>();
         for (Rule rule : filtered) {
             int priority = FirewallPolicyLogic.priority(
                     rule.apply, internet.blockedInternet(rule.uid),
                     remoteVpnAvailable && rule.wg_route);
-            entries.put(rule.packageName, new FirewallPolicyLogic.Entry(
+            entries.put(rule, new FirewallPolicyLogic.Entry(
                     priority, rule.name, rule.packageName, rule.firstInstallTime,
                     rule.uid, rule.getTrackerCount(true), rule.getTrackerCount(false),
                     rule.getLastTrackerTime()));
         }
         Collections.sort(filtered, (left, right) ->
-                comparator.compare(entries.get(left.packageName), entries.get(right.packageName)));
+                comparator.compare(entries.get(left), entries.get(right)));
         adapter.setItems(filtered);
         // Keep the recovered list unobstructed; empty results leave the list surface clear.
     }
