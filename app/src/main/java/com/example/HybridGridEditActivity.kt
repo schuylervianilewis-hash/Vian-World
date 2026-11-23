@@ -254,6 +254,7 @@ fun HybridGridEditor(
     onAddWidget: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val gridColsKey = if (containerId != "sidebar" || prefs.contains("handle_${containerId}_hybrid_grid_cols_$pageId")) "handle_${containerId}_hybrid_grid_cols_$pageId" else "hybrid_grid_cols_$pageId"
     var cols by remember { mutableIntStateOf(prefs.getInt(gridColsKey, prefs.getInt("hybrid_grid_cols_$pageId", 4))) }
     var items by remember { mutableStateOf(loadHybridLocalItems(prefs, pageId, containerId)) }
@@ -336,7 +337,7 @@ fun HybridGridEditor(
                 IconButton(onClick = {
                     val nextCols = cols - 1
                     if (nextCols < 1) return@IconButton
-                    val nextCellDp = ((androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32f) / nextCols).coerceAtLeast(1f)
+                    val nextCellDp = ((screenWidthDp - 32f) / nextCols).coerceAtLeast(1f)
                     val nextSpans = items.map { item ->
                         val widgetId = if (item.id.startsWith("widget:"))
                             item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() else null

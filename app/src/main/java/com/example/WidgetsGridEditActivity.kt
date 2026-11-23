@@ -187,6 +187,7 @@ fun WidgetGridEditor(
     onAddWidget: () -> Unit
 ) {
     val context = LocalContext.current
+    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val widgetsColsKey = if (containerId != "sidebar" || prefs.contains("handle_${containerId}_widgets_grid_cols_$pageId")) "handle_${containerId}_widgets_grid_cols_$pageId" else "widgets_grid_cols_$pageId"
     var cols by remember { mutableIntStateOf(prefs.getInt(widgetsColsKey, prefs.getInt("widgets_grid_cols_$pageId", 4))) }
     var items by remember { mutableStateOf(loadLocalItems(prefs, pageId, containerId)) }
@@ -231,7 +232,7 @@ fun WidgetGridEditor(
                 IconButton(onClick = {
                     val nextCols = cols - 1
                     if (nextCols < 1) return@IconButton
-                    val nextCellDp = ((androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32f) / nextCols).coerceAtLeast(1f)
+                    val nextCellDp = ((screenWidthDp - 32f) / nextCols).coerceAtLeast(1f)
                     val nextSpans = items.map { item ->
                         val widgetId = if (item.id.startsWith("widget:"))
                             item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() else null
