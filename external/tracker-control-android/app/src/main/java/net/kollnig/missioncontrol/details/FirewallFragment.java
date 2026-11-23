@@ -420,7 +420,10 @@ public class FirewallFragment extends Fragment {
                 continue;
             // A UID-level firewall decision can affect every package sharing that UID.
             // Skip shared identities rather than changing apps hidden by the current filter.
-            if (uidCounts.getOrDefault(rule.uid, 0) > 1) {
+            String[] uidPackages = requireContext().getPackageManager()
+                    .getPackagesForUid(rule.uid);
+            if (uidCounts.getOrDefault(rule.uid, 0) > 1
+                    || (uidPackages != null && uidPackages.length > 1)) {
                 skippedSharedUid++;
                 continue;
             }
