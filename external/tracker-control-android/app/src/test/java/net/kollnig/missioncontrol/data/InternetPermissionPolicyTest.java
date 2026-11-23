@@ -32,6 +32,13 @@ public class InternetPermissionPolicyTest {
     }
 
     @Test
+    public void systemClassificationAloneDoesNotExemptAutomaticDeny() {
+        assertFalse(InternetPermissionPolicy.isAutomaticDenyExempt(false, false));
+        assertTrue(InternetPermissionPolicy.isAutomaticDenyExempt(true, false));
+        assertTrue(InternetPermissionPolicy.isAutomaticDenyExempt(false, true));
+    }
+
+    @Test
     public void automaticDenyIsNotReleasedForTemporaryInventoryGap() {
         assertFalse(InternetPermissionPolicy.shouldReleaseAutomaticBlock(false, false, false));
         assertFalse(InternetPermissionPolicy.shouldReleaseAutomaticBlock(true, false, true));

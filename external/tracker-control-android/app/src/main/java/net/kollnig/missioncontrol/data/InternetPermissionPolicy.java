@@ -8,7 +8,6 @@ package net.kollnig.missioncontrol.data;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Process;
@@ -235,7 +234,12 @@ public final class InternetPermissionPolicy {
         // System status alone is not evidence that an app needs network access.
         // Keep only the app's own UID and explicitly critical platform/network
         // identities exempt; shared UIDs are handled separately by reconcile().
-        return uid == Process.myUid() || isCriticalSystemPackage(info.packageName);
+        return isAutomaticDenyExempt(uid == Process.myUid(),
+                isCriticalSystemPackage(info.packageName));
+    }
+
+    static boolean isAutomaticDenyExempt(boolean ownUid, boolean criticalIdentity) {
+        return ownUid || criticalIdentity;
     }
 
     static boolean shouldAutoBlock(boolean sharedUid, boolean hasInternetPermission,
