@@ -337,7 +337,7 @@ fun HybridGridEditor(
                 IconButton(onClick = {
                     val nextCols = cols - 1
                     if (nextCols < 1) return@IconButton
-                    val nextCellDp = ((screenWidthDp - 32f) / nextCols).coerceAtLeast(1f)
+                    val nextCellDp = (((screenWidthDp - 32f) / nextCols).toInt().toFloat()).coerceAtLeast(1f)
                     val nextSpans = items.map { item ->
                         val widgetId = if (item.id.startsWith("widget:"))
                             item.id.removePrefix("widget:").substringBefore(":").toIntOrNull() else null
@@ -420,7 +420,7 @@ fun HybridGridEditorCanvas(
             val minH = if (info != null && android.os.Build.VERSION.SDK_INT >= 16 && info.minResizeHeight > 0)
                 minOf(info.minHeight, info.minResizeHeight) else info?.minHeight ?: 0
             GridEditorLayoutPolicy.effectiveSpan(item.cols, item.rows, cols,
-                cellWidth.value, cellHeight.value, minW, minH)
+                cellWidth.value.toInt().toFloat(), cellHeight.value.toInt().toFloat(), minW, minH)
         }
         val gridRows = maxOf(25, (items.indices.maxOfOrNull {
             items[it].y + effectiveSpans[it].rows
@@ -470,7 +470,7 @@ fun HybridGridEditorCanvas(
                     minOf(widgetInfoForMin.minHeight, widgetInfoForMin.minResizeHeight)
                 else widgetInfoForMin?.minHeight ?: 0
                 val minimumSpan = GridEditorLayoutPolicy.effectiveSpan(1, 1, cols,
-                    cellWidth.value, cellHeight.value, minWidthForResize, minHeightForResize)
+                    cellWidth.value.toInt().toFloat(), cellHeight.value.toInt().toFloat(), minWidthForResize, minHeightForResize)
 
                 var resizeDx by remember { mutableFloatStateOf(0f) }
                 var resizeDy by remember { mutableFloatStateOf(0f) }
@@ -634,7 +634,7 @@ fun HybridGridEditorCanvas(
                                             resizeDy = 0f
                                             
                                             val targetSpan = GridEditorLayoutPolicy.effectiveSpan(finalCols, finalRows,
-                                                cols, cellWidth.value, cellHeight.value,
+                                                cols, cellWidth.value.toInt().toFloat(), cellHeight.value.toInt().toFloat(),
                                                 minWidthForResize, minHeightForResize)
                                             val valid = GridEditorLayoutPolicy.canPlace(items, effectiveSpans,
                                                 index, item.x, item.y, targetSpan, cols)
@@ -664,7 +664,7 @@ fun HybridGridEditorCanvas(
                                             val previewRows = (currentHeightPx / cellHeightPx).roundToInt()
                                                 .coerceAtLeast(minimumSpan.rows)
                                             val previewSpan = GridEditorLayoutPolicy.effectiveSpan(
-                                                previewCols, previewRows, cols, cellWidth.value, cellHeight.value,
+                                                previewCols, previewRows, cols, cellWidth.value.toInt().toFloat(), cellHeight.value.toInt().toFloat(),
                                                 minWidthForResize, minHeightForResize)
                                             isDropValid = GridEditorLayoutPolicy.canPlace(items, effectiveSpans,
                                                 index, item.x, item.y, previewSpan, cols)
