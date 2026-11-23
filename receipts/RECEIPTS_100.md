@@ -460,3 +460,36 @@ Capped at 500 lines per file.
 * APK SHA-256: `c60f2afeae814d6d3cee725eb1bdbe147ae2baab414235a91fb564a7d9a751d1`.
 * The APK was built from source implementation commit `28d1a9f9ed1c833d7cc38dbd2a9589ade06b12a3`.
 * Physical-device QA has not been performed. Do not mark Stage 4 fully complete until the folder multi-add acceptance checks pass on-device; bundle pending Stage 1, 2 and 3 device checks as recorded in the staged work order.
+
+
+---
+
+### Receipt 106 — Folder Add Returns and Saves One Item Immediately
+
+* Timestamp: 2026-11-23
+* One-line summary of what was requested: Replace the folder-only multi-select/Done session with the app's existing immediate single-item Add Element flow.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/settings/AddElementActivity.kt`
+  - `app/src/main/java/com/example/SidebarEditActivity.kt`
+  - `app/src/main/java/com/example/feature/element/ElementSelectionSession.kt` (removed; no remaining callers)
+  - `app/src/test/java/com/example/feature/element/ElementSelectionSessionTest.kt` (removed; tests covered the retired batch-session mechanism)
+  - `receipts/RECEIPTS_100.md`
+* What was actually done:
+  - Removed the folder multi-select extra, selection accumulator, saved-state selection restoration, and Done button from AddElementActivity. The picker now consistently completes through its existing single `ELEMENT_ID` result contract.
+  - Removed the folder editor's `MULTI_SELECT` launch flag. Selecting an App, Shortcut, Intent, Widget, Popup Widget, Folder, Link, Offline PWA, Android action, or other returned element now exits the Add Element flow after that one selection.
+  - Simplified SidebarEditActivity's Add result handling to append the returned `ELEMENT_ID`, notify the inserted row, and call `saveIds()` immediately. The user can tap Add again for another item.
+  - Left individual picker implementations and their established return/configuration flows unchanged. Hybrid Grid's direct-placement path remains in AddElementActivity and the dedicated picker paths; it is not routed through folder persistence.
+  - Preserved the existing note-instance assignment in `finishWithId()`, popup-widget ID conversion, floating-trigger conversion, and folder auto-save behavior.
+* Verification:
+  - Source-level transformation checks confirmed each intended old block was found exactly once before replacement.
+  - GitHub Actions verification is pending for the resulting commit; no passing build/test claim is made here.
+  - Physical-device QA is pending.
+* On-device QA required:
+  1. Open a folder, tap Add, choose App, select one app; confirm the picker closes and the app appears in the folder editor immediately.
+  2. Tap Add again and add a Shortcut, Intent, Widget, Popup Widget, Link, Offline PWA and an Android action; verify each selection returns immediately and each item appears once.
+  3. Save/leave/reopen the folder and confirm every item persists.
+  4. Cancel each picker without selecting; confirm no item is added.
+  5. Verify widget configuration still completes before returning the widget ID.
+  6. Verify normal Sidebar Add still returns after one selection.
+  7. Verify Hybrid Grid App/PWA/Action direct-add still leaves its picker open and writes to the grid, and Widget Grid continuous-add behavior is unchanged.
+* Known limitation: CI validates compilation and automated tests, not real picker interactions, Android widget configuration, or on-device persistence.

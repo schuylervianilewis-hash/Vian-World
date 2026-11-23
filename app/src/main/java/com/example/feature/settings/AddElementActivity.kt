@@ -21,24 +21,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.room.Room
-import com.example.feature.element.ElementSelectionSession
 
 
 class AddElementActivity : ComponentActivity() {
-    private var selectionSession = ElementSelectionSession()
-    private var multiSelectDoneButton: TextView? = null
-
-    companion object {
-        const val EXTRA_MULTI_SELECT = "MULTI_SELECT"
-        const val EXTRA_ELEMENT_IDS = "ELEMENT_IDS"
-        private const val STATE_SELECTED_ELEMENT_IDS = "selected_element_ids"
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        savedInstanceState?.getStringArrayList(STATE_SELECTED_ELEMENT_IDS)?.let {
-            selectionSession = ElementSelectionSession(it)
-        }
         
         val density = resources.displayMetrics.density
         
@@ -72,25 +59,8 @@ class AddElementActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         
-        val doneButton = TextView(this).apply {
-            text = "Done (${selectionSession.size})"
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding((12 * density).toInt(), 0, 0, 0)
-            isClickable = true
-            isFocusable = true
-            visibility = if (intent.getBooleanExtra(EXTRA_MULTI_SELECT, false)) View.VISIBLE else View.GONE
-            isEnabled = selectionSession.size > 0
-            alpha = if (isEnabled) 1f else 0.45f
-            setOnClickListener { completeMultiSelection() }
-        }
-        multiSelectDoneButton = doneButton
-
         toolbar.addView(backIcon)
         toolbar.addView(titleView)
-        toolbar.addView(doneButton)
         mainLayout.addView(toolbar)
         
         val scrollView = ScrollView(this).apply {
@@ -374,45 +344,9 @@ class AddElementActivity : ComponentActivity() {
                 else -> "Element"
             }
             android.widget.Toast.makeText(this, "Added: $name", android.widget.Toast.LENGTH_SHORT).show()
-        } else if (intent.getBooleanExtra(EXTRA_MULTI_SELECT, false)) {
-            val targetId = com.example.feature.element.ElementPlacementHelper.assignInstanceIfNote(id)
-            val count = selectionSession.add(targetId)
-            multiSelectDoneButton?.apply {
-                text = "Done ($count)"
-                isEnabled = true
-                alpha = 1f
-            }
-            com.example.core.LogKeeper.log(
-                this,
-                "FolderMultiAdd",
-                "Selected folder child count=$count elementId=$targetId"
-            )
-            val name = displayName ?: id.substringBefore(":").replaceFirstChar { it.uppercase() }
-            android.widget.Toast.makeText(this, "Selected: $name", android.widget.Toast.LENGTH_SHORT).show()
         } else {
             finishWithId(id, displayName)
         }
-    }
-
-    private fun completeMultiSelection() {
-        val selectedIds = ArrayList(selectionSession.snapshot())
-        if (selectedIds.isEmpty()) return
-        val result = Intent().apply {
-            putStringArrayListExtra(EXTRA_ELEMENT_IDS, selectedIds)
-            intent.getStringExtra("CONTAINER_ID")?.let { putExtra("CONTAINER_ID", it) }
-        }
-        com.example.core.LogKeeper.log(
-            this,
-            "FolderMultiAdd",
-            "Returning selected folder child count=${selectedIds.size}"
-        )
-        setResult(Activity.RESULT_OK, result)
-        finish()
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putStringArrayList(STATE_SELECTED_ELEMENT_IDS, ArrayList(selectionSession.snapshot()))
-        super.onSaveInstanceState(outState)
     }
 
     private fun finishWithId(id: String, displayName: String? = null) {
