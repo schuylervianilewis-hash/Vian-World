@@ -1,0 +1,1144 @@
+package com.example.feature.reader
+
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteQuery
+import com.example.core.FakeSharedPreferences
+import com.example.data.AppDatabase
+import com.example.data.EpubBook
+import com.example.data.EpubDao
+import com.example.data.LibraryRepository
+import com.example.data.NotificationHistoryDao
+import com.example.data.PwaDao
+import com.example.data.QuickNoteDao
+import com.example.data.SchedulerTaskDao
+import com.example.data.TrackerBook
+import com.example.data.TrackerDao
+import com.example.data.AppyworkDao
+import com.example.data.LogDao
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.FileOutputStream
+import java.lang.reflect.Proxy
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+
+class ReaderArchitectureAndBackupTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
+
+    private lateinit var context: Context
+    private lateinit var fakeDb: FakeAppDatabase
+    private lateinit var repo: LibraryRepository
+
+    private class FakeEpubDao : EpubDao {
+        private val idGen = AtomicInteger(1)
+        val rows = LinkedHashMap<Int, EpubBook>()
+        private val flow = MutableStateFlow<List<EpubBook>>(emptyList())
+
+        private fun refreshFlow() {
+            flow.value = rows.values.toList()
+        }
+
+        override suspend fun getAllBooks(): List<EpubBook> {
+            return rows.values.sortedWith(
+                compareByDescending<EpubBook> { it.lastOpenedTimestamp }
+                    .thenByDescending { it.addedTimestamp }
+                    .thenByDescending { it.id }
+            )
+        }
+
+        override suspend fun getAllBooksByAddedDesc(): List<EpubBook> {
+            return rows.values.sortedWith(
+                compareByDescending<EpubBook> { it.addedTimestamp }
+                    .thenByDescending { it.id }
+            )
+        }
+
+        override fun observeAllBooks(): Flow<List<EpubBook>> = flow
+
+        override suspend fun getRecentBooks(): List<EpubBook> {
+            return rows.values
+                .filter { it.lastOpenedTimestamp > 0L }
+                .sortedWith(
+                    compareByDescending<EpubBook> { it.lastOpenedTimestamp }
+                        .thenByDescending { it.id }
+                )
+                .take(10)
+        }
+
+        override fun observeRecentBooks(): Flow<List<EpubBook>> = flow
+
+        override suspend fun getBookByFilePath(filePath: String): EpubBook? {
+            return rows.values.firstOrNull { it.filePath == filePath }
+        }
+
+        override suspend fun insertBook(book: EpubBook): Long {
+            val assignedId = if (book.id > 0) book.id else idGen.getAndIncrement()
+            val saved = book.copy(id = assignedId)
+            rows[assignedId] = saved
+            refreshFlow()
+            return assignedId.toLong()
+        }
+
+        override suspend fun updateBook(book: EpubBook) {
+            rows[book.id] = book
+            refreshFlow()
+        }
+
+        override suspend fun getBookById(id: Int): EpubBook? = rows[id]
+
+        override suspend fun deleteBook(book: EpubBook) {
+            rows.remove(book.id)
+            refreshFlow()
+        }
+    }
+
+    private class FakeTrackerDao : TrackerDao {
+        private val idGen = AtomicInteger(1)
+        val rows = LinkedHashMap<Int, TrackerBook>()
+        private val flow = MutableStateFlow<List<TrackerBook>>(emptyList())
+
+        private fun refreshFlow() {
+            flow.value = rows.values.toList()
+        }
+
+        override suspend fun getAllBooks(): List<TrackerBook> {
+            return rows.values.sortedByDescending { it.lastUpdatedTimestamp }
+        }
+
+        override fun observeAllBooks(): Flow<List<TrackerBook>> = flow
+
+        override suspend fun insertBook(book: TrackerBook): Long {
+            val assignedId = if (book.id > 0) book.id else idGen.getAndIncrement()
+            val saved = book.copy(id = assignedId)
+            rows[assignedId] = saved
+            refreshFlow()
+            return assignedId.toLong()
+        }
+
+        override suspend fun updateBook(book: TrackerBook) {
+            rows[book.id] = book
+            refreshFlow()
+        }
+
+        override suspend fun deleteBook(book: TrackerBook) {
+            rows.remove(book.id)
+            refreshFlow()
+        }
+
+        override suspend fun getBookById(id: Int): TrackerBook? = rows[id]
+
+        override suspend fun getByLinkedEpubId(epubBookId: Int): TrackerBook? {
+            return rows.values.firstOrNull { it.linkedEpubBookId == epubBookId }
+        }
+
+        override suspend fun getByBackupOriginKey(originKey: String): TrackerBook? {
+            if (originKey.isBlank()) return null
+            return rows.values.firstOrNull { it.backupOriginKey == originKey }
+        }
+
+        override suspend fun unlinkEpubBook(epubBookId: Int) {
+            for ((k, v) in ArrayList(rows.entries)) {
+                if (v.linkedEpubBookId == epubBookId) {
+                    rows[k] = v.copy(linkedEpubBookId = null)
+                }
+            }
+            refreshFlow()
+        }
+    }
+
+    private class FakeAppDatabase : AppDatabase() {
+        val fakeEpubDao = FakeEpubDao()
+        val fakeTrackerDao = FakeTrackerDao()
+
+        override fun epubDao(): EpubDao = fakeEpubDao
+        override fun trackerDao(): TrackerDao = fakeTrackerDao
+        override fun quickNoteDao(): QuickNoteDao = throw UnsupportedOperationException()
+        override fun logDao(): LogDao = throw UnsupportedOperationException()
+        override fun schedulerTaskDao(): SchedulerTaskDao = throw UnsupportedOperationException()
+        override fun appyworkDao(): AppyworkDao = throw UnsupportedOperationException()
+        override fun notificationHistoryDao(): NotificationHistoryDao = throw UnsupportedOperationException()
+        override fun pwaDao(): PwaDao = throw UnsupportedOperationException()
+
+        override fun clearAllTables() {
+            fakeEpubDao.rows.clear()
+            fakeTrackerDao.rows.clear()
+        }
+
+        override fun createInvalidationTracker(): androidx.room.InvalidationTracker {
+            return androidx.room.InvalidationTracker(this, "epubs", "tracker_books")
+        }
+
+        override fun createOpenHelper(config: androidx.room.DatabaseConfiguration): androidx.sqlite.db.SupportSQLiteOpenHelper {
+            throw UnsupportedOperationException()
+        }
+    }
+
+    private class TestReaderContext(
+        private val prefs: SharedPreferences,
+        private val baseDir: File
+    ) : ContextWrapper(null) {
+        override fun getApplicationContext(): Context = this
+        override fun getPackageName(): String = "com.example"
+        override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences = prefs
+        override fun getFilesDir(): File = baseDir
+        override fun getCacheDir(): File = baseDir
+
+        private val fakeResources: android.content.res.Resources by lazy {
+            val dm = android.util.DisplayMetrics().apply {
+                density = 2f
+                widthPixels = 800
+                heightPixels = 1600
+            }
+            val conf = android.content.res.Configuration()
+            val am = try {
+                android.content.res.AssetManager::class.java.getConstructor().newInstance()
+            } catch (_: Throwable) {
+                android.content.res.AssetManager::class.java.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+            }
+            @Suppress("DEPRECATION")
+            object : android.content.res.Resources(am, dm, conf) {
+                override fun getDisplayMetrics(): android.util.DisplayMetrics = dm
+            }
+        }
+
+        override fun getResources(): android.content.res.Resources = fakeResources
+
+        private val mockWindowManager: android.view.WindowManager by lazy {
+            Proxy.newProxyInstance(
+                android.view.WindowManager::class.java.classLoader,
+                arrayOf(android.view.WindowManager::class.java)
+            ) { _, _, _ -> null } as android.view.WindowManager
+        }
+
+        override fun getSystemService(name: String): Any? {
+            return if (name == Context.WINDOW_SERVICE) {
+                mockWindowManager
+            } else {
+                try {
+                    super.getSystemService(name)
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+        }
+    }
+
+    @Before
+    fun setUp() {
+        val baseDir = tempFolder.newFolder("reader_arch_test")
+        context = TestReaderContext(FakeSharedPreferences(), baseDir)
+        fakeDb = FakeAppDatabase()
+        AppDatabase.setTestDatabase(fakeDb)
+        repo = LibraryRepository(context)
+    }
+
+    @After
+    fun tearDown() {
+        AppDatabase.setTestDatabase(null)
+    }
+
+    /**
+     * Tests:
+     * - Recent tab returns at most 10 opened books ordered strictly by lastOpenedTimestamp DESC.
+     * - All Books returns all imported books (> 10 books) without any 10- or 20-book cap.
+     * - Editing metadata in Book Tracker does not cause an unopened book to appear in Recent
+     *   and does not reorder Recent.
+     */
+    @Test
+    fun testRecentLast10VsAllBooksAndTrackerEditIsolation() = runBlocking {
+        val epubDao = fakeDb.epubDao()
+
+        // Insert 15 books: 12 opened at timestamps 1000..12000, and 3 unopened (lastOpenedTimestamp = 0)
+        val insertedIds = mutableListOf<Int>()
+        for (i in 1..15) {
+            val openedTs = if (i <= 12) (i * 1000L) else 0L
+            val id = epubDao.insertBook(
+                EpubBook(
+                    title = "Book $i",
+                    author = "Author $i",
+                    filePath = "/fake/path/book_$i.epub",
+                    totalChapters = 30,
+                    lastReadChapter = 0,
+                    lastReadScrollY = 0,
+                    addedTimestamp = i * 100L,
+                    lastOpenedTimestamp = openedTs,
+                    lastActivityTimestamp = openedTs
+                )
+            ).toInt()
+            insertedIds.add(id)
+            repo.getOrCreateLinkedTrackerBook(id)
+        }
+
+        val recent = repo.getRecentBooks()
+        val allBooks = repo.getAllBooks()
+
+        assertEquals("Recent tab must show at most 10 opened books", 10, recent.size)
+        assertEquals("All Books tab must show all 15 imported books", 15, allBooks.size)
+
+        // Recent must be ordered strictly by lastOpenedTimestamp DESC: Book 12 down to Book 3
+        assertEquals("Book 12", recent.first().title)
+        assertEquals("Book 3", recent.last().title)
+        assertTrue("Unopened books (lastOpenedTimestamp == 0) must not appear in Recent", recent.none { it.lastOpenedTimestamp == 0L })
+
+        // Edit an unopened book (Book 15) and an older opened book (Book 5) in Book Tracker
+        val unopenedId = insertedIds[14] // Book 15
+        val olderOpenedId = insertedIds[4] // Book 5 (lastOpenedTimestamp = 5000)
+
+        val tracker15 = repo.getOrCreateLinkedTrackerBook(unopenedId)!!
+        repo.saveTrackerMetadataEdit(tracker15.copy(title = "Book 15 Edited", comment = "Edited in Tracker"))
+
+        val tracker5 = repo.getOrCreateLinkedTrackerBook(olderOpenedId)!!
+        repo.saveTrackerMetadataEdit(tracker5.copy(rating = 4.5f, genres = "Sci-Fi"))
+
+        val recentAfterEdit = repo.getRecentBooks()
+        assertEquals("Recent count must remain 10 after Tracker metadata edits", 10, recentAfterEdit.size)
+        assertTrue("Unopened Book 15 must still not appear in Recent after Tracker edit", recentAfterEdit.none { it.id == unopenedId })
+        assertEquals("Recent top book must still be Book 12 (not Book 5)", "Book 12", recentAfterEdit.first().title)
+    }
+
+    /**
+     * Tests:
+     * - Duplicate titles remain distinct and are linked by exact linkedEpubBookId, never by title alone.
+     * - Deleting an EpubBook sets linkedEpubBookId = null on its TrackerBook without deleting Tracker history.
+     */
+    @Test
+    fun testDuplicateTitlesRemainDistinctAndDeletingEpubUnlinksTrackerBook() = runBlocking {
+        val epubDao = fakeDb.epubDao()
+        val trackerDao = fakeDb.trackerDao()
+
+        val id1 = epubDao.insertBook(
+            EpubBook(
+                title = "Duplicate Title",
+                author = "Author One",
+                filePath = "/fake/dup1.epub",
+                totalChapters = 10,
+                lastReadChapter = 2,
+                lastReadScrollY = 0,
+                addedTimestamp = 1000L
+            )
+        ).toInt()
+        val id2 = epubDao.insertBook(
+            EpubBook(
+                title = "Duplicate Title",
+                author = "Author Two",
+                filePath = "/fake/dup2.epub",
+                totalChapters = 25,
+                lastReadChapter = 7,
+                lastReadScrollY = 0,
+                addedTimestamp = 2000L
+            )
+        ).toInt()
+
+        val tr1 = repo.getOrCreateLinkedTrackerBook(id1)!!
+        val tr2 = repo.getOrCreateLinkedTrackerBook(id2)!!
+        assertTrue("Duplicate titles must create distinct TrackerBook records", tr1.id != tr2.id)
+        assertEquals(id1, tr1.linkedEpubBookId)
+        assertEquals(id2, tr2.linkedEpubBookId)
+
+        // Advance high-water progress on Book 1 to 5
+        repo.recordGenuineReadingProgress(id1, 4) // 0-based ch 4 -> 5 readChapters
+
+        // Delete EpubBook 1 from Reader library
+        val epub1 = epubDao.getBookById(id1)!!
+        repo.deleteBook(epub1)
+
+        assertNull("EpubBook 1 must be deleted", epubDao.getBookById(id1))
+        val survivingTracker1 = trackerDao.getAllBooks().find { it.id == tr1.id }
+        assertNotNull("TrackerBook 1 must survive EpubBook deletion", survivingTracker1)
+        assertNull("TrackerBook 1 linkedEpubBookId must be set to null on EpubBook deletion", survivingTracker1!!.linkedEpubBookId)
+        assertEquals("TrackerBook 1 reading history must be preserved", 5, survivingTracker1.readChapters)
+    }
+
+    /**
+     * Tests High-water progress vs Reader resume separation + Undo:
+     * - Jumping backward via TOC updates resume position only and does not reduce TrackerBook.readChapters.
+     * - Jumping forward via TOC or search does not increase TrackerBook.readChapters before genuine reading activity.
+     * - Genuine reading past the previous high-water mark increases TrackerBook.readChapters.
+     * - Undo restores the previous high-water mark.
+     */
+    @Test
+    fun testHighWaterProgressVsReaderResumeSeparationAndUndo() = runBlocking {
+        val epubId = fakeDb.epubDao().insertBook(
+            EpubBook(
+                title = "Progress Test Book",
+                author = "Author",
+                filePath = "/fake/progress.epub",
+                totalChapters = 100,
+                lastReadChapter = 9, // 0-based ch 9 -> Ch 10
+                lastReadScrollY = 120,
+                addedTimestamp = 1000L,
+                lastOpenedTimestamp = 2000L
+            )
+        ).toInt()
+
+        val initialTracker = repo.getOrCreateLinkedTrackerBook(epubId)!!
+        // Record initial genuine reading at ch 9 (1-based 10)
+        repo.recordGenuineReadingProgress(epubId, currentChapterZeroBased = 9)
+        assertEquals("Initial high-water mark should be 10 (1-based)", 10, fakeDb.trackerDao().getByLinkedEpubId(epubId)!!.readChapters)
+
+        // 1. Jump backward via TOC to chapter 2 (0-based index 1)
+        repo.saveResumePosition(epubId, chapterIndex = 1, scrollY = 0)
+        val epubAfterBackJump = fakeDb.epubDao().getBookById(epubId)!!
+        val trackerAfterBackJump = fakeDb.trackerDao().getByLinkedEpubId(epubId)!!
+        assertEquals("Resume chapter must update to 1 (0-based)", 1, epubAfterBackJump.lastReadChapter)
+        assertEquals("High-water readChapters must remain 10 on backward TOC jump", 10, trackerAfterBackJump.readChapters)
+
+        // 2. Jump forward via TOC/search to chapter 40 (0-based index 39) without genuine reading activity
+        repo.saveResumePosition(epubId, chapterIndex = 39, scrollY = 250)
+        val epubAfterForwardJump = fakeDb.epubDao().getBookById(epubId)!!
+        val trackerAfterForwardJump = fakeDb.trackerDao().getByLinkedEpubId(epubId)!!
+        assertEquals("Resume chapter must update to 39 (0-based)", 39, epubAfterForwardJump.lastReadChapter)
+        assertEquals(250, epubAfterForwardJump.lastReadScrollY)
+        assertEquals(
+            "Jumping forward via TOC/search must NOT advance TrackerBook.readChapters before genuine reading activity",
+            10,
+            trackerAfterForwardJump.readChapters
+        )
+
+        // 3. Genuine reading activity at chapter 40 (0-based index 39 -> 1-based 40) advances high-water mark
+        val progressUpdate = repo.recordGenuineReadingProgress(epubId, currentChapterZeroBased = 39)
+        assertNotNull("Genuine reading past high-water mark must return HighWaterProgressUpdate", progressUpdate)
+        assertEquals(10, progressUpdate!!.previousReadChapters)
+        assertEquals(40, progressUpdate.newReadChapters)
+        assertEquals(40, fakeDb.trackerDao().getByLinkedEpubId(epubId)!!.readChapters)
+
+        // 4. Undo restores the previous high-water mark (10)
+        val undone = repo.undoHighWaterProgress(progressUpdate)
+        assertTrue("Undo must succeed", undone)
+        assertEquals("High-water mark must revert to 10 after Undo", 10, fakeDb.trackerDao().getByLinkedEpubId(epubId)!!.readChapters)
+    }
+
+    /**
+     * Tests Room MIGRATION_10_11 SQL statements and schema evolution.
+     */
+    @Test
+    fun testRoomMigration10To11SqlStatementsAndTrackerFilterSort() {
+        val executedSql = mutableListOf<String>()
+        val mockSupportDb = Proxy.newProxyInstance(
+            SupportSQLiteDatabase::class.java.classLoader,
+            arrayOf(SupportSQLiteDatabase::class.java)
+        ) { _, method, args ->
+            if (method.name == "execSQL" && args != null && args.isNotEmpty()) {
+                executedSql.add(args[0].toString())
+            }
+            null
+        } as SupportSQLiteDatabase
+
+        AppDatabase.MIGRATION_10_11.migrate(mockSupportDb)
+
+        assertTrue(
+            "MIGRATION_10_11 must add author column to epubs",
+            executedSql.any { it.contains("ALTER TABLE `epubs` ADD COLUMN `author`") }
+        )
+        assertTrue(
+            "MIGRATION_10_11 must add lastActivityTimestamp column to epubs",
+            executedSql.any { it.contains("ALTER TABLE `epubs` ADD COLUMN `lastActivityTimestamp`") }
+        )
+        assertTrue(
+            "MIGRATION_10_11 must recreate tracker_books with linkedEpubBookId foreign key ON DELETE SET NULL",
+            executedSql.any { it.contains("FOREIGN KEY(`linkedEpubBookId`) REFERENCES `epubs`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL") }
+        )
+        assertTrue(
+            "MIGRATION_10_11 must copy existing tracker_books rows preserving history",
+            executedSql.any { it.contains("INSERT INTO `tracker_books_new`") && it.contains("FROM `tracker_books`") }
+        )
+        assertTrue(
+            "MIGRATION_10_11 must create index_tracker_books_linkedEpubBookId",
+            executedSql.any { it.contains("CREATE INDEX IF NOT EXISTS `index_tracker_books_linkedEpubBookId`") }
+        )
+
+        // Also verify BookTrackerActivity search, genre filter, and sort options (Date, Most Read, Name)
+        val sampleTrackers = listOf(
+            TrackerBook(id = 1, title = "Zeta Chronicles", author = "Alice", readChapters = 15, genres = "Sci-Fi, Space", addedTimestamp = 1000L, lastReadingActivityTimestamp = 2000L),
+            TrackerBook(id = 2, title = "Alpha Odyssey", author = "Bob", readChapters = 80, genres = "Fantasy, Magic", addedTimestamp = 3000L, lastReadingActivityTimestamp = 3000L),
+            TrackerBook(id = 3, title = "Beta Legends", author = "Charlie", readChapters = 40, genres = "Sci-Fi", addedTimestamp = 5000L, lastReadingActivityTimestamp = 9000L)
+        )
+
+        val byDate = BookTrackerActivity.filterAndSortTrackerBooks(sampleTrackers, "", "All", TrackerSortOption.DATE)
+        assertEquals(listOf(3, 2, 1), byDate.map { it.id })
+
+        val byMostRead = BookTrackerActivity.filterAndSortTrackerBooks(sampleTrackers, "", "All", TrackerSortOption.MOST_READ)
+        assertEquals(listOf(2, 3, 1), byMostRead.map { it.id })
+
+        val byName = BookTrackerActivity.filterAndSortTrackerBooks(sampleTrackers, "", "All", TrackerSortOption.NAME)
+        assertEquals(listOf(2, 3, 1), byName.map { it.id })
+
+        val sciFiOnly = BookTrackerActivity.filterAndSortTrackerBooks(sampleTrackers, "", "Sci-Fi", TrackerSortOption.NAME)
+        assertEquals(listOf(3, 1), sciFiOnly.map { it.id })
+
+        val searchAuthor = BookTrackerActivity.filterAndSortTrackerBooks(sampleTrackers, "alice", "All", TrackerSortOption.NAME)
+        assertEquals(listOf(1), searchAuthor.map { it.id })
+    }
+
+    /**
+     * Tests Full ZIP, NoBooks ZIP, TSV, and Moon+ .mrstd backup export & idempotent import,
+     * plus corrupt/zip-slip safety.
+     */
+    @Test
+    fun testBackupImportExportFullNoBooksTsvMrstdAndCorruptSafety() = runBlocking {
+        // 1. Seed initial book and tracker record
+        val sampleTxt = File(tempFolder.newFolder("seed_books"), "seed_novel.txt")
+        sampleTxt.writeText("Chapter 1: Seed Start\nHello world.\n\nChapter 2: Seed Next\nMore content.")
+        val seedEpubId = fakeDb.epubDao().insertBook(
+            EpubBook(
+                title = "Seed Novel",
+                author = "Seed Author",
+                filePath = sampleTxt.absolutePath,
+                totalChapters = 2,
+                lastReadChapter = 1,
+                lastReadScrollY = 80,
+                addedTimestamp = 1700005000L,
+                lastOpenedTimestamp = 1700006000L,
+                lastActivityTimestamp = 1700006000L,
+                isParsed = true
+            )
+        ).toInt()
+        val seedTracker = repo.getOrCreateLinkedTrackerBook(seedEpubId)!!
+        repo.saveTrackerMetadataEdit(seedTracker.copy(readChapters = 2, genres = "Adventure", rating = 5f, comment = "Seed comment"))
+
+        val exportDir = tempFolder.newFolder("exports")
+        val fullZip = File(exportDir, "full_backup.zip")
+        val noBooksZip = File(exportDir, "nobooks_backup.zip")
+        val tsvFile = File(exportDir, "tracker.tsv")
+
+        assertTrue("Full ZIP export must succeed", LiteReaderBackupManager.exportFullZipBackup(context, fullZip))
+        assertTrue("NoBooks ZIP export must succeed", LiteReaderBackupManager.exportNoBooksZipBackup(context, noBooksZip))
+        assertTrue("TSV export must succeed", LiteReaderBackupManager.exportTrackerTsv(context, tsvFile))
+
+        // 2. Clear DB and import Full ZIP twice (idempotency check)
+        fakeDb.clearAllTables()
+        assertEquals(0, fakeDb.epubDao().getAllBooks().size)
+        assertEquals(0, fakeDb.trackerDao().getAllBooks().size)
+
+        val fullReport1 = LiteReaderBackupManager.importZipBackup(context, fullZip)
+        assertTrue("Full ZIP import 1 must succeed: ${fullReport1.errorMessage}", fullReport1.success)
+        assertEquals("FULL_ZIP", fullReport1.backupType)
+        assertEquals(1, fakeDb.epubDao().getAllBooks().size)
+        assertEquals(1, fakeDb.trackerDao().getAllBooks().size)
+        val importedTracker = fakeDb.trackerDao().getAllBooks().first()
+        val importedEpub = fakeDb.epubDao().getAllBooks().first()
+        assertEquals("Full ZIP must remap linkedEpubBookId to new EpubBook.id", importedEpub.id, importedTracker.linkedEpubBookId)
+
+        // Repeat Full ZIP import -> must update idempotently without duplicating rows
+        val fullReport2 = LiteReaderBackupManager.importZipBackup(context, fullZip)
+        assertTrue(fullReport2.success)
+        assertEquals("Repeating Full ZIP import must not duplicate EpubBook", 1, fakeDb.epubDao().getAllBooks().size)
+        assertEquals("Repeating Full ZIP import must not duplicate TrackerBook", 1, fakeDb.trackerDao().getAllBooks().size)
+
+        // 3. Clear DB and import NoBooks ZIP -> imports Tracker history without broken book binary
+        fakeDb.clearAllTables()
+
+        val noBooksReport = LiteReaderBackupManager.importZipBackup(context, noBooksZip)
+        assertTrue("NoBooks ZIP import must succeed: ${noBooksReport.errorMessage}", noBooksReport.success)
+        assertEquals("NOBOOKS_ZIP", noBooksReport.backupType)
+        assertEquals("NoBooks ZIP must import TrackerBook history", 1, fakeDb.trackerDao().getAllBooks().size)
+
+        // 4. TSV import idempotency
+        val tsvReport1 = LiteReaderBackupManager.importTrackerTsv(context, tsvFile)
+        assertTrue(tsvReport1.success)
+        val countAfterTsv1 = fakeDb.trackerDao().getAllBooks().size
+        val tsvReport2 = LiteReaderBackupManager.importTrackerTsv(context, tsvFile)
+        assertTrue(tsvReport2.success)
+        assertEquals("Repeated TSV import must not duplicate Tracker records", countAfterTsv1, fakeDb.trackerDao().getAllBooks().size)
+
+        // 5. Moon+ .mrstd import idempotency
+        val mrstdFile = File(exportDir, "sample.mrstd")
+        ZipOutputStream(FileOutputStream(mrstdFile)).use { zos ->
+            zos.putNextEntry(ZipEntry("books/Starlight_Chronicles.epub.po"))
+            zos.write("1700099000*14@0#45%".toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+        val moonReport1 = LiteReaderBackupManager.importMoonPlusMrstd(context, mrstdFile)
+        assertTrue("Moon+ .mrstd import must succeed", moonReport1.success)
+        val countAfterMoon1 = fakeDb.trackerDao().getAllBooks().size
+        val moonReport2 = LiteReaderBackupManager.importMoonPlusMrstd(context, mrstdFile)
+        assertTrue(moonReport2.success)
+        assertEquals("Repeated Moon+ .mrstd import must be idempotent", countAfterMoon1, fakeDb.trackerDao().getAllBooks().size)
+
+        // 6. Corrupt / Zip-Slip safety -> fails cleanly without losing existing records
+        val corruptZip = File(exportDir, "corrupt.zip")
+        corruptZip.writeText("NOT_A_VALID_ZIP_OR_SQLITE")
+        val corruptReport = LiteReaderBackupManager.importZipBackup(context, corruptZip)
+        assertFalse("Corrupt ZIP must fail cleanly", corruptReport.success)
+        assertEquals("Existing Tracker records must remain intact after failed import", countAfterMoon1, fakeDb.trackerDao().getAllBooks().size)
+    }
+
+    /**
+     * Tests Next-click & reading progress rules end-to-end in ReaderReadingView:
+     * - Direct jump to an unread chapter followed immediately by Next must NOT advance Tracker high-water progress.
+     * - Waiting on a normal long chapter without scrolling/TTS/auto-scroll followed by Next must NOT advance progress.
+     * - Meaningful reading activity (scrolling past threshold) advances Tracker high-water progress and shows Undo.
+     * - Short chapters advance fairly on Next once meaningful dwell time (or bottom scroll) is met, without false immediate skips.
+     * - Undo restores previous high-water value while keeping Reader resume chapter/scroll completely separate.
+     */
+    @Test
+    fun testPreventFalseNextProgressShortChapterCompletionAndResumeSeparation() = runBlocking {
+        // Build a TXT book mixing normal long chapters and a genuine short chapter
+        val srcTxt = File(tempFolder.newFolder("progress_policy_book"), "mixed_chapters.txt")
+        val longBody = "This is a substantive paragraph that represents a full normal chapter requiring real reading and scrolling activity before completion. ".repeat(35)
+        val shortBody = "Brief interlude note from the narrator containing just twenty words so it comfortably fits on a single screen."
+        srcTxt.writeText(
+            buildString {
+                for (i in 0 until 20) {
+                    append("Chapter ${i + 1}: Title $i\n")
+                    if (i == 12) {
+                        append(shortBody).append("\n\n")
+                    } else {
+                        append(longBody).append("\n\n")
+                    }
+                }
+            }
+        )
+
+        val imported = repo.importBookFile(srcTxt, "Mixed Length Novel", markOpenedOnImport = true)
+        assertNotNull(imported)
+        val bookId = imported!!.id
+        assertEquals(20, imported.totalChapters)
+
+        // Seed initial high-water progress at chapter 2 (1-based)
+        repo.recordGenuineReadingProgress(bookId, currentChapterZeroBased = 1)
+        assertEquals(2, fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters)
+
+        var fakeNowMs = 1_000_000L
+        val readingView = ReaderReadingView(
+            context = context,
+            instanceId = "progress_test",
+            onBackToLibrary = {}
+        )
+        readingView.clockMsForTesting = { fakeNowMs }
+
+        try {
+            readingView.loadBook(repo.getBook(bookId)!!, initialChapter = 0, initialScrollY = 0)
+            readingView.awaitPendingJobsForTesting()
+
+            // 1. Direct jump to unread long Chapter 10 (index 9), then IMMEDIATELY press Next -> must NOT advance Tracker!
+            readingView.openChapter(9, initialScrollY = 0, isDirectJump = true)
+            readingView.awaitPendingJobsForTesting()
+            fakeNowMs += 150L
+            readingView.advanceToNextChapterByUser(scrollableRangeOverridePx = 1200)
+            readingView.awaitPendingJobsForTesting()
+            assertEquals("Reader should advance to Chapter 10 (0-based)", 10, readingView.currentChapterIndex)
+            assertEquals("Reader resume chapter must update to 10", 10, fakeDb.epubDao().getBookById(bookId)!!.lastReadChapter)
+            assertEquals(
+                "Immediate Next after jumping to unread Chapter 9 must NOT advance Tracker high-water",
+                2,
+                fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters
+            )
+
+            // 2. Sit on unread normal Chapter 10 (scrollable) for 15s WITHOUT scrolling, then press Next -> must NOT advance!
+            fakeNowMs += 15_000L
+            readingView.advanceToNextChapterByUser(scrollableRangeOverridePx = 1200)
+            readingView.awaitPendingJobsForTesting()
+            assertEquals(11, readingView.currentChapterIndex)
+            assertEquals(
+                "Pressing Next on unread normal chapter without scrolling must NOT advance Tracker high-water",
+                2,
+                fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters
+            )
+
+            // 3. Jump to short Chapter 12 (index 12), press Next IMMEDIATELY (+200ms) -> must NOT count as read!
+            readingView.openChapter(12, initialScrollY = 0, isDirectJump = true)
+            readingView.awaitPendingJobsForTesting()
+            fakeNowMs += 200L
+            readingView.advanceToNextChapterByUser(scrollableRangeOverridePx = 0)
+            readingView.awaitPendingJobsForTesting()
+            assertEquals(13, readingView.currentChapterIndex)
+            assertEquals(
+                "Immediate Next on an unread short chapter must NOT count as read",
+                2,
+                fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters
+            )
+
+            // 4. Jump back to short Chapter 12, genuinely dwell past short-chapter threshold (+5000ms), then press Next -> MUST count!
+            readingView.openChapter(12, initialScrollY = 0, isDirectJump = true)
+            readingView.awaitPendingJobsForTesting()
+            fakeNowMs += 5_000L
+            readingView.advanceToNextChapterByUser(scrollableRangeOverridePx = 0)
+            readingView.awaitPendingJobsForTesting()
+            assertEquals(13, readingView.currentChapterIndex)
+            assertEquals(
+                "Short chapter read past completion threshold before Next must advance Tracker to 13 (1-based)",
+                13,
+                fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters
+            )
+            assertTrue("Undo banner must appear after short-chapter high-water increase", readingView.isUndoBannerVisibleForTesting())
+
+            // 5. Undo reverts high-water back to 2 while keeping Reader resume at Chapter 13
+            readingView.performHighWaterProgressUndo()
+            readingView.awaitPendingJobsForTesting()
+            assertEquals(2, fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters)
+            assertEquals(13, fakeDb.epubDao().getBookById(bookId)!!.lastReadChapter)
+
+            // 6. Meaningful manual scrolling on Chapter 13 (normal chapter) advances Tracker to 14 and updates scrollY
+            readingView.simulateUserScrollForTesting(scrollY = 420, scrollableRangePx = 1200)
+            readingView.awaitPendingJobsForTesting()
+            val deadlineMs = System.currentTimeMillis() + 2000L
+            while (fakeDb.epubDao().getBookById(bookId)?.lastReadScrollY != 420 && System.currentTimeMillis() < deadlineMs) {
+                Thread.sleep(20)
+            }
+            assertEquals(14, fakeDb.trackerDao().getByLinkedEpubId(bookId)!!.readChapters)
+            val savedEpub = fakeDb.epubDao().getBookById(bookId)!!
+            assertEquals(13, savedEpub.lastReadChapter)
+            assertEquals(420, savedEpub.lastReadScrollY)
+        } finally {
+            readingView.releaseResources()
+        }
+    }
+
+    @Test
+    fun testActiveBookOnlyBinaryRetentionAndSafeReimportPreservingProgress() = runBlocking {
+        val dir = tempFolder.newFolder("binary_retention")
+        val fileA = File(dir, "book_a.txt").apply {
+            writeText(
+                """
+                Chapter 1: Start
+                Content of book A chapter one with plenty of words for parsing cleanly.
+
+                Chapter 2: Middle
+                Content of book A chapter two with plenty of words for parsing cleanly.
+
+                Chapter 3: End
+                Content of book A chapter three with plenty of words for parsing cleanly.
+                """.trimIndent()
+            )
+        }
+        val fileB = File(dir, "book_b.txt").apply {
+            writeText(
+                """
+                Chapter 1: Alpha
+                Content of book B chapter one with distinct narrative text for parsing cleanly.
+
+                Chapter 2: Beta
+                Content of book B chapter two with distinct narrative text for parsing cleanly.
+                """.trimIndent()
+            )
+        }
+        val corruptFile = File(dir, "broken.epub").apply {
+            writeText("NOT_A_VALID_ZIP_OR_EPUB")
+        }
+
+        // 1. Import Book A -> binary + cache retained
+        val bookA = repo.importBookFile(fileA, "Book A", markOpenedOnImport = true)!!
+        repo.saveResumePosition(bookA.id, chapterIndex = 1, scrollY = 320, updateOpenRecency = true)
+        repo.recordGenuineReadingProgress(bookA.id, currentChapterZeroBased = 1)
+        assertTrue("Book A must have active binary", repo.hasBookBinary(repo.getBook(bookA.id)))
+        assertTrue("Book A extracted cache must exist", File(context.filesDir, "book_${bookA.id}").exists())
+
+        // 2. Failed replacement import MUST NOT delete Book A's binary or cache!
+        val failedImport = repo.importBookFile(corruptFile, "Broken Book", markOpenedOnImport = true)
+        assertNull("Corrupt import must fail", failedImport)
+        assertTrue("Book A binary must survive failed replacement import", repo.hasBookBinary(repo.getBook(bookA.id)))
+        assertTrue("Book A cache must survive failed replacement import", File(context.filesDir, "book_${bookA.id}").exists())
+
+        // 3. Successful replacement import (Book B) prunes Book A binary/cache while keeping Book A metadata & Tracker history
+        val bookB = repo.importBookFile(fileB, "Book B", markOpenedOnImport = true)!!
+        assertTrue("Book B must have active binary", repo.hasBookBinary(repo.getBook(bookB.id)))
+        assertTrue("Book B cache must exist", File(context.filesDir, "book_${bookB.id}").exists())
+        assertFalse("Book A source binary must be pruned after switching to Book B", repo.hasBookBinary(repo.getBook(bookA.id)))
+        assertFalse("Book A chapter cache must be pruned after switching to Book B", File(context.filesDir, "book_${bookA.id}").exists())
+
+        val bookAMeta = repo.getBook(bookA.id)!!
+        assertEquals("Book A resume chapter must be preserved", 1, bookAMeta.lastReadChapter)
+        assertEquals("Book A resume scroll must be preserved", 320, bookAMeta.lastReadScrollY)
+        assertEquals("Book A Tracker high-water must be preserved", 2, repo.getLinkedTrackerBook(bookA.id)!!.readChapters)
+
+        // 4. Attempting to open metadata-only Book A via ReaderMiniAppInstance.openBookById must stay in LIBRARY cleanly
+        val instance = ReaderMiniAppInstance("binary_guard_test", "reader")
+        instance.onCreate(null)
+        instance.createContentView(context)
+        instance.openBookById(bookA.id)
+        instance.awaitPendingJobsForTesting()
+        assertEquals(
+            "Opening metadata-only book without binary must route safely to LIBRARY",
+            ReaderScreenMode.LIBRARY,
+            instance.getCurrentScreenModeForTesting()
+        )
+        instance.onDestroy()
+
+        // 5. Re-importing Book A restores its exact ID & binary, preserves resume + Tracker progress, and prunes Book B
+        val reimportedA = repo.reimportBookFile(bookA.id, fileA)!!
+        assertEquals(bookA.id, reimportedA.id)
+        assertTrue("Re-imported Book A must have binary again", repo.hasBookBinary(reimportedA))
+        assertEquals(1, reimportedA.lastReadChapter)
+        assertEquals(320, reimportedA.lastReadScrollY)
+        assertEquals(2, repo.getLinkedTrackerBook(bookA.id)!!.readChapters)
+        assertFalse("Book B binary must now be pruned", repo.hasBookBinary(repo.getBook(bookB.id)))
+    }
+
+    @Test
+    fun testBookDetailsPanelEditsSyncToTrackerPreservingResumePosition() = runBlocking {
+        val dir = tempFolder.newFolder("details_sync")
+        val src = File(dir, "novel.txt").apply {
+            writeText((1..6).joinToString("\n\n") { "Chapter $it: Part $it\nSample body paragraph for chapter $it." })
+        }
+        val book = repo.importBookFile(src, "Original Title", markOpenedOnImport = true)!!
+        repo.saveResumePosition(book.id, chapterIndex = 3, scrollY = 510, updateOpenRecency = false)
+        val beforeEdit = repo.getBook(book.id)!!
+
+        val detailsView = ReaderBookDetailsView(
+            context = context,
+            instanceId = "details_test",
+            onClose = {},
+            onReadBook = {},
+            onRequestReimport = {},
+            onOpenTracker = {}
+        )
+        try {
+            detailsView.bindBook(beforeEdit)
+            detailsView.awaitPendingJobsForTesting()
+            detailsView.setFormFieldsForTesting(
+                title = "Edited Title",
+                author = "Edited Author",
+                readChapters = 5,
+                totalChapters = 12,
+                genres = "Sci-Fi, Mystery",
+                rating = 4.5f,
+                comment = "Great pacing",
+                isFinished = true,
+                isWebNovel = true
+            )
+            val savedTracker = detailsView.saveChangesInternal()!!
+            assertEquals("Edited Title", savedTracker.title)
+            assertEquals("Edited Author", savedTracker.author)
+            assertEquals(5, savedTracker.readChapters)
+            assertEquals(12, savedTracker.totalChapters)
+            assertEquals("Sci-Fi, Mystery", savedTracker.genres)
+            assertEquals(4.5f, savedTracker.rating, 0.01f)
+            assertEquals("Great pacing", savedTracker.comment)
+            assertTrue(savedTracker.isFinished)
+            assertTrue(savedTracker.isWebNovel)
+
+            val afterEditEpub = repo.getBook(book.id)!!
+            assertEquals("Edited Title", afterEditEpub.title)
+            assertEquals("Edited Author", afterEditEpub.author)
+            assertEquals(12, afterEditEpub.totalChapters)
+            assertEquals("Resume chapter must NOT change on metadata edit", 3, afterEditEpub.lastReadChapter)
+            assertEquals("Resume scrollY must NOT change on metadata edit", 510, afterEditEpub.lastReadScrollY)
+            assertEquals("lastOpenedTimestamp must NOT change on metadata edit", beforeEdit.lastOpenedTimestamp, afterEditEpub.lastOpenedTimestamp)
+        } finally {
+            detailsView.releaseResources()
+        }
+    }
+
+    @Test
+    fun testAutoOpenLastReadBookMissingBinaryFallbackAndSeekBarDragCommit() = runBlocking {
+        val dir = tempFolder.newFolder("auto_open_and_seek")
+        val novelFile = File(dir, "last_read_novel.txt").apply {
+            writeText((1..10).joinToString("\n\n") { "Chapter $it: Heading $it\nBody text content for chapter $it with enough length." })
+        }
+
+        val imported = repo.importBookFile(novelFile, "Last Read Novel", markOpenedOnImport = true)!!
+        repo.saveResumePosition(imported.id, chapterIndex = 2, scrollY = 360, updateOpenRecency = true)
+        repo.recordGenuineReadingProgress(imported.id, currentChapterZeroBased = 2)
+
+        // 1. Clean launch (savedSnapshot = null) auto-opens last-read active book without duplicating DB/Tracker rows
+        val cleanInstance = ReaderMiniAppInstance("auto_open_clean", "reader")
+        cleanInstance.onCreate(null)
+        cleanInstance.createContentView(context)
+        cleanInstance.awaitPendingJobsForTesting()
+        cleanInstance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+
+        assertEquals(ReaderScreenMode.READING, cleanInstance.getCurrentScreenModeForTesting())
+        assertEquals(imported.id, cleanInstance.getCurrentBookIdForTesting())
+        assertEquals(2, cleanInstance.getReadingViewForTesting()?.currentChapterIndex)
+        assertEquals(360, cleanInstance.getReadingViewForTesting()?.currentScrollY)
+        assertEquals("Auto-open must NOT duplicate EpubBook rows", 1, fakeDb.epubDao().getAllBooks().size)
+        assertEquals("Auto-open must NOT duplicate TrackerBook rows", 1, fakeDb.trackerDao().getAllBooks().size)
+
+        // 2. SeekBar drag ticks must preview cleanly without changing chapter/DB/Tracker; release commits cleanly
+        val readView = cleanInstance.getReadingViewForTesting()!!
+        readView.simulateSeekBarDragTickForTesting(680)
+        assertEquals("Drag tick must NOT change chapter during scrub", 2, readView.currentChapterIndex)
+        assertEquals("Drag tick must NOT change saved DB chapter", 2, fakeDb.epubDao().getBookById(imported.id)!!.lastReadChapter)
+        assertEquals("Drag tick must NOT advance Tracker high-water", 3, fakeDb.trackerDao().getByLinkedEpubId(imported.id)!!.readChapters)
+
+        readView.simulateSeekBarReleaseForTesting(680)
+        readView.awaitPendingJobsForTesting()
+        Thread.sleep(100)
+        assertEquals("SeekBar release must seek to target chapter 6 (10 chapters * ~0.68)", 6, readView.currentChapterIndex)
+        assertEquals("SeekBar release must persist final resume chapter", 6, fakeDb.epubDao().getBookById(imported.id)!!.lastReadChapter)
+        assertEquals("SeekBar jump must NOT falsely advance Tracker high-water", 3, fakeDb.trackerDao().getByLinkedEpubId(imported.id)!!.readChapters)
+        cleanInstance.onDestroy()
+
+        // 3. Cold restart snapshot (KEY_COLD_START = "true") also opens last-read active book
+        val coldSnapshot = com.example.feature.floating.MiniAppRecoverySnapshot(
+            instanceId = "auto_open_cold",
+            appType = "reader",
+            payload = mutableMapOf(ReaderMiniAppInstance.KEY_COLD_START to "true")
+        )
+        val coldInstance = ReaderMiniAppInstance("auto_open_cold", "reader")
+        coldInstance.onCreate(coldSnapshot)
+        coldInstance.createContentView(context)
+        coldInstance.awaitPendingJobsForTesting()
+        coldInstance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.READING, coldInstance.getCurrentScreenModeForTesting())
+        assertEquals(imported.id, coldInstance.getCurrentBookIdForTesting())
+        assertEquals(6, coldInstance.getReadingViewForTesting()?.currentChapterIndex)
+        coldInstance.onDestroy()
+
+        // 4. Metadata-only last-read book (missing binary) must stay safely in LIBRARY without crashing
+        File(repo.getBook(imported.id)!!.filePath).delete()
+        val missingInstance = ReaderMiniAppInstance("auto_open_missing", "reader")
+        missingInstance.onCreate(null)
+        missingInstance.createContentView(context)
+        missingInstance.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.LIBRARY, missingInstance.getCurrentScreenModeForTesting())
+        assertEquals(-1, missingInstance.getCurrentBookIdForTesting())
+        missingInstance.onDestroy()
+    }
+
+    @Test
+    fun testNonAutoOpenOnBackToLibraryTabSwitchOnResumeAndWarmRestore() = runBlocking {
+        val dir = tempFolder.newFolder("non_auto_open_guards")
+        val novelFile = File(dir, "guard_novel.txt").apply {
+            writeText((1..4).joinToString("\n\n") { "Chapter $it: Part $it\nContent for chapter $it." })
+        }
+
+        val imported = repo.importBookFile(novelFile, "Guard Novel", markOpenedOnImport = true)!!
+
+        // 1. Cold start auto-opens READING, then user goes Back to Library
+        val instance = ReaderMiniAppInstance("non_auto_open_1", "reader")
+        instance.onCreate(null)
+        instance.createContentView(context)
+        instance.awaitPendingJobsForTesting()
+        instance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.READING, instance.getCurrentScreenModeForTesting())
+
+        instance.getReadingViewForTesting()?.navigateBackToLibraryForTesting()
+        assertEquals(ReaderScreenMode.LIBRARY, instance.getCurrentScreenModeForTesting())
+
+        // 2. Repeated onResume() and Library tab switching must NOT re-trigger auto-open
+        instance.onResume()
+        instance.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.LIBRARY, instance.getCurrentScreenModeForTesting())
+
+        instance.getLibraryViewForTesting()?.selectTab(ReaderLibraryTab.FILE_EXPLORER)
+        instance.onResume()
+        instance.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.LIBRARY, instance.getCurrentScreenModeForTesting())
+
+        instance.getLibraryViewForTesting()?.selectTab(ReaderLibraryTab.RECENT)
+        instance.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.LIBRARY, instance.getCurrentScreenModeForTesting())
+
+        // 3. Sleep -> warm restore while in LIBRARY must stay in LIBRARY (KEY_COLD_START == "false")
+        val sleepPayload = instance.prepareForSleep()
+        assertEquals("false", sleepPayload[ReaderMiniAppInstance.KEY_COLD_START])
+        assertEquals(ReaderScreenMode.LIBRARY.name, sleepPayload[ReaderMiniAppInstance.KEY_SCREEN_MODE])
+        instance.onDestroy()
+
+        val warmSnapshot = com.example.feature.floating.MiniAppRecoverySnapshot(
+            instanceId = "non_auto_open_1",
+            appType = "reader",
+            payload = sleepPayload.toMutableMap()
+        )
+        val warmInstance = ReaderMiniAppInstance("non_auto_open_1", "reader")
+        warmInstance.onCreate(warmSnapshot)
+        warmInstance.createContentView(context)
+        warmInstance.awaitPendingJobsForTesting()
+        assertEquals(ReaderScreenMode.LIBRARY, warmInstance.getCurrentScreenModeForTesting())
+        warmInstance.onDestroy()
+    }
+
+    @Test
+    fun testLastActiveReaderBookPersistsIndependentlyOfRecentBooks() = runBlocking {
+        val dir = tempFolder.newFolder("independent_last_active")
+        val file1 = File(dir, "book_one.txt").apply {
+            writeText((1..4).joinToString("\n\n") { "Chapter $it: First Book $it\nBody text for first book $it." })
+        }
+        val file2 = File(dir, "book_two.txt").apply {
+            writeText((1..4).joinToString("\n\n") { "Chapter $it: Second Book $it\nBody text for second book $it." })
+        }
+
+        // 1. Import both books; set Book 1 as newest in Recent Books (higher lastOpenedTimestamp),
+        //    but explicitly set Book 2 as the last active Reader book and give Book 2 a live binary.
+        val book1 = repo.importBookFile(file1, "Book One", markOpenedOnImport = false)!!
+        val book2 = repo.importBookFile(file2, "Book Two", markOpenedOnImport = false)!!
+
+        // Save Book 2 at chapter 2, scroll 190 and mark it as last active Reader book
+        repo.saveResumePosition(book2.id, chapterIndex = 2, scrollY = 190, updateOpenRecency = false)
+        repo.setLastActiveReaderBookId(book2.id)
+
+        // Make Book 1 appear first in Recent Books with a much higher lastOpenedTimestamp
+        fakeDb.epubDao().updateBook(book1.copy(lastOpenedTimestamp = Long.MAX_VALUE / 2))
+        assertEquals("Recent Books first entry must be Book One", book1.id, repo.getRecentBooks().first().id)
+
+        // 2. Cold start Reader must restore Book Two (independent of Recent Books list order)
+        val coldInstance = ReaderMiniAppInstance("indep_cold", "reader")
+        coldInstance.onCreate(null)
+        coldInstance.createContentView(context)
+        coldInstance.awaitPendingJobsForTesting()
+        coldInstance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+
+        assertEquals(ReaderScreenMode.READING, coldInstance.getCurrentScreenModeForTesting())
+        assertEquals("Reader must open actual last active Book Two instead of Recent[0]", book2.id, coldInstance.getCurrentBookIdForTesting())
+        assertEquals(2, coldInstance.getReadingViewForTesting()?.currentChapterIndex)
+        assertEquals(190, coldInstance.getReadingViewForTesting()?.currentScrollY)
+        coldInstance.onDestroy()
+
+        // 3. Deleting the last active book must clear last_active_reader_book_id and open Library (not Recent[0])
+        repo.deleteBook(repo.getBook(book2.id)!!)
+        assertEquals(-1, repo.getLastActiveReaderBookId())
+
+        val afterDeleteInstance = ReaderMiniAppInstance("indep_after_del", "reader")
+        afterDeleteInstance.onCreate(null)
+        afterDeleteInstance.createContentView(context)
+        afterDeleteInstance.awaitPendingJobsForTesting()
+        assertEquals("With no valid last active book, Reader must open Library cleanly", ReaderScreenMode.LIBRARY, afterDeleteInstance.getCurrentScreenModeForTesting())
+        assertEquals(-1, afterDeleteInstance.getCurrentBookIdForTesting())
+        afterDeleteInstance.onDestroy()
+    }
+
+    @Test
+    fun testColdStartRestoresBookChapterScrollAndSavedFontSizeAcrossProcessDeath() = runBlocking {
+        val dir = tempFolder.newFolder("cold_font_scroll_restore")
+        val novelFile = File(dir, "font_restore.txt").apply {
+            writeText((1..6).joinToString("\n\n") { ch ->
+                "Chapter $ch: Section $ch\n" + (1..25).joinToString("\n") { "Paragraph $it of chapter $ch." }
+            })
+        }
+        val imported = repo.importBookFile(novelFile, "Font Restore Book", markOpenedOnImport = true)!!
+        repo.saveResumePosition(imported.id, chapterIndex = 3, scrollY = 640, updateOpenRecency = true)
+        ReaderPreferences.setDefaultFontSizeSp(context, 21f)
+
+        // Simulate an older persisted snapshot that had stale fontSize=14 and cold_start=false
+        val store = com.example.feature.floating.DurableMiniAppStore.getInstance(context)
+        store.clearAll()
+        val staleSnap = com.example.feature.floating.MiniAppRecoverySnapshot(
+            instanceId = "miniapp_reader",
+            appType = "reader",
+            state = com.example.feature.floating.MiniAppState.ACTIVE,
+            windowBounds = com.example.core.WindowBounds(60, 120, 480, 620),
+            payload = mutableMapOf(
+                ReaderMiniAppInstance.KEY_SCREEN_MODE to ReaderScreenMode.READING.name,
+                ReaderMiniAppInstance.KEY_BOOK_ID to imported.id.toString(),
+                ReaderMiniAppInstance.KEY_CHAPTER_INDEX to "3",
+                ReaderMiniAppInstance.KEY_SCROLL_Y to "640",
+                ReaderMiniAppInstance.KEY_FONT_SIZE to "14.0",
+                ReaderMiniAppInstance.KEY_COLD_START to "false"
+            )
+        )
+        store.saveSnapshot(staleSnap)
+
+        // Simulate genuine process restart: warm session tracker cleared, bridge reset
+        ReaderSessionTracker.resetForTesting()
+        com.example.feature.floating.FloatingMiniAppBridge.resetForTesting()
+        val wm = com.example.core.FloatingWindowManager.getInstance(context)
+        wm.unregisterAll()
+
+        try {
+            val bridge = com.example.feature.floating.FloatingMiniAppBridge.getInstance(context)
+            val restored = bridge.restoreActiveMiniApps()
+            assertEquals(1, restored.size)
+            val win = restored.first()
+            val instance = win.getReaderInstanceForTesting()!!
+            instance.awaitPendingJobsForTesting()
+            instance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+
+            assertEquals(ReaderScreenMode.READING, instance.getCurrentScreenModeForTesting())
+            assertEquals(imported.id, instance.getCurrentBookIdForTesting())
+            val readView = instance.getReadingViewForTesting()!!
+            assertEquals(3, readView.currentChapterIndex)
+            assertEquals(640, readView.currentScrollY)
+            assertEquals(21f, readView.currentFontSizeSp, 0.01f)
+        } finally {
+            wm.unregisterAll()
+            com.example.feature.floating.FloatingMiniAppBridge.resetForTesting()
+            store.clearAll()
+            ReaderSessionTracker.resetForTesting()
+        }
+    }
+
+    @Test
+    fun testProcessKillDuringReadingRecoversSyncCheckpointAndWarmFoldUnfoldPreservesSession() = runBlocking {
+        val dir = tempFolder.newFolder("kill_during_reading")
+        val novelFile = File(dir, "kill_restore.txt").apply {
+            writeText((1..5).joinToString("\n\n") { ch ->
+                "Chapter $ch: Kill Test $ch\n" + (1..20).joinToString("\n") { "Line $it of chapter $ch." }
+            })
+        }
+        val imported = repo.importBookFile(novelFile, "Kill Recovery Book", markOpenedOnImport = true)!!
+        repo.saveResumePosition(imported.id, chapterIndex = 1, scrollY = 120, updateOpenRecency = true)
+
+        val wm = com.example.core.FloatingWindowManager.getInstance(context)
+        val store = com.example.feature.floating.DurableMiniAppStore.getInstance(context)
+        wm.unregisterAll()
+        store.clearAll()
+        com.example.feature.floating.FloatingMiniAppBridge.resetForTesting()
+        ReaderSessionTracker.resetForTesting()
+
+        try {
+            val bridge = com.example.feature.floating.FloatingMiniAppBridge.getInstance(context)
+            val win = bridge.openMiniApp("miniapp_reader", "reader", com.example.core.WindowBounds(50, 100, 480, 620))
+            val instance = win.getReaderInstanceForTesting()!!
+            instance.awaitPendingJobsForTesting()
+            val readView = instance.getReadingViewForTesting()!!
+            readView.awaitPendingJobsForTesting()
+            assertEquals(1, readView.currentChapterIndex)
+
+            // Simulate warm fold -> unfold: must stay in warm session without resetting
+            var sleepOk = false
+            bridge.sleepMiniApp("miniapp_reader") { sleepOk = it }
+            assertTrue("Warm sleep must succeed", sleepOk)
+            val sleepingSnap = store.loadSnapshot("miniapp_reader")!!
+            assertEquals("false", sleepingSnap.payload[ReaderMiniAppInstance.KEY_COLD_START])
+            assertTrue(ReaderSessionTracker.isWarmSession("miniapp_reader"))
+
+            bridge.wakeMiniApp("miniapp_reader")
+            val wokenWin = wm.getWindow("miniapp_reader") as com.example.feature.floating.FloatingMiniAppWindow
+            val wokenInstance = wokenWin.getReaderInstanceForTesting()!!
+            wokenInstance.awaitPendingJobsForTesting()
+            wokenInstance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+            assertEquals(ReaderScreenMode.READING, wokenInstance.getCurrentScreenModeForTesting())
+            assertEquals(imported.id, wokenInstance.getCurrentBookIdForTesting())
+            assertEquals(1, wokenInstance.getReadingViewForTesting()?.currentChapterIndex)
+
+            // Simulate user scrolling in chapter 2 and abrupt process kill right after checkpoint save
+            val liveRead = wokenInstance.getReadingViewForTesting()!!
+            liveRead.openChapter(2, initialScrollY = 0)
+            liveRead.awaitPendingJobsForTesting()
+            liveRead.simulateUserScrollForTesting(scrollY = 485)
+            // Synchronous checkpoint written on scroll/pause before process kill
+            repo.saveSyncResumeCheckpoint(imported.id, chapterIndex = 2, scrollY = 485, commitImmediately = true)
+
+            // Process death simulation: destroy window & clear in-memory session without calling closeMiniApp
+            wm.unregisterWindow("miniapp_reader")
+            ReaderSessionTracker.resetForTesting()
+            com.example.feature.floating.FloatingMiniAppBridge.resetForTesting()
+
+            val coldBridge = com.example.feature.floating.FloatingMiniAppBridge.getInstance(context)
+            val coldWin = coldBridge.openMiniApp("miniapp_reader", "reader")
+            val coldInstance = coldWin.getReaderInstanceForTesting()!!
+            coldInstance.awaitPendingJobsForTesting()
+            coldInstance.getReadingViewForTesting()?.awaitPendingJobsForTesting()
+
+            assertEquals(ReaderScreenMode.READING, coldInstance.getCurrentScreenModeForTesting())
+            assertEquals(imported.id, coldInstance.getCurrentBookIdForTesting())
+            assertEquals(2, coldInstance.getReadingViewForTesting()?.currentChapterIndex)
+            assertEquals(485, coldInstance.getReadingViewForTesting()?.currentScrollY)
+        } finally {
+            wm.unregisterAll()
+            com.example.feature.floating.FloatingMiniAppBridge.resetForTesting()
+            store.clearAll()
+            ReaderSessionTracker.resetForTesting()
+        }
+    }
+}
