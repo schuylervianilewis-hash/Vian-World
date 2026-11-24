@@ -1487,7 +1487,8 @@ class FloatingMiniAppWindow(
             fontStyle = currentFontStyle,
             wordWrap = currentWordWrap,
             lineSpacing = currentLineSpacingMult,
-            bounds = bounds
+            bounds = bounds,
+            accentColor = currentAccentColorHex
         )
         val editor = noteEditText ?: return
         isSyncingImeBridge = true
@@ -2993,7 +2994,8 @@ class FloatingMiniAppWindow(
                 fontStyle = currentFontStyle,
                 wordWrap = currentWordWrap,
                 lineSpacing = currentLineSpacingMult,
-                bounds = normalBoundsToSave
+                bounds = normalBoundsToSave,
+                accentColor = currentAccentColorHex
             )
             notePersistence.flushPendingSaveAsync(timeoutMs, targetState, onComplete)
         } else {
