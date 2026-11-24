@@ -210,6 +210,7 @@ class DefaultMiniAppFactory(private val context: Context? = null) : MiniAppFacto
                 com.example.feature.reader.ReaderMiniAppInstance(
                     instanceId = instanceId,
                     appType = appType,
+                    onRequestWindowFocusable = { focusable -> requestWindowFocusable(instanceId, focusable) },
                     onOpenTracker = { epubBookId ->
                         context?.let {
                             com.example.feature.reader.BookTrackerActivity.launchForEpubBook(it, epubBookId, instanceId)
@@ -230,6 +231,7 @@ class DefaultMiniAppFactory(private val context: Context? = null) : MiniAppFacto
                 com.example.feature.language.DictionaryMiniAppInstance(
                     instanceId = instanceId,
                     appType = appType,
+                    onRequestWindowFocusable = { focusable -> requestWindowFocusable(instanceId, focusable) },
                     onOpenSettings = {
                         context?.let {
                             it.startActivity(
@@ -242,6 +244,25 @@ class DefaultMiniAppFactory(private val context: Context? = null) : MiniAppFacto
                     }
                 )
             else -> DefaultMiniAppInstance(instanceId, appType)
+        }
+    }
+
+    private fun requestWindowFocusable(instanceId: String, focusable: Boolean) {
+        val ctx = context ?: return
+        try {
+            com.example.core.ipc.HeavyProcessHost.getInstance(ctx).requestMainAction(
+                com.example.core.ipc.MainCommandRequest(
+                    requestId = java.util.UUID.randomUUID().toString(),
+                    action = com.example.core.ipc.MainActionType.CUSTOM,
+                    targetId = "MINIAPP_WINDOW_FOCUS",
+                    parameters = mapOf(
+                        "instanceId" to instanceId,
+                        "focusable" to focusable.toString()
+                    )
+                )
+            )
+        } catch (t: Throwable) {
+            com.example.core.LogKeeper.log(ctx, "DefaultMiniAppFactory", "Window focus request failed for $instanceId: ${t.message}")
         }
     }
 }
