@@ -178,8 +178,6 @@ class ElementViewRenderer(
                     context.startActivity(intent)
                 }
             )
-        }
-
         } else if (parsed is SidebarItem.QuickCall) {
             menuItems.add(
                 SidebarActionMenuHelper.ActionMenuItem("Edit", android.R.drawable.ic_menu_edit) {
