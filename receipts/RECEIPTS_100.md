@@ -538,3 +538,48 @@ Capped at 500 lines per file.
   - Absence of INTERNET permission is a technical proxy for no direct network access, not a semantic guarantee that the app is unneeded. OEM-specific dependencies still require device QA.
   - Shared-UID bulk targets are deliberately skipped rather than partially applying a UID-wide policy.
   - CI does not replace Android device testing.
+
+
+---
+
+### Receipt 112 — Folder Multi-Add, Three-Column Defaults & Sidebar Popup/Back UX
+
+* Timestamp: 2026-11-24
+* One-line summary: Add a folder-scoped multi-selection session, align Widgets/Hybrid grids to three-column defaults, and correct Sidebar/launcher popup and Back dismissal behaviour.
+* Exact files touched:
+  - `app/src/main/java/com/example/feature/settings/AddElementActivity.kt`
+  - `app/src/main/java/com/example/SidebarEditActivity.kt`
+  - `app/src/main/java/com/example/feature/sidebar/WidgetsGridPageView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/HybridGridPageView.kt`
+  - `app/src/main/java/com/example/WidgetsGridEditActivity.kt`
+  - `app/src/main/java/com/example/HybridGridEditActivity.kt`
+  - `app/src/main/java/com/example/feature/sidebar/AppsPageView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarWindow.kt`
+  - `app/src/main/res/layout/item_sidebar_app.xml`
+  - `launcher/src/main/kotlin/shura/home/activities/MainActivity.kt`
+  - `receipts/RECEIPTS_100.md`
+* Implemented:
+  - Folder editing opens Add Element in a folder-scoped session. Each completed selection returns to the Add Element category screen; the selected count is shown and Done commits the ordered selection list to the folder editor.
+  - Back/toolbar exit returns selected IDs as one result. Empty sessions return cancelled with no folder mutation. Selection order is preserved and duplicates are filtered in both the picker session and folder editor. Session IDs survive Activity recreation through saved instance state.
+  - Ordinary Add Element retains its one-result contract. Hybrid Grid direct-add retains its existing placement path.
+  - Apps retains its existing three-column default. Widgets Grid and Hybrid Grid page views and editors now use three columns only when no explicit saved column preference exists; saved/custom values remain authoritative.
+  - Sidebar's default three-column width is 219dp; existing 155dp and 265dp fallbacks and saved width preferences remain intact. Sidebar icon maximum dimensions are 49dp and root padding is 8dp.
+  - Sidebar folder popup placement chooses the side with available space and clamps its position to the visible display frame. Launcher folder Back closes the open launcher folder before other home-screen Back handling.
+  - Sidebar Back hides a visible keyboard and closes the Sidebar in the same Back action. Outside-touch dismissal and its keyboard-transition guard are retained.
+  - Android launcher Home Screen grid sizing was not changed.
+* Verification:
+  - Source-level transformations were checked against unique expected anchors before writing.
+  - GitHub Actions build/test verification is pending; no passing build/test claim is made here.
+  - Physical-device QA for these new UX changes is pending. User has separately confirmed the Stage 5 grid-editor and Shield fixes work on-device.
+* On-device QA required:
+  1. In an Apps folder, add multiple Apps, Shortcuts, Intents, Widgets (including configuration), Popup Widgets, Links, Offline PWAs and Android actions without leaving Add Element; confirm order, count, duplicate prevention and save/reopen persistence.
+  2. Cancel the folder picker without a selection and confirm no folder mutation. Confirm normal Sidebar Add still returns one item per selection and Hybrid Grid direct-add still behaves as before.
+  3. Verify fresh Widgets Grid and Hybrid Grid pages default to three columns, while previously saved custom column counts remain unchanged.
+  4. Verify icon size/padding and 219dp default width visually, including saved/custom width overrides and the 155dp/265dp fallbacks.
+  5. Open folders near all four screen edges and confirm popup anchoring, horizontal side choice, and vertical clamping.
+  6. Open a launcher folder and press Back; confirm only the folder closes. Open Sidebar with keyboard visible and press Back; confirm keyboard and Sidebar close together. Repeat with keyboard hidden.
+  7. Confirm outside-touch dismissal, focus restoration, keyboard input, and Sidebar close animation still work.
+* Known limitations:
+  - CI does not verify real Android IME/overlay key delivery, widget-provider configuration, popup geometry across OEM display cutouts/insets, or persistence on a physical device.
+  - Existing saved four-column settings are intentionally preserved; three columns is the default for pages without an explicit stored value.
