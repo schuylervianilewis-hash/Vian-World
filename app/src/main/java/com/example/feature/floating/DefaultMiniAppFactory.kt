@@ -205,6 +205,12 @@ class DefaultMiniAppInstance(
  */
 class DefaultMiniAppFactory : MiniAppFactory {
     override fun createAppInstance(instanceId: String, appType: String): MiniAppInstance {
-        return DefaultMiniAppInstance(instanceId, appType)
+        return when (appType) {
+            "reader", "ebook_reader" ->
+                com.example.feature.reader.ReaderMiniAppInstance(instanceId, appType)
+            "dictionary" ->
+                com.example.feature.language.DictionaryMiniAppInstance(instanceId, appType)
+            else -> DefaultMiniAppInstance(instanceId, appType)
+        }
     }
 }
