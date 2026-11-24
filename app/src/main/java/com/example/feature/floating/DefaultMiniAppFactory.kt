@@ -203,13 +203,44 @@ class DefaultMiniAppInstance(
 /**
  * DefaultMiniAppFactory: Factory registering default mini-apps in HeavyFloatingHost.
  */
-class DefaultMiniAppFactory : MiniAppFactory {
+class DefaultMiniAppFactory(private val context: Context? = null) : MiniAppFactory {
     override fun createAppInstance(instanceId: String, appType: String): MiniAppInstance {
         return when (appType) {
             "reader", "ebook_reader" ->
-                com.example.feature.reader.ReaderMiniAppInstance(instanceId, appType)
+                com.example.feature.reader.ReaderMiniAppInstance(
+                    instanceId = instanceId,
+                    appType = appType,
+                    onOpenTracker = { epubBookId ->
+                        context?.let {
+                            com.example.feature.reader.BookTrackerActivity.launchForEpubBook(it, epubBookId, instanceId)
+                        }
+                    },
+                    onOpenReaderSettings = {
+                        context?.let {
+                            it.startActivity(
+                                android.content.Intent(it, com.example.SettingsActivity::class.java).apply {
+                                    putExtra("start_route", "reader_settings")
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            )
+                        }
+                    }
+                )
             "dictionary" ->
-                com.example.feature.language.DictionaryMiniAppInstance(instanceId, appType)
+                com.example.feature.language.DictionaryMiniAppInstance(
+                    instanceId = instanceId,
+                    appType = appType,
+                    onOpenSettings = {
+                        context?.let {
+                            it.startActivity(
+                                android.content.Intent(it, com.example.SettingsActivity::class.java).apply {
+                                    putExtra("start_route", com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS)
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            )
+                        }
+                    }
+                )
             else -> DefaultMiniAppInstance(instanceId, appType)
         }
     }
