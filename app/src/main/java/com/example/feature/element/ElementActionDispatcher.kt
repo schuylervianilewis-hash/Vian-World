@@ -136,9 +136,15 @@ object ElementActionDispatcher {
                 }
 
                 is SidebarItem.FloatingTrigger -> {
-                    LogKeeper.log(context, TAG, "Triggering container element: ${item.targetId}")
-                    SidebarManager.getInstance(context).openContainerById(item.targetId)
-                    true
+                    LogKeeper.log(context, TAG, "Dispatching floating trigger element: ${item.targetId}")
+                    com.example.feature.floating.trigger.FloatingTriggerManager
+                        .getInstance(context)
+                        .handleSidebarTriggerItem(item)
+                }
+
+                is SidebarItem.QuickCall -> {
+                    val outcome = com.example.feature.quickcall.QuickCallActionHandler.execute(context, item)
+                    com.example.feature.quickcall.QuickCallActionHandler.isHandledOutcome(outcome)
                 }
 
                 is SidebarItem.Folder -> {
