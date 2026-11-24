@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -116,6 +117,35 @@
         <activity android:name=".NotificationHistoryActivity" android:exported="false"  android:process=":heavy"/>
         <activity android:name=".AppTrackerOpenerActivity" android:exported="false"  android:process=":heavy"/>
         <activity android:name=".feature.settings.AddElementActivity" android:exported="false"  android:process=":heavy"/>
+        <activity
+            android:name=".feature.quickcall.QuickCallPickerActivity"
+            android:exported="false"
+            android:label="Quick Calls"
+            android:process=":heavy" />
+        <activity
+            android:name=".feature.quickcall.QuickCallEditActivity"
+            android:exported="false"
+            android:label="Edit Quick Call"
+            android:process=":heavy" />
+        <activity
+            android:name=".feature.quickcall.QuickCallPermissionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:process=":heavy" />
+        <activity
+            android:name=".feature.reader.ReaderImportActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity
+            android:name=".feature.reader.ReaderFolderTreeActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity
+            android:name=".feature.reader.BookTrackerActivity"
+            android:exported="false"
+            android:process=":heavy"
+            android:label="Book Tracker"
+            android:theme="@style/Theme.LiteReader" />
         <activity android:name=".feature.settings.AppPickerActivity" android:exported="false"  android:process=":heavy"/>
         <activity android:name=".feature.settings.ShortcutPickerActivity" android:exported="false"  android:process=":heavy"/>
         <activity android:name=".feature.settings.IntentPickerActivity" android:exported="false"  android:process=":heavy"/>
@@ -247,6 +277,20 @@
             android:authorities="${applicationId}.sidebar.setup"
             android:exported="false"
             android:process=":heavy" />
+
+        <activity
+            android:name=".feature.selection.MeaningSelectionActivity"
+            android:label="Meaning"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.VianSide.SelectionPopup">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <provider
             android:name="androidx.core.content.FileProvider"
