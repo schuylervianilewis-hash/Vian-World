@@ -556,6 +556,8 @@ Capped at 500 lines per file.
   - `app/src/main/java/com/example/feature/sidebar/AppsPageView.kt`
   - `app/src/main/java/com/example/feature/sidebar/SidebarView.kt`
   - `app/src/main/java/com/example/feature/sidebar/SidebarWindow.kt`
+  - `app/src/main/java/com/example/feature/sidebar/SidebarWindowCoordinator.kt`
+  - `launcher/src/main/kotlin/shura/home/helpers/SidebarBackDispatcher.kt`
   - `app/src/main/res/layout/item_sidebar_app.xml`
   - `launcher/src/main/kotlin/shura/home/activities/MainActivity.kt`
   - `receipts/RECEIPTS_100.md`
@@ -582,4 +584,5 @@ Capped at 500 lines per file.
   7. Confirm outside-touch dismissal, focus restoration, keyboard input, and Sidebar close animation still work.
 * Known limitations:
   - CI does not verify real Android IME/overlay key delivery, widget-provider configuration, popup geometry across OEM display cutouts/insets, or persistence on a physical device.
+  - The launcher Back bridge is effective while Vian World is the foreground launcher Activity. Android does not deliver system Back to a non-focusable overlay displayed over another app; global interception there would require changing overlay focus behaviour or adding an AccessibilityService, neither of which is included.
   - Existing saved four-column settings are intentionally preserved; three columns is the default for pages without an explicit stored value.
