@@ -1344,7 +1344,7 @@ class FloatingMiniAppWindow(
             hint = "Type here... Text is persisted durably on Sleep."
             setHintTextColor(Color.parseColor("#6C7086"))
             setTextColor(Color.WHITE)
-            highlightColor = Color.parseColor("#585B70")
+            highlightColor = parseColorSafe(currentAccentColorHex)
             textSize = currentFontSizeSp
             gravity = Gravity.TOP or Gravity.START
             isEnabled = true
@@ -1551,7 +1551,7 @@ class FloatingMiniAppWindow(
             hint = "Type here... Text is persisted durably on Sleep."
             setHintTextColor(Color.parseColor("#6C7086"))
             setTextColor(Color.WHITE)
-            highlightColor = Color.parseColor("#585B70")
+            highlightColor = parseColorSafe(currentAccentColorHex)
             textSize = 13f
             val editBg = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
