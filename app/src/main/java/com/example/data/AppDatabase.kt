@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [NotificationHistory::class, EpubBook::class, TrackerBook::class, QuickNote::class, LogEntry::class, SchedulerTask::class, AppyworkProject::class, AppyworkFileNode::class, PwaEntity::class], version = 10, exportSchema = false)
+@Database(entities = [NotificationHistory::class, EpubBook::class, TrackerBook::class, QuickNote::class, LogEntry::class, SchedulerTask::class, AppyworkProject::class, AppyworkFileNode::class, PwaEntity::class], version = 11, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun epubDao(): EpubDao
     abstract fun trackerDao(): TrackerDao
@@ -87,13 +87,79 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        }
+                }
+        
+                private val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+                    override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        database.execSQL("ALTER TABLE `epubs` ADD COLUMN `author` TEXT NOT NULL DEFAULT ''")
+                        database.execSQL("ALTER TABLE `epubs` ADD COLUMN `lastActivityTimestamp` INTEGER NOT NULL DEFAULT 0")
+        
+                        database.execSQL(
+                            """
+                            CREATE TABLE IF NOT EXISTS `tracker_books_new` (
+                                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                                `title` TEXT NOT NULL,
+                                `author` TEXT NOT NULL,
+                                `totalChapters` INTEGER NOT NULL,
+                                `readChapters` INTEGER NOT NULL,
+                                `isFinished` INTEGER NOT NULL,
+                                `isWebNovel` INTEGER NOT NULL,
+                                `genres` TEXT NOT NULL,
+                                `rating` REAL NOT NULL,
+                                `comment` TEXT NOT NULL,
+                                `addedTimestamp` INTEGER NOT NULL,
+                                `lastUpdatedTimestamp` INTEGER NOT NULL,
+                                `linkedEpubBookId` INTEGER DEFAULT NULL,
+                                `lastReadingActivityTimestamp` INTEGER NOT NULL DEFAULT 0,
+                                `lastMetadataEditTimestamp` INTEGER NOT NULL DEFAULT 0,
+                                `backupOriginKey` TEXT NOT NULL DEFAULT '',
+                                FOREIGN KEY(`linkedEpubBookId`) REFERENCES `epubs`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                            )
+                            """.trimIndent()
+                        )
+                        database.execSQL(
+                            """
+                            INSERT INTO `tracker_books_new` (
+                                `id`, `title`, `author`, `totalChapters`, `readChapters`,
+                                `isFinished`, `isWebNovel`, `genres`, `rating`, `comment`,
+                                `addedTimestamp`, `lastUpdatedTimestamp`, `linkedEpubBookId`,
+                                `lastReadingActivityTimestamp`, `lastMetadataEditTimestamp`, `backupOriginKey`
+                            )
+                            SELECT
+                                `id`, `title`, `author`, `totalChapters`, `readChapters`,
+                                `isFinished`, `isWebNovel`, `genres`, `rating`, `comment`,
+                                `addedTimestamp`, `lastUpdatedTimestamp`, NULL,
+                                `lastUpdatedTimestamp`, `lastUpdatedTimestamp`, ''
+                            FROM `tracker_books`
+                            """.trimIndent()
+                        )
+                        database.execSQL("DROP TABLE `tracker_books`")
+                        database.execSQL("ALTER TABLE `tracker_books_new` RENAME TO `tracker_books`")
+                        database.execSQL("CREATE INDEX IF NOT EXISTS `index_tracker_books_linkedEpubBookId` ON `tracker_books` (`linkedEpubBookId`)")
+                    }
+                }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "litereader_db"
-                ).enableMultiInstanceInvalidation().addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).fallbackToDestructiveMigration().build()
+                )
+                    .addMigrations(
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9,
+                        MIGRATION_9_10,
+                        MIGRATION_10_11
+                    )
+                    .fallbackToDestructiveMigrationFrom(1, 2)
+                    .enableMultiInstanceInvalidation()
+                    .build()
                 INSTANCE = instance
                 instance
             }
