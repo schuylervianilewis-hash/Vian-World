@@ -680,10 +680,31 @@ class HeavyProcessConnectionManager internal constructor(
                             }
                         }
                         MainActionType.CUSTOM -> {
-                            if (request.targetId == "NAVIGATE_PAGE") {
-                                val delta = request.parameters["delta"]?.toIntOrNull() ?: 0
-                                safeLog("HeavyProcessConnectionManager", "Executing NAVIGATE_PAGE delta=$delta from Heavy")
-                                com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).navigatePage(delta)
+                            when (request.targetId) {
+                                "NAVIGATE_PAGE" -> {
+                                    val delta = request.parameters["delta"]?.toIntOrNull() ?: 0
+                                    safeLog("HeavyProcessConnectionManager", "Executing NAVIGATE_PAGE delta=$delta from Heavy")
+                                    com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).navigatePage(delta)
+                                }
+                                "READER_ACTION" -> {
+                                    val bridge = com.example.feature.floating.FloatingMiniAppBridge.getInstance(ctx)
+                                    when (request.parameters["subAction"]) {
+                                        "OPEN_BOOK" -> {
+                                            val epubBookId = request.parameters["epubBookId"]?.toIntOrNull() ?: -1
+                                            if (epubBookId > 0) {
+                                                safeLog("HeavyProcessConnectionManager", "Opening EPUB $epubBookId in Reader from Heavy")
+                                                bridge.openBookInFloatingReader(epubBookId)
+                                            }
+                                        }
+                                        "RESTORE_READER" -> {
+                                            val instanceId = request.parameters["instanceId"].orEmpty()
+                                            if (instanceId.isNotBlank()) {
+                                                safeLog("HeavyProcessConnectionManager", "Restoring Reader $instanceId after external activity")
+                                                bridge.restoreReaderAfterExternalActivity(instanceId)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         else -> {
