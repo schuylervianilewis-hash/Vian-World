@@ -2824,6 +2824,29 @@ class FloatingMiniAppWindow(
         }
     }
 
+    fun openDictionaryQuery(query: String): Boolean {
+        if (appType != "dictionary") return false
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return false
+        val command = HeavyCommand(
+            commandId = UUID.randomUUID().toString(),
+            type = HeavyCommandType.START_OPERATION,
+            targetId = instanceId,
+            payload = mapOf(
+                "instance_id" to instanceId,
+                "app_type" to "dictionary",
+                "action" to "dictionary_query",
+                "query" to trimmed
+            )
+        )
+        val result = HeavyProcessConnectionManager.getInstance(context)
+            .sendCommand(command, autoConnect = true)
+        if (!result.success) {
+            LogKeeper.log(context, "FloatingMiniAppWindow", "DICTIONARY_QUERY_HANDOFF_FAILED id=$instanceId error=${result.message}")
+        }
+        return result.success
+    }
+
     fun getCurrentPayload(): Map<String, String> {
         val authoritativeText = when (activeTextAuthority) {
             TextAuthority.IME_BRIDGE -> imeBridgeEditText?.text?.toString() ?: currentNoteText
