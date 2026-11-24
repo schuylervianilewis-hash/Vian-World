@@ -120,18 +120,15 @@
         <activity
             android:name=".feature.quickcall.QuickCallPickerActivity"
             android:exported="false"
-            android:label="Quick Calls"
-            android:process=":heavy" />
+            android:label="Quick Calls" />
         <activity
             android:name=".feature.quickcall.QuickCallEditActivity"
             android:exported="false"
-            android:label="Edit Quick Call"
-            android:process=":heavy" />
+            android:label="Edit Quick Call" />
         <activity
             android:name=".feature.quickcall.QuickCallPermissionActivity"
             android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:process=":heavy" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".feature.reader.ReaderImportActivity"
             android:exported="false"
