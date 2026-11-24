@@ -289,11 +289,10 @@ object ElementIdParser {
     private fun parseQuickCall(context: Context, id: String): SidebarItem.QuickCall? {
         val uuid = com.example.feature.quickcall.QuickCallStore.extractUuid(id) ?: return null
         val record = com.example.feature.quickcall.QuickCallStore.getInstance(context).getRecord(uuid)
-            ?: return null
         return SidebarItem.QuickCall(
             uuid = uuid,
-            label = record.displayName,
-            iconPath = record.customIconPath?.takeIf { it.isNotBlank() },
+            label = record?.displayName ?: "Quick Call",
+            iconPath = record?.customIconPath?.takeIf { it.isNotBlank() },
             id = "${com.example.feature.quickcall.QuickCallStore.ELEMENT_PREFIX}$uuid"
         )
     }
