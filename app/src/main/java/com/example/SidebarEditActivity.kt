@@ -154,11 +154,12 @@ class SidebarEditActivity : ComponentActivity() {
         }
 
         val btnAdd = createSmallBtn("Add") {
-            val intent = Intent(this@SidebarEditActivity, AddElementActivity::class.java).apply {
-                putExtra("PAGE_ID", pageId)
-                putExtra("CONTAINER_ID", this@SidebarEditActivity.intent.getStringExtra("CONTAINER_ID") ?: "sidebar")
-                putExtra("FOLDER_MULTI_ADD_SESSION", folderUuid != null)
-                if (folderUuid != null) putExtra("FOLDER_UUID", folderUuid)
+            val intent = Intent(this@SidebarEditActivity, AddElementActivity::class.java)
+            if (folderUuid != null) {
+                intent.putExtra("PAGE_ID", pageId)
+                intent.putExtra("CONTAINER_ID", this@SidebarEditActivity.intent.getStringExtra("CONTAINER_ID") ?: "sidebar")
+                intent.putExtra("FOLDER_MULTI_ADD_SESSION", true)
+                intent.putExtra("FOLDER_UUID", folderUuid)
             }
             startActivityForResult(intent, 100)
         }
