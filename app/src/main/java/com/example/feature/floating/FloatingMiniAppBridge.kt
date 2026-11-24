@@ -220,6 +220,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                             state = MiniAppState.SLEEPING,
                             windowBounds = window.normalFloatingBounds.copyBounds()
                         )
+                        window.releaseNotePersistenceRuntime()
                         windowManager.unregisterWindow(instanceId)
                         showLauncherBubble(snapshot)
                         LogKeeper.log(context, TAG, "FOLDED_LAUNCHER_SHOWN id=$instanceId buttonPosition=${snapshot.buttonPosition}")
@@ -409,6 +410,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
             if (deleteDurable) {
                 dismissLauncherBubble(instanceId)
+                window?.prepareForPermanentDelete()
                 windowManager.unregisterWindow(instanceId)
                 durableStore.deleteSnapshot(instanceId)
                 LogKeeper.log(context, TAG, "RECOVERY_DELETED id=$instanceId")
@@ -423,6 +425,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                 window.flushPendingSaveAsync(targetState = MiniAppState.CLOSED) { success ->
                     if (success) {
                         dismissLauncherBubble(instanceId)
+                        window.releaseNotePersistenceRuntime()
                         windowManager.unregisterWindow(instanceId)
                         LogKeeper.log(context, TAG, "RECOVERY_RETAINED id=$instanceId state=CLOSED")
                         LogKeeper.log(context, TAG, "INSTANCE_CLOSED id=$instanceId")
