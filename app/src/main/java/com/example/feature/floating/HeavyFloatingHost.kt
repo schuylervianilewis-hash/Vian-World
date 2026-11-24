@@ -361,6 +361,22 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     /**
      * Returns an active instance if running in Heavy.
      */
+    fun dispatchDictionaryQuery(instanceId: String, query: String): Boolean {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return false
+        val existing = synchronized(lock) { activeInstances[instanceId] }
+        val dictionary = existing as? com.example.feature.language.DictionaryMiniAppInstance
+        if (dictionary != null) {
+            dictionary.openQuery(trimmed)
+            return true
+        }
+        val payload = mapOf(
+            com.example.feature.language.DictionaryMiniAppInstance.KEY_QUERY to trimmed,
+            com.example.feature.language.DictionaryMiniAppInstance.KEY_SUBMITTED_QUERY to trimmed
+        )
+        return startInstance(instanceId, "dictionary", initialPayload = payload) != null
+    }
+
     fun getActiveInstance(instanceId: String): MiniAppInstance? {
         synchronized(lock) {
             return activeInstances[instanceId]
