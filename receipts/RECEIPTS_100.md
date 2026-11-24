@@ -566,7 +566,7 @@ Capped at 500 lines per file.
   - Apps retains its existing three-column default. Widgets Grid and Hybrid Grid page views and editors now use three columns only when no explicit saved column preference exists; saved/custom values remain authoritative.
   - Sidebar's default three-column width is 219dp; existing 155dp and 265dp fallbacks and saved width preferences remain intact. Sidebar icon maximum dimensions are 49dp and root padding is 8dp.
   - Sidebar folder popup placement chooses the side with available space and clamps its position to the visible display frame. Launcher folder Back closes the open launcher folder before other home-screen Back handling.
-  - Sidebar Back hides a visible keyboard and closes the Sidebar in the same Back action. Outside-touch dismissal and its keyboard-transition guard are retained.
+  - When Vian World is the foreground launcher Activity, Back first closes an open Sidebar; when Back is delivered to the focused Sidebar window (for example, while a Sidebar text field owns IME focus), it hides the keyboard and closes the Sidebar in the same action. Outside-touch dismissal and its keyboard-transition guard are retained.
   - Android launcher Home Screen grid sizing was not changed.
 * Verification:
   - Source-level transformations were checked against unique expected anchors before writing.
