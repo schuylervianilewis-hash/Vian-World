@@ -52,6 +52,14 @@ class HeavyFloatingHostService : Service() {
                 return@HeavyCommandHandler IpcResult.success()
             }
             val instanceId = cmd.targetId ?: cmd.payload["instance_id"] ?: ""
+            if (action == "dictionary_query" && instanceId.isNotEmpty()) {
+                val query = cmd.payload["query"] ?: ""
+                return@HeavyCommandHandler if (host.dispatchDictionaryQuery(instanceId, query)) {
+                    IpcResult.success("Opened Dictionary query for $instanceId")
+                } else {
+                    IpcResult.error(IpcErrorCode.COMMAND_FAILED, "Dictionary query could not be opened")
+                }
+            }
             if (action == "sync_live_text" && instanceId.isNotEmpty()) {
                 val liveText = cmd.payload[TestNotesMiniAppInstance.KEY_TEXT] ?: cmd.payload["text"] ?: ""
                 val selStart = cmd.payload["sel_start"]?.toIntOrNull() ?: -1
