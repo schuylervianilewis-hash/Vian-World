@@ -142,6 +142,12 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
         currentRoute == "backup" -> {
             BackupRestoreScreen(onBack = { navigateBack() })
         }
+        currentRoute == "reader_settings" || currentRoute == "reader" -> {
+            com.example.feature.settings.ReaderSettingsScreen(onBack = { navigateBack() })
+        }
+        currentRoute == com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS -> {
+            com.example.feature.settings.DictionarySettingsScreen(onBack = { navigateBack() })
+        }
         else -> {
             MainSettingsScreen(
                 onNavigateToHandles = { navigateTo("handles") },
@@ -152,6 +158,8 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
                 onNavigateToPermissions = { navigateTo("permissions") },
                 onNavigateToShield = { context.startActivity(ShieldControl.createOpenShieldIntent(context)) },
                 onNavigateToBackup = { navigateTo("backup") },
+                onNavigateToReaderSettings = { navigateTo("reader_settings") },
+                onNavigateToDictionary = { navigateTo(com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS) },
                 onBack = onFinish
             )
         }
@@ -169,6 +177,8 @@ fun MainSettingsScreen(
     onNavigateToPermissions: () -> Unit,
     onNavigateToShield: () -> Unit,
     onNavigateToBackup: () -> Unit,
+    onNavigateToReaderSettings: () -> Unit = {},
+    onNavigateToDictionary: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -240,6 +250,26 @@ fun MainSettingsScreen(
                 HorizontalDivider()
             }
 
+            item {
+                ListItem(
+                    headlineContent = { Text("Reader Settings") },
+                    supportingContent = { Text("Reading appearance, progress and Reader preferences") },
+                    modifier = Modifier
+                        .clickable { onNavigateToReaderSettings() }
+                        .testTag("settings_item_reader")
+                )
+                HorizontalDivider()
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Dictionary Settings") },
+                    supportingContent = { Text("Import and manage offline StarDict dictionaries") },
+                    modifier = Modifier
+                        .clickable { onNavigateToDictionary() }
+                        .testTag("settings_item_dictionary")
+                )
+                HorizontalDivider()
+            }
             item {
                 ListItem(
                     headlineContent = { Text("Shield") },
