@@ -516,6 +516,10 @@ class MainActivity : SimpleActivity(), FlingListener {
     }
 
     override fun onBackPressedCompat(): Boolean {
+        if (binding.homeScreenGrid.root.getCurrentlyOpenFolderItem() != null) {
+            binding.homeScreenGrid.root.closeFolder(redraw = true)
+            return true
+        }
         return if (isAllAppsFragmentExpanded()) {
             if (!binding.allAppsFragment.root.onBackPressed()) {
                 hideFragment(binding.allAppsFragment)
