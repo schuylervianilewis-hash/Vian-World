@@ -2189,13 +2189,118 @@ class FloatingMiniAppWindow(
         val redoBtn = createPopoverButton(context, "↷ Redo") {
             performNoteRedo()
         }
+        val copyBtn = createPopoverButton(context, "Copy", textColor = Color.parseColor("#A6E3A1")) {
+            copyNoteContent()
+        }
         val clearBtn = createPopoverButton(context, "Clear", textColor = Color.parseColor("#F38BA8")) {
             clearNoteContent()
         }
         actionRow.addView(undoBtn)
         actionRow.addView(redoBtn)
+        actionRow.addView(copyBtn)
         actionRow.addView(clearBtn)
         popover.addView(actionRow)
+
+        // Per-note accent presets and an optional RGB picker.
+        val accentRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, (4 * density).toInt(), 0, (2 * density).toInt())
+        }
+        val accentLabel = TextView(context).apply {
+            text = "Accent:"
+            setTextColor(Color.parseColor("#CDD6F4"))
+            textSize = 11f
+            setPadding(0, 0, (6 * density).toInt(), 0)
+        }
+        accentRow.addView(accentLabel)
+        val customColorPanel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, (6 * density).toInt(), 0, (2 * density).toInt())
+        }
+        val swatchPresets = listOf("#89B4FA", "#CBA6F7", "#A6E3A1", "#FAB387", "#F5C2E7", "#F9E2AF")
+        for (hex in swatchPresets) {
+            val swatchSize = (20 * density).toInt()
+            val swatchView = View(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(parseColorSafe(hex))
+                    setStroke((1 * density).toInt().coerceAtLeast(1), Color.parseColor("#45475A"))
+                }
+                isClickable = true
+                contentDescription = "Accent color $hex"
+                layoutParams = LinearLayout.LayoutParams(swatchSize, swatchSize).apply {
+                    marginEnd = (6 * density).toInt()
+                }
+                setOnClickListener { applyNoteAccentColor(hex, persist = true) }
+            }
+            accentRow.addView(swatchView)
+        }
+        val customBtn = createPopoverButton(context, "Custom") {
+            customColorPanel.visibility =
+                if (customColorPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        accentRow.addView(customBtn)
+        popover.addView(accentRow)
+
+        val previewSwatch = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(parseColorSafe(currentAccentColorHex))
+                setStroke((1 * density).toInt().coerceAtLeast(1), Color.parseColor("#45475A"))
+            }
+            layoutParams = LinearLayout.LayoutParams((18 * density).toInt(), (18 * density).toInt()).apply {
+                marginEnd = (6 * density).toInt()
+            }
+        }
+        customColorPanel.addView(previewSwatch)
+        val initialColor = parseColorSafe(currentAccentColorHex)
+        var rgbR = Color.red(initialColor)
+        var rgbG = Color.green(initialColor)
+        var rgbB = Color.blue(initialColor)
+        var isUpdatingRgb = false
+        fun updateFromRgbSliders() {
+            val hex = String.format("#%02X%02X%02X", rgbR, rgbG, rgbB)
+            (previewSwatch.background as? GradientDrawable)?.setColor(Color.rgb(rgbR, rgbG, rgbB))
+            applyNoteAccentColor(hex, persist = true)
+        }
+        fun addRgbSlider(channel: String, initial: Int, onChange: (Int) -> Unit) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val label = TextView(context).apply {
+                text = channel
+                setTextColor(Color.parseColor("#CDD6F4"))
+                textSize = 10f
+                layoutParams = LinearLayout.LayoutParams((14 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
+            val slider = SeekBar(context).apply {
+                max = 255
+                progress = initial
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                        if (fromUser && !isUpdatingRgb) {
+                            onChange(progress)
+                            isUpdatingRgb = true
+                            updateFromRgbSliders()
+                            isUpdatingRgb = false
+                        }
+                    }
+                    override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                    override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                })
+            }
+            row.addView(label)
+            row.addView(slider)
+            customColorPanel.addView(row)
+        }
+        addRgbSlider("R", rgbR) { rgbR = it }
+        addRgbSlider("G", rgbG) { rgbG = it }
+        addRgbSlider("B", rgbB) { rgbB = it }
+        popover.addView(customColorPanel)
 
         return popover
     }
@@ -2906,6 +3011,58 @@ class FloatingMiniAppWindow(
         if (isMainOnlyApp()) {
             notePersistence.markDeletedPermanently()
         }
+    }
+
+    fun copyNoteContent(): Boolean {
+        val text = getAuthoritativeNoteText()
+        if (text.isEmpty()) {
+            android.widget.Toast.makeText(context, "Note is empty", android.widget.Toast.LENGTH_SHORT).show()
+            return false
+        }
+        return try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            clipboard?.setPrimaryClip(ClipData.newPlainText(windowTitle.ifEmpty { "Note" }, text))
+            android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+            true
+        } catch (t: Throwable) {
+            LogKeeper.logError(context, "FloatingMiniAppWindow", "Failed to copy note id=$instanceId", t)
+            false
+        }
+    }
+
+    fun applyNoteAccentColor(hexColor: String, persist: Boolean = true) {
+        val normalized = normalizeHexColor(hexColor)
+        currentAccentColorHex = normalized
+        noteEditText?.highlightColor = parseColorSafe(normalized)
+        if (persist && isMainOnlyApp()) {
+            notePersistence.updateStateSnapshot(
+                text = currentNoteText,
+                fontSize = currentFontSizeSp,
+                fontStyle = currentFontStyle,
+                wordWrap = currentWordWrap,
+                lineSpacing = currentLineSpacingMult,
+                bounds = bounds,
+                accentColor = normalized
+            )
+            notePersistence.scheduleDebouncedSave()
+        }
+    }
+
+    private fun normalizeHexColorOrNull(raw: String): String? {
+        val hex = raw.trim().removePrefix("#")
+        return when (hex.length) {
+            6 -> if (hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) "#${hex.uppercase()}" else null
+            8 -> if (hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) "#${hex.substring(2).uppercase()}" else null
+            else -> null
+        }
+    }
+
+    private fun normalizeHexColor(raw: String): String =
+        normalizeHexColorOrNull(raw) ?: NotePersistenceCoordinator.DEFAULT_ACCENT_COLOR
+
+    private fun parseColorSafe(hex: String): Int {
+        val normalized = normalizeHexColor(hex).removePrefix("#")
+        return (0xFF000000L or normalized.toLong(16)).toInt()
     }
 
     fun getCurrentPayload(): Map<String, String> {
