@@ -37,7 +37,7 @@ class SidebarWindow(
 
     init {
         val density = context.resources.displayMetrics.density
-        val widthPx = (220 * density).toInt()
+        val widthPx = (219 * density).toInt()
         val screenHeight = context.resources.displayMetrics.heightPixels
         val screenWidth = context.resources.displayMetrics.widthPixels
 
