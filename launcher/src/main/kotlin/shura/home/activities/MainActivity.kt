@@ -516,11 +516,7 @@ class MainActivity : SimpleActivity(), FlingListener {
     }
 
     override fun onBackPressedCompat(): Boolean {
-        val sidebarCoordinator = com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(this)
-        if (sidebarCoordinator.isSidebarVisible()) {
-            sidebarCoordinator.closeSidebar()
-            return true
-        }
+        if (shura.home.helpers.SidebarBackDispatcher.dispatchBack()) return true
         if (binding.homeScreenGrid.root.getCurrentlyOpenFolderItem() != null) {
             binding.homeScreenGrid.root.closeFolder(redraw = true)
             return true
