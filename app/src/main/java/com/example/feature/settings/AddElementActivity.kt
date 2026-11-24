@@ -24,9 +24,34 @@ import androidx.room.Room
 
 
 class AddElementActivity : ComponentActivity() {
+    private val folderSessionElementIds = arrayListOf<String>()
+    private var folderSessionTitleView: TextView? = null
+    private var folderSessionDoneView: TextView? = null
+
+    private fun finishFolderMultiAddSession() {
+        if (folderSessionElementIds.isEmpty()) {
+            setResult(Activity.RESULT_CANCELED)
+        } else {
+            setResult(Activity.RESULT_OK, Intent().putStringArrayListExtra("ELEMENT_IDS", ArrayList(folderSessionElementIds)))
+        }
+        finish()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putStringArrayList("FOLDER_SESSION_ELEMENT_IDS", ArrayList(folderSessionElementIds))
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+        val folderMultiAddSession = intent.getBooleanExtra("FOLDER_MULTI_ADD_SESSION", false)
+        if (folderMultiAddSession) {
+            savedInstanceState?.getStringArrayList("FOLDER_SESSION_ELEMENT_IDS")?.let(folderSessionElementIds::addAll)
+            onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() = finishFolderMultiAddSession()
+            })
+        }
+
         val density = resources.displayMetrics.density
         
         val mainLayout = LinearLayout(this).apply {
@@ -48,7 +73,9 @@ class AddElementActivity : ComponentActivity() {
             setImageResource(android.R.drawable.ic_menu_revert) // Use revert as back
             setColorFilter(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt()).apply { marginEnd = (16 * density).toInt() }
-            setOnClickListener { finish() }
+            setOnClickListener {
+                if (folderMultiAddSession) finishFolderMultiAddSession() else finish()
+            }
         }
         
         val titleView = TextView(this).apply {
@@ -58,9 +85,21 @@ class AddElementActivity : ComponentActivity() {
             setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        
+        folderSessionTitleView = titleView
+        val doneView = TextView(this).apply {
+            text = if (folderMultiAddSession) "Done" else ""
+            visibility = if (folderMultiAddSession) View.VISIBLE else View.GONE
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setPadding((12 * density).toInt(), (8 * density).toInt(), 0, (8 * density).toInt())
+            setOnClickListener { if (folderMultiAddSession) finishFolderMultiAddSession() }
+        }
+        folderSessionDoneView = doneView
+
         toolbar.addView(backIcon)
         toolbar.addView(titleView)
+        toolbar.addView(doneView)
         mainLayout.addView(toolbar)
         
         val scrollView = ScrollView(this).apply {
@@ -310,6 +349,11 @@ class AddElementActivity : ComponentActivity() {
         mainLayout.addView(scrollView)
         
         setContentView(mainLayout)
+        if (folderMultiAddSession && folderSessionElementIds.isNotEmpty()) {
+            val count = folderSessionElementIds.size
+            folderSessionTitleView?.text = "Add element ($count)"
+            folderSessionDoneView?.text = "Done ($count)"
+        }
     }
 
     private fun handleElementSelected(id: String, displayName: String? = null) {
@@ -321,7 +365,18 @@ class AddElementActivity : ComponentActivity() {
             "MiniAppLaunchRouting",
             "ROUTING_DIAG: HANDLE_ELEMENT_SELECTED elementId=$id isHybrid=$isHybridGrid pageId=$pageId containerId=$containerId"
         )
-        if (isHybridGrid && !pageId.isNullOrEmpty()) {
+        if (intent.getBooleanExtra("FOLDER_MULTI_ADD_SESSION", false) && !isHybridGrid) {
+            val targetId = com.example.feature.element.ElementPlacementHelper.assignInstanceIfNote(id)
+            if (targetId !in folderSessionElementIds) {
+                folderSessionElementIds.add(targetId)
+                val count = folderSessionElementIds.size
+                folderSessionTitleView?.text = "Add element ($count)"
+                folderSessionDoneView?.text = "Done ($count)"
+                android.widget.Toast.makeText(this, "Selected: ${displayName ?: "Element"}", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(this, "Already selected", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else if (isHybridGrid && !pageId.isNullOrEmpty()) {
             val cols = if (id.startsWith("widget:") || id.startsWith("popup_widget:")) 2 else 1
             val rows = if (id.startsWith("widget:") || id.startsWith("popup_widget:")) 2 else 1
             com.example.feature.element.ElementPlacementHelper.addElementToHybridGrid(
