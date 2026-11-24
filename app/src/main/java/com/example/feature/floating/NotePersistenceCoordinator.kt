@@ -48,6 +48,8 @@ class NotePersistenceCoordinator(
 
     private val saveSequence = AtomicLong(0L)
     private val latestCommittedSequence = AtomicLong(0L)
+    private val lifecycleEpoch = AtomicLong(0L)
+    private val deletedPermanently = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val debounceLock = Any()
     private var pendingSaveRunnable: Runnable? = null
@@ -79,6 +81,10 @@ class NotePersistenceCoordinator(
 
     @Volatile
     var latestBounds: WindowBounds? = null
+        private set
+
+    @Volatile
+    var latestAccentColor: String = DEFAULT_ACCENT_COLOR
         private set
 
     fun pushUndoState(text: String) {
@@ -140,7 +146,8 @@ class NotePersistenceCoordinator(
         fontStyle: String,
         wordWrap: Boolean,
         lineSpacing: Float,
-        bounds: WindowBounds? = null
+        bounds: WindowBounds? = null,
+        accentColor: String? = null
     ) {
         latestText = text
         latestFontSize = fontSize
@@ -150,28 +157,86 @@ class NotePersistenceCoordinator(
         if (bounds != null) {
             latestBounds = bounds.copyBounds()
         }
+        if (!accentColor.isNullOrBlank()) {
+            latestAccentColor = accentColor
+        }
     }
+
+    /**
+     * Cancels any queued debounced save callback safely without performing disk I/O.
+     */
+    fun cancelPendingDebounce() {
+        synchronized(debounceLock) {
+            pendingSaveRunnable?.let {
+                try {
+                    mainHandler.removeCallbacks(it)
+                } catch (_: Throwable) {}
+                pendingSaveRunnable = null
+            }
+        }
+    }
+
+    /**
+     * Releases runtime debounce callbacks on teardown/sleep so stale callbacks cannot write later.
+     */
+    fun release() {
+        lifecycleEpoch.incrementAndGet()
+        cancelPendingDebounce()
+    }
+
+    /**
+     * Marks this note instance permanently closed/deleted so neither queued debounce callbacks nor
+     * in-flight background saves can resurrect the deleted durable snapshot.
+     */
+    fun markDeletedPermanently() {
+        deletedPermanently.set(true)
+        lifecycleEpoch.incrementAndGet()
+        activeOperationGeneration.set(0L)
+        cancelPendingDebounce()
+        val finalSeq = saveSequence.incrementAndGet()
+        latestCommittedSequence.updateAndGet { current -> maxOf(current, finalSeq) }
+    }
+
+    fun isMarkedDeletedForTesting(): Boolean = deletedPermanently.get()
+    fun hasPendingDebounceRunnableForTesting(): Boolean = synchronized(debounceLock) { pendingSaveRunnable != null }
+    internal fun getPendingDebounceRunnableForTesting(): Runnable? = synchronized(debounceLock) { pendingSaveRunnable }
 
     /**
      * Schedules a debounced background write for frequent typing edits.
      */
     fun scheduleDebouncedSave(delayMs: Long = DEFAULT_DEBOUNCE_MS) {
+        if (deletedPermanently.get()) return
+        val epoch = lifecycleEpoch.get()
         val seq = saveSequence.incrementAndGet()
         val snapshotPayload = createPayloadMap()
         val boundsCopy = latestBounds?.copyBounds()
 
         if (TEST_DISPATCH_IMMEDIATELY || delayMs <= 0) {
-            commitSave(seq, snapshotPayload, boundsCopy)
+            commitSave(seq, snapshotPayload, boundsCopy, null, 0L, expectedEpoch = epoch)
             return
         }
 
         synchronized(debounceLock) {
-            pendingSaveRunnable?.let { mainHandler.removeCallbacks(it) }
+            if (deletedPermanently.get()) return
+            pendingSaveRunnable?.let {
+                try {
+                    mainHandler.removeCallbacks(it)
+                } catch (_: Throwable) {}
+            }
+            var self: Runnable? = null
             val runnable = Runnable {
+                synchronized(debounceLock) {
+                    if (pendingSaveRunnable === self) {
+                        pendingSaveRunnable = null
+                    }
+                }
+                if (deletedPermanently.get() || lifecycleEpoch.get() != epoch) return@Runnable
                 backgroundExecutor.execute {
-                    commitSave(seq, snapshotPayload, boundsCopy)
+                    if (deletedPermanently.get() || lifecycleEpoch.get() != epoch) return@execute
+                    commitSave(seq, snapshotPayload, boundsCopy, null, 0L, expectedEpoch = epoch)
                 }
             }
+            self = runnable
             pendingSaveRunnable = runnable
             mainHandler.postDelayed(runnable, delayMs)
         }
@@ -181,7 +246,9 @@ class NotePersistenceCoordinator(
     private val activeOperationGeneration = AtomicLong(0L)
 
     fun hasPendingEdits(): Boolean {
-        return saveSequence.get() > latestCommittedSequence.get() || pendingSaveRunnable != null
+        if (deletedPermanently.get()) return false
+        return saveSequence.get() > latestCommittedSequence.get() ||
+            synchronized(debounceLock) { pendingSaveRunnable != null }
     }
 
     /**
@@ -193,12 +260,9 @@ class NotePersistenceCoordinator(
         timeoutMs: Long = DEFAULT_FLUSH_TIMEOUT_MS,
         targetState: MiniAppState? = null
     ): Boolean {
-        synchronized(debounceLock) {
-            pendingSaveRunnable?.let {
-                mainHandler.removeCallbacks(it)
-                pendingSaveRunnable = null
-            }
-        }
+        if (deletedPermanently.get()) return false
+        lifecycleEpoch.incrementAndGet()
+        cancelPendingDebounce()
         val seq = saveSequence.incrementAndGet()
         val opGen = if (targetState != null) currentOperationGeneration.incrementAndGet() else 0L
         if (targetState != null) {
@@ -246,12 +310,12 @@ class NotePersistenceCoordinator(
         targetState: MiniAppState? = null,
         onComplete: (Boolean) -> Unit
     ) {
-        synchronized(debounceLock) {
-            pendingSaveRunnable?.let {
-                mainHandler.removeCallbacks(it)
-                pendingSaveRunnable = null
-            }
+        if (deletedPermanently.get()) {
+            dispatchCallback { onComplete(false) }
+            return
         }
+        lifecycleEpoch.incrementAndGet()
+        cancelPendingDebounce()
         val seq = saveSequence.incrementAndGet()
         val opGen = if (targetState != null) currentOperationGeneration.incrementAndGet() else 0L
         if (targetState != null) {
@@ -327,9 +391,18 @@ class NotePersistenceCoordinator(
         payloadMap: Map<String, String>,
         bounds: WindowBounds?,
         targetState: MiniAppState?,
-        opGen: Long
+        opGen: Long,
+        expectedEpoch: Long? = null
     ): Boolean {
         synchronized(instanceCommitLock) {
+            if (deletedPermanently.get()) {
+                LogKeeper.log(context, TAG, "NOTE_PERSIST_DELETED_SKIPPED id=$instanceId seq=$seq")
+                return false
+            }
+            if (expectedEpoch != null && lifecycleEpoch.get() != expectedEpoch) {
+                LogKeeper.log(context, TAG, "NOTE_PERSIST_STALE_EPOCH_SKIPPED id=$instanceId seq=$seq epoch=$expectedEpoch current=${lifecycleEpoch.get()}")
+                return false
+            }
             if (seq < latestCommittedSequence.get()) {
                 // Stale write protection: a newer save sequence has already committed
                 LogKeeper.log(context, TAG, "NOTE_PERSIST_STALE_SKIPPED id=$instanceId seq=$seq latest=${latestCommittedSequence.get()}")
@@ -393,6 +466,7 @@ class NotePersistenceCoordinator(
             "font_style" to latestFontStyle,
             "word_wrap" to latestWordWrap.toString(),
             "line_spacing" to latestLineSpacing.toString(),
+            KEY_ACCENT_COLOR to latestAccentColor,
             KEY_UNDO_HISTORY to undoJson,
             KEY_REDO_HISTORY to redoJson
         )
@@ -442,6 +516,8 @@ class NotePersistenceCoordinator(
         private const val TAG = "NotePersistenceCoordinator"
         const val KEY_UNDO_HISTORY = "undo_history"
         const val KEY_REDO_HISTORY = "redo_history"
+        const val KEY_ACCENT_COLOR = "accent_color"
+        const val DEFAULT_ACCENT_COLOR = "#89B4FA"
         const val MAX_HISTORY = 50
         const val DEFAULT_DEBOUNCE_MS = 400L
         const val DEFAULT_FLUSH_TIMEOUT_MS = 2000L
