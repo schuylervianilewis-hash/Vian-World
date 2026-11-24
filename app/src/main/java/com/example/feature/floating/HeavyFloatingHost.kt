@@ -22,7 +22,7 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     private val factories = ConcurrentHashMap<String, MiniAppFactory>()
     private val activeInstances = LinkedHashMap<String, MiniAppInstance>()
     private val lock = Any()
-    private val defaultFactory = DefaultMiniAppFactory()
+    private val defaultFactory = DefaultMiniAppFactory(context)
     private val testNotesFactory = TestNotesMiniAppFactory()
 
     init {
