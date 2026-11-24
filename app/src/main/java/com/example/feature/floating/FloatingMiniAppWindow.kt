@@ -2824,6 +2824,20 @@ class FloatingMiniAppWindow(
         }
     }
 
+    fun setWindowFocusable(focusable: Boolean) {
+        if (isMainOnlyApp()) return
+        val currentFlags = layoutParams.flags
+        val updatedFlags = if (focusable) {
+            currentFlags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            currentFlags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        if (updatedFlags == currentFlags) return
+        layoutParams.flags = updatedFlags
+        applyLayoutUpdate()
+        LogKeeper.log(context, "FloatingMiniAppWindow", "WINDOW_FOCUSABLE_CHANGED id=$instanceId focusable=$focusable")
+    }
+
     fun openReaderBookById(epubBookId: Int): Boolean {
         if (appType != "reader" && appType != "ebook_reader") return false
         if (epubBookId <= 0) return false
