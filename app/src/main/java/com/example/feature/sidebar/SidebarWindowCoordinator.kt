@@ -7,6 +7,7 @@ import android.os.Looper
 import android.provider.Settings
 import com.example.core.FloatingWindowManager
 import com.example.core.LogKeeper
+import shura.home.helpers.SidebarBackDispatcher
 import com.example.util.HandleEdge
 
 /**
@@ -29,6 +30,17 @@ class SidebarWindowCoordinator private constructor(context: Context) {
 
     private var activeSidebarWindow: SidebarWindow? = null
     private var activeEdge: HandleEdge? = null
+
+    init {
+        SidebarBackDispatcher.setHandler {
+            if (isSidebarVisible()) {
+                closeSidebar()
+                true
+            } else {
+                false
+            }
+        }
+    }
 
     /**
      * Attaches and displays the Sidebar overlay for the active container state and docking edge.
@@ -118,6 +130,7 @@ class SidebarWindowCoordinator private constructor(context: Context) {
             val view = window.sidebarView ?: return@runOnMain
             if (!window.isAttached) return@runOnMain
 
+            if (view.isKeyboardActive()) view.hideKeyboard()
             view.closeWithAnimation {
                 detachSidebarImmediate()
             }
