@@ -112,6 +112,45 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         return window
     }
 
+    fun openBookInFloatingReader(epubBookId: Int, targetInstanceId: String? = null): FloatingMiniAppWindow {
+        require(epubBookId > 0) { "epubBookId must be positive" }
+        val instanceId = targetInstanceId
+            ?: durableStore.getAllSnapshots().firstOrNull { it.appType == "reader" }?.instanceId
+            ?: "miniapp_reader"
+        val snapshot = durableStore.loadSnapshot(instanceId) ?: MiniAppRecoverySnapshot(
+            instanceId = instanceId,
+            appType = "reader",
+            state = MiniAppState.ACTIVE,
+            windowBounds = WindowBounds(120, 150, 650, 850)
+        )
+        snapshot.state = MiniAppState.ACTIVE
+        snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_SCREEN_MODE] =
+            com.example.feature.reader.ReaderScreenMode.READING.name
+        snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_BOOK_ID] = epubBookId.toString()
+        snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START] = "false"
+        if (!durableStore.saveSnapshot(snapshot)) {
+            throw IllegalStateException("Could not persist Reader launch state")
+        }
+        val window = openMiniApp(instanceId, "reader")
+        if (!window.openReaderBookById(epubBookId)) {
+            LogKeeper.logError(context, TAG, "READER_OPEN_BOOK_HANDOFF_FAILED id=$instanceId epubBookId=$epubBookId")
+        }
+        return window
+    }
+
+    fun restoreReaderAfterExternalActivity(instanceId: String): Boolean {
+        val saved = durableStore.loadSnapshot(instanceId) ?: return false
+        if (saved.appType != "reader" && saved.appType != "ebook_reader") return false
+        val existing = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
+        if (existing != null) {
+            if (existing.state != WindowState.VISIBLE) windowManager.showWindow(instanceId)
+            windowManager.bringToFront(instanceId)
+            return true
+        }
+        openMiniApp(instanceId, saved.appType)
+        return true
+    }
+
     fun openDictionaryWithQueryResult(
         query: String,
         instanceId: String = DEFAULT_DICTIONARY_INSTANCE_ID
