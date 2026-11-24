@@ -348,7 +348,7 @@ class AddElementActivity : ComponentActivity() {
                 "MiniAppLaunchRouting",
                 "ROUTING_DIAG: ELEMENT_PICKER_ITEM_CLICKED elementId=system:test_notes isHybrid=$isHybridGrid pageId=$pageId containerId=$containerId"
             )
-            handleElementSelected("system:test_notes", "Test Notes")
+            handleElementSelected("system:test_notes", "Note")
         }
 
         scrollView.addView(contentLayout)
