@@ -2847,6 +2847,18 @@ class FloatingMiniAppWindow(
         return result.success
     }
 
+    fun releaseNotePersistenceRuntime() {
+        if (isMainOnlyApp()) {
+            notePersistence.release()
+        }
+    }
+
+    fun prepareForPermanentDelete() {
+        if (isMainOnlyApp()) {
+            notePersistence.markDeletedPermanently()
+        }
+    }
+
     fun getCurrentPayload(): Map<String, String> {
         val authoritativeText = when (activeTextAuthority) {
             TextAuthority.IME_BRIDGE -> imeBridgeEditText?.text?.toString() ?: currentNoteText
