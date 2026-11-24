@@ -461,17 +461,21 @@ class AppsPageView(
         val anchorY = location[1]
         val screenWidth = context.resources.displayMetrics.widthPixels
         val screenHeight = context.resources.displayMetrics.heightPixels
+        val visibleFrame = android.graphics.Rect()
+        anchor.getWindowVisibleDisplayFrame(visibleFrame)
+        val leftBound = visibleFrame.left.coerceAtLeast(0)
+        val rightBound = visibleFrame.right.takeIf { it > leftBound } ?: screenWidth
+        val topBound = visibleFrame.top.coerceAtLeast(0)
+        val bottomBound = visibleFrame.bottom.takeIf { it > topBound } ?: screenHeight
 
-        var x = anchorX
-        if (anchorX > screenWidth / 2) {
-            x = anchorX - totalWidth
-        } else {
-            x = anchorX + anchor.width
-        }
+        val spaceRight = rightBound - (anchorX + anchor.width)
+        val spaceLeft = anchorX - leftBound
+        val placeOnRight = spaceRight >= totalWidth || spaceRight >= spaceLeft
+        val desiredX = if (placeOnRight) anchorX + anchor.width else anchorX - totalWidth
+        val x = desiredX.coerceIn(leftBound, maxOf(leftBound, rightBound - totalWidth))
 
-        var y = anchorY - (totalHeight / 2) + (anchor.height / 2)
-        if (y < 0) y = 0
-        if (y + totalHeight > screenHeight) y = screenHeight - totalHeight
+        val desiredY = anchorY - (totalHeight / 2) + (anchor.height / 2)
+        val y = desiredY.coerceIn(topBound, maxOf(topBound, bottomBound - totalHeight))
 
         onDimSidebar?.invoke(true)
         popupWindow.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
