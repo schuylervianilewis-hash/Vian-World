@@ -686,6 +686,13 @@ class HeavyProcessConnectionManager internal constructor(
                                     safeLog("HeavyProcessConnectionManager", "Executing NAVIGATE_PAGE delta=$delta from Heavy")
                                     com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).navigatePage(delta)
                                 }
+                                "MINIAPP_WINDOW_FOCUS" -> {
+                                    val instanceId = request.parameters["instanceId"].orEmpty()
+                                    val focusable = request.parameters["focusable"]?.toBoolean() ?: false
+                                    val window = com.example.core.FloatingWindowManager.getInstance(ctx)
+                                        .getWindow(instanceId) as? com.example.feature.floating.FloatingMiniAppWindow
+                                    window?.setWindowFocusable(focusable)
+                                }
                                 "READER_ACTION" -> {
                                     val bridge = com.example.feature.floating.FloatingMiniAppBridge.getInstance(ctx)
                                     when (request.parameters["subAction"]) {
