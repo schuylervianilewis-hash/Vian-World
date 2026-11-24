@@ -154,7 +154,12 @@ class SidebarEditActivity : ComponentActivity() {
         }
 
         val btnAdd = createSmallBtn("Add") {
-            val intent = Intent(this@SidebarEditActivity, AddElementActivity::class.java)
+            val intent = Intent(this@SidebarEditActivity, AddElementActivity::class.java).apply {
+                putExtra("PAGE_ID", pageId)
+                putExtra("CONTAINER_ID", this@SidebarEditActivity.intent.getStringExtra("CONTAINER_ID") ?: "sidebar")
+                putExtra("FOLDER_MULTI_ADD_SESSION", folderUuid != null)
+                if (folderUuid != null) putExtra("FOLDER_UUID", folderUuid)
+            }
             startActivityForResult(intent, 100)
         }
         val btnEmpty = createSmallBtn("Empty") {
@@ -222,18 +227,25 @@ class SidebarEditActivity : ComponentActivity() {
             "ROUTING_DIAG: SIDEBAR_EDIT_ON_ACTIVITY_RESULT req=$requestCode res=$resultCode id=${data?.getStringExtra("ELEMENT_ID")} pageId=$pageId"
         )
         if (requestCode == 100 && resultCode == RESULT_OK) {
-            // Every picker selection returns one ELEMENT_ID. Append and persist it immediately;
-            // the next Add action starts a fresh picker flow.
-            val id = data?.getStringExtra("ELEMENT_ID")
-            if (!id.isNullOrBlank()) {
-                localIds.add(id)
-                adapter.notifyItemInserted(localIds.size - 1)
-                saveIds()
-                if (folderUuid != null) {
+            if (folderUuid != null) {
+                val selectedIds = data?.getStringArrayListExtra("ELEMENT_IDS").orEmpty()
+                val additions = selectedIds.filter { it.isNotBlank() && it !in localIds }
+                if (additions.isNotEmpty()) {
+                    val insertAt = localIds.size
+                    localIds.addAll(additions)
+                    adapter.notifyItemRangeInserted(insertAt, additions.size)
+                    saveIds()
                     com.example.core.LogKeeper.writeLog(
                         "FolderElement",
-                        "added child immediately; child count after adding/removing: ${localIds.size}"
+                        "added ${additions.size} children in one picker session; child count after adding: ${localIds.size}"
                     )
+                }
+            } else {
+                val id = data?.getStringExtra("ELEMENT_ID")
+                if (!id.isNullOrBlank()) {
+                    localIds.add(id)
+                    adapter.notifyItemInserted(localIds.size - 1)
+                    saveIds()
                 }
             }
         } else if (requestCode == 200 && resultCode == RESULT_OK && data != null) {
