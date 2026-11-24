@@ -52,6 +52,14 @@ class HeavyFloatingHostService : Service() {
                 return@HeavyCommandHandler IpcResult.success()
             }
             val instanceId = cmd.targetId ?: cmd.payload["instance_id"] ?: ""
+            if (action == "reader_open_book" && instanceId.isNotEmpty()) {
+                val epubBookId = cmd.payload["epubBookId"]?.toIntOrNull() ?: -1
+                return@HeavyCommandHandler if (host.dispatchReaderOpenBook(instanceId, epubBookId)) {
+                    IpcResult.success("Opened EPUB book $epubBookId in Reader")
+                } else {
+                    IpcResult.error(IpcErrorCode.COMMAND_FAILED, "Reader book could not be opened")
+                }
+            }
             if (action == "dictionary_query" && instanceId.isNotEmpty()) {
                 val query = cmd.payload["query"] ?: ""
                 return@HeavyCommandHandler if (host.dispatchDictionaryQuery(instanceId, query)) {
