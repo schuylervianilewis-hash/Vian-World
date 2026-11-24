@@ -50,6 +50,7 @@ object ElementIdParser {
                 id.startsWith("link:") -> parseLink(context, id)
                 id.startsWith("spacer:") -> parseSpacer(id)
                 id.startsWith("pwa:") -> parsePwa(context, id)
+                id.startsWith("quick_call:") -> parseQuickCall(context, id)
                 else -> null
             }
         } catch (e: Throwable) {
@@ -285,4 +286,16 @@ object ElementIdParser {
             id = id
         )
     }
+    private fun parseQuickCall(context: Context, id: String): SidebarItem.QuickCall? {
+        val uuid = com.example.feature.quickcall.QuickCallStore.extractUuid(id) ?: return null
+        val record = com.example.feature.quickcall.QuickCallStore.getInstance(context).getRecord(uuid)
+            ?: return null
+        return SidebarItem.QuickCall(
+            uuid = uuid,
+            label = record.displayName,
+            iconPath = record.customIconPath?.takeIf { it.isNotBlank() },
+            id = "${com.example.feature.quickcall.QuickCallStore.ELEMENT_PREFIX}$uuid"
+        )
+    }
+
 }
