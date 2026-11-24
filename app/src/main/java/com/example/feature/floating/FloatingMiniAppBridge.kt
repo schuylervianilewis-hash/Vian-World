@@ -2,6 +2,7 @@ package com.example.feature.floating
 
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import com.example.core.FloatingWindowManager
 import com.example.core.LogKeeper
 import com.example.core.WindowBounds
@@ -30,6 +31,15 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     private val activeBubbles = LinkedHashMap<String, FloatingMiniAppLauncherBubble>()
 
     fun isMainOnlyMiniApp(appType: String): Boolean = (appType == "note" || appType == "test_notes")
+
+    sealed class DictionaryHandoffResult {
+        data class Success(val window: FloatingMiniAppWindow) : DictionaryHandoffResult()
+        data class Failure(
+            val reasonCode: String,
+            val userMessage: String,
+            val cause: Throwable? = null
+        ) : DictionaryHandoffResult()
+    }
 
     /**
      * Opens or brings to front a mini-app floating window.
@@ -100,6 +110,78 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
         LogKeeper.log(context, TAG, "WINDOW_RESTORED id=$instanceId bounds=$bounds")
         return window
+    }
+
+    fun openDictionaryWithQueryResult(
+        query: String,
+        instanceId: String = DEFAULT_DICTIONARY_INSTANCE_ID
+    ): DictionaryHandoffResult {
+        val trimmed = query.trim()
+        val existedBefore = windowManager.getWindow(instanceId) != null
+        if (!Settings.canDrawOverlays(context)) {
+            return DictionaryHandoffResult.Failure(
+                reasonCode = "OVERLAY_PERMISSION_DENIED",
+                userMessage = "Grant overlay permission for Vian World, then tap Open Full Dictionary to retry."
+            )
+        }
+        return try {
+            val current = durableStore.loadSnapshot(instanceId)
+            if (current != null && current.appType != "dictionary") {
+                return DictionaryHandoffResult.Failure(
+                    reasonCode = "INSTANCE_TYPE_CONFLICT",
+                    userMessage = "The Dictionary window is unavailable because its saved instance has a different type."
+                )
+            }
+            val snapshot = current ?: MiniAppRecoverySnapshot(
+                instanceId = instanceId,
+                appType = "dictionary",
+                state = MiniAppState.ACTIVE,
+                windowBounds = WindowBounds(120, 150, 650, 850)
+            )
+            snapshot.state = MiniAppState.ACTIVE
+            if (trimmed.isNotEmpty()) {
+                snapshot.payload[com.example.feature.language.DictionaryMiniAppInstance.KEY_QUERY] = trimmed
+                snapshot.payload[com.example.feature.language.DictionaryMiniAppInstance.KEY_SUBMITTED_QUERY] = trimmed
+            }
+            if (!durableStore.saveSnapshot(snapshot)) {
+                return DictionaryHandoffResult.Failure(
+                    reasonCode = "SNAPSHOT_SAVE_FAILED",
+                    userMessage = "Could not prepare the Dictionary window. Tap Open Full Dictionary to retry."
+                )
+            }
+
+            val window = openMiniApp(instanceId, "dictionary")
+            val queryAccepted = trimmed.isEmpty() || window.openDictionaryQuery(trimmed)
+            val attachedAndVisible = window.isAttached && window.state == WindowState.VISIBLE
+            if (!attachedAndVisible || !queryAccepted) {
+                val reason = when {
+                    !attachedAndVisible -> "WINDOW_SHOW_FAILED"
+                    else -> "DICTIONARY_QUERY_APPLY_FAILED"
+                }
+                LogKeeper.logError(
+                    context,
+                    TAG,
+                    "DICTIONARY_HANDOFF_FAILED id=$instanceId reason=$reason attached=${window.isAttached} state=${window.state} queryAccepted=$queryAccepted"
+                )
+                return DictionaryHandoffResult.Failure(
+                    reasonCode = reason,
+                    userMessage = if (!attachedAndVisible) {
+                        "Could not open Full Dictionary right now. Tap Open Full Dictionary to retry."
+                    } else {
+                        "Could not pass the selected word to Full Dictionary. Tap to retry."
+                    }
+                )
+            }
+            LogKeeper.log(context, TAG, "DICTIONARY_HANDOFF_SUCCESS id=$instanceId reused=$existedBefore queryPresent=${trimmed.isNotEmpty()}")
+            DictionaryHandoffResult.Success(window)
+        } catch (t: Throwable) {
+            LogKeeper.logError(context, TAG, "DICTIONARY_HANDOFF_EXCEPTION id=$instanceId type=${t.javaClass.simpleName}", t)
+            DictionaryHandoffResult.Failure(
+                reasonCode = "HANDOFF_EXCEPTION",
+                userMessage = "Could not open Full Dictionary right now. Tap Open Full Dictionary to retry.",
+                cause = t
+            )
+        }
     }
 
     /**
@@ -503,6 +585,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
     companion object {
         private const val TAG = "FloatingMiniAppBridge"
+        const val DEFAULT_DICTIONARY_INSTANCE_ID = "miniapp_dictionary"
 
         @Volatile
         private var instance: FloatingMiniAppBridge? = null
