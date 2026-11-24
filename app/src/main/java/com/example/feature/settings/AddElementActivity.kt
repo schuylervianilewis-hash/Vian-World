@@ -296,6 +296,17 @@ class AddElementActivity : ComponentActivity() {
             }
             startActivityForResult(pwaIntent, 600)
         }
+
+        addHeader("Quick Calls")
+        addItem(android.R.drawable.sym_action_call, "Quick Calls") {
+            val quickCallIntent = Intent(this, com.example.feature.quickcall.QuickCallPickerActivity::class.java).apply {
+                putExtra("PAGE_ID", pageId)
+                putExtra("CONTAINER_ID", containerId)
+                putExtra("IS_HYBRID_GRID", isHybridGrid && !isFloatingTrigger)
+                putExtra("PAGE_TYPE", pageType)
+            }
+            startActivityForResult(quickCallIntent, 303)
+        }
         
         addHeader("Android actions")
         fun openActionPicker(category: String, title: String) {
@@ -322,21 +333,16 @@ class AddElementActivity : ComponentActivity() {
         addHeader("Floating Windows")
         if (!isFloatingTrigger) {
             addItem(android.R.drawable.ic_menu_crop, "Floating Trigger") {
-                val intent = Intent(this, AddElementActivity::class.java).apply {
-                    putExtra("IS_FLOATING_TRIGGER_SELECTION", true)
-                    putExtra("SIDEBAR_HOME_PICKER", this@AddElementActivity.intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false))
-                    putExtra("PAGE_ID", pageId)
-                    putExtra("CONTAINER_ID", containerId)
-                    putExtra("IS_HYBRID_GRID", isHybridGrid)
-                    putExtra("PAGE_TYPE", pageType)
-                }
-                startActivityForResult(intent, 700)
+                showFloatingTriggerAssociationDialog(pageId, containerId, isHybridGrid, pageType)
             }
+        }
+        addItem(android.R.drawable.ic_menu_search, "Dictionary") {
+            handleElementSelected("system:dictionary_floating", "Dictionary")
         }
         addItem(com.example.R.drawable.ic_library_books, "eBook Reader") {
             handleElementSelected("system:ebook_reader", "eBook Reader")
         }
-        addItem(android.R.drawable.ic_menu_edit, "Test Notes") {
+        addItem(android.R.drawable.ic_menu_edit, "Note") {
             com.example.core.LogKeeper.log(
                 this,
                 "MiniAppLaunchRouting",
@@ -359,7 +365,19 @@ class AddElementActivity : ComponentActivity() {
     private fun handleElementSelected(id: String, displayName: String? = null) {
         val pageId = intent.getStringExtra("PAGE_ID")
         val containerId = intent.getStringExtra("CONTAINER_ID") ?: "sidebar"
-        val isHybridGrid = intent.getBooleanExtra("IS_HYBRID_GRID", false)
+        val isHybridGrid = intent.getBooleanExtra("IS_HYBRID_GRID", false) && !intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
+        val isFloatingTriggerSelection = intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
+        if (isFloatingTriggerSelection) {
+            val validation = com.example.feature.floating.trigger.FloatingTriggerCompat.validateTarget(this, id)
+            if (validation !is com.example.feature.floating.trigger.FloatingTriggerTargetValidation.ValidStandalone) {
+                val reason = (validation as? com.example.feature.floating.trigger.FloatingTriggerTargetValidation.Unsupported)?.reason
+                    ?: "This Sidebar element cannot run as a standalone Floating Trigger."
+                showUnsupportedFloatingTriggerExplanation(reason)
+                return
+            }
+            finishWithId(id)
+            return
+        }
         com.example.core.LogKeeper.log(
             this,
             "MiniAppLaunchRouting",
@@ -391,6 +409,7 @@ class AddElementActivity : ComponentActivity() {
                 id.startsWith("app:") -> id.removePrefix("app:")
                 id.startsWith("pwa:") -> "Offline PWA"
                 id.startsWith("link:") -> "Link"
+                id.startsWith("quick_call:") -> com.example.feature.quickcall.QuickCallStore.getInstance(this).getRecordByElementId(id)?.displayName ?: "Quick Call"
                 id.startsWith("system:") -> id.removePrefix("system:").replace("_", " ").replaceFirstChar { it.uppercase() }
                 id.startsWith("widget:") -> "Widget"
                 id.startsWith("popup_widget:") -> "Popup Widget"
@@ -405,6 +424,7 @@ class AddElementActivity : ComponentActivity() {
     }
 
     private fun finishWithId(id: String, displayName: String? = null) {
+        val isFloatingTriggerSelection = intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
         val targetId = com.example.feature.element.ElementPlacementHelper.assignInstanceIfNote(id)
         val containerId = intent.getStringExtra("CONTAINER_ID")
         com.example.core.LogKeeper.log(
@@ -423,6 +443,7 @@ class AddElementActivity : ComponentActivity() {
         }
         setResult(Activity.RESULT_OK, resultIntent)
 
+        if (!isFloatingTriggerSelection) {
         val handleId = intent.getStringExtra("handle_id")
         val gesture = intent.getStringExtra("gesture")
         if (!handleId.isNullOrEmpty() && !gesture.isNullOrEmpty()) {
@@ -441,6 +462,7 @@ class AddElementActivity : ComponentActivity() {
                 startService(updateIntent)
             }
         }
+        }
         finish()
     }
     
@@ -451,13 +473,23 @@ class AddElementActivity : ComponentActivity() {
             val id = data.getStringExtra("ELEMENT_ID")
             val displayName = data.getStringExtra("DISPLAY_NAME")
             if (id != null) {
-                val finalId = if (requestCode == 500 && id.startsWith("widget:")) {
-                    "popup_widget:" + id.removePrefix("widget:")
-                } else if (requestCode == 700) {
-                    "floating_trigger:$id"
-                } else {
-                    id
+                if (requestCode == 700) {
+                    val validation = com.example.feature.floating.trigger.FloatingTriggerCompat.validateTarget(this, id)
+                    if (validation !is com.example.feature.floating.trigger.FloatingTriggerTargetValidation.ValidStandalone) {
+                        val reason = (validation as? com.example.feature.floating.trigger.FloatingTriggerTargetValidation.Unsupported)?.reason
+                            ?: "This Sidebar element cannot run as a standalone Floating Trigger."
+                        showUnsupportedFloatingTriggerExplanation(reason)
+                        return
+                    }
+                    val record = com.example.feature.floating.trigger.FloatingTriggerManager.getInstance(this).ensureActiveTrigger(id, displayName)
+                    if (record == null) {
+                        showUnsupportedFloatingTriggerExplanation("Could not associate Floating Trigger with the selected Sidebar element.")
+                        return
+                    }
+                    handleElementSelected("floating_trigger:$id", displayName ?: "Trigger: ${record.label}")
+                    return
                 }
+                val finalId = if (requestCode == 500 && id.startsWith("widget:")) "popup_widget:" + id.removePrefix("widget:") else id
                 handleElementSelected(finalId, displayName)
             } else {
                 com.example.core.LogKeeper.writeLog("AddElementActivity", "ELEMENT_ID was null in data!")
@@ -469,6 +501,77 @@ class AddElementActivity : ComponentActivity() {
             if (requestCode == 300) { // ShortcutPickerActivity
                 com.example.core.LogKeeper.writeLog("AddElementActivity", "ShortcutPicker cancelled or failed.")
             }
+        }
+    }
+
+    private fun showFloatingTriggerAssociationDialog(
+        pageId: String?,
+        containerId: String,
+        isHybridGrid: Boolean,
+        pageType: String?
+    ) {
+        val existingElements = com.example.feature.floating.trigger.FloatingTriggerStore
+            .getInstance(this)
+            .discoverExistingSidebarGridElements()
+
+        if (existingElements.isEmpty()) {
+            launchFullFloatingTriggerPicker(pageId, containerId, pageType)
+            return
+        }
+
+        val labels = existingElements.map { it.label }.toMutableList().apply {
+            add("Browse all Sidebar elements…")
+        }.toTypedArray()
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Associate Floating Trigger")
+            .setItems(labels) { _, which ->
+                if (which < existingElements.size) {
+                    val chosen = existingElements[which]
+                    val record = com.example.feature.floating.trigger.FloatingTriggerManager
+                        .getInstance(this)
+                        .ensureActiveTrigger(chosen.id, chosen.label)
+                    if (record != null) {
+                        handleElementSelected("floating_trigger:${chosen.id}", "Trigger: ${chosen.label}")
+                    } else {
+                        val reason = com.example.feature.floating.trigger.FloatingTriggerCompat
+                            .unsupportedReason(this, chosen.id)
+                            ?: "Selected Sidebar element cannot run as a standalone Floating Trigger."
+                        showUnsupportedFloatingTriggerExplanation(reason)
+                    }
+                } else {
+                    launchFullFloatingTriggerPicker(pageId, containerId, pageType)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun launchFullFloatingTriggerPicker(
+        pageId: String?,
+        containerId: String,
+        pageType: String?
+    ) {
+        val intent = Intent(this, AddElementActivity::class.java).apply {
+            putExtra("IS_FLOATING_TRIGGER_SELECTION", true)
+            putExtra("PAGE_ID", pageId)
+            putExtra("CONTAINER_ID", containerId)
+            putExtra("IS_HYBRID_GRID", false)
+            putExtra("PAGE_TYPE", pageType)
+        }
+        startActivityForResult(intent, 700)
+    }
+
+    private fun showUnsupportedFloatingTriggerExplanation(reason: String) {
+        com.example.core.LogKeeper.log(this, "FloatingTriggerPicker", "UNSUPPORTED_TARGET reason=$reason")
+        if (!isFinishing && !isDestroyed) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Unsupported Floating Trigger Target")
+                .setMessage(reason)
+                .setPositiveButton("OK", null)
+                .show()
+        } else {
+            android.widget.Toast.makeText(this, reason, android.widget.Toast.LENGTH_LONG).show()
         }
     }
 }
