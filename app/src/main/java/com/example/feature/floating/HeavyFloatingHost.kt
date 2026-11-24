@@ -361,6 +361,23 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     /**
      * Returns an active instance if running in Heavy.
      */
+    fun dispatchReaderOpenBook(instanceId: String, epubBookId: Int): Boolean {
+        if (epubBookId <= 0) return false
+        val existing = synchronized(lock) { activeInstances[instanceId] }
+        val reader = existing as? com.example.feature.reader.ReaderMiniAppInstance
+        if (reader != null) {
+            reader.openBookById(epubBookId)
+            return true
+        }
+        val payload = mapOf(
+            com.example.feature.reader.ReaderMiniAppInstance.KEY_SCREEN_MODE to
+                com.example.feature.reader.ReaderScreenMode.READING.name,
+            com.example.feature.reader.ReaderMiniAppInstance.KEY_BOOK_ID to epubBookId.toString(),
+            com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START to "false"
+        )
+        return startInstance(instanceId, "reader", initialPayload = payload) != null
+    }
+
     fun dispatchDictionaryQuery(instanceId: String, query: String): Boolean {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return false
