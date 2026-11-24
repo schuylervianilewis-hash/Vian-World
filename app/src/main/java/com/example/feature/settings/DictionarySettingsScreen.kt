@@ -363,6 +363,7 @@ fun DictionarySettingsScreen(
 /**
  * Safe, ML Kit-free fallback screen if a legacy shortcut opens `translation_settings`.
  */
+@Composable
 private fun InstalledDictionaryItemRow(
     dictionary: InstalledDictionary,
     rank: Int,
