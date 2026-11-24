@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.os.Build
 import android.os.Process
+import android.provider.Settings
 import com.example.core.FloatingWindowManager
 import com.example.core.LogKeeper
 import com.example.core.OverlayAccessPolicy
@@ -78,6 +79,18 @@ class App : FossifyApp() {
                         LogKeeper.log(this@App, "Firewall", "[$component] $details")
                     }
                     LogKeeper.log(this, "Firewall", "Host diagnostics bridge registered")
+                    // Restore persisted standalone Floating Triggers in the authoritative Main
+                    // process; :heavy must never create duplicate overlay windows.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
+                        try {
+                            val restored = com.example.feature.floating.trigger.FloatingTriggerManager
+                                .getInstance(this)
+                                .restoreActiveTriggers()
+                            LogKeeper.log(this, "FloatingTrigger", "Startup restore completed count=$restored")
+                        } catch (t: Throwable) {
+                            LogKeeper.logError(this, "FloatingTrigger", "Startup restore failed", t)
+                        }
+                    }
                     // Firewall's ApplicationEx is not the host Application class.
                     eu.faircode.netguard.ApplicationEx.initializeHostRuntime(this)
                 }
