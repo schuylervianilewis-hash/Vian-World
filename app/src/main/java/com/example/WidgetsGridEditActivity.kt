@@ -102,7 +102,7 @@ class WidgetsGridEditActivity : ComponentActivity() {
                     } catch (e: Exception) {}
                 }
                 val widgetsColsKey = if (containerId != "sidebar" || prefs.contains("handle_${containerId}_widgets_grid_cols_$pageId")) "handle_${containerId}_widgets_grid_cols_$pageId" else "widgets_grid_cols_$pageId"
-                val totalCols = prefs.getInt(widgetsColsKey, prefs.getInt("widgets_grid_cols_$pageId", 4))
+                val totalCols = prefs.getInt(widgetsColsKey, prefs.getInt("widgets_grid_cols_$pageId", 3))
                 defaultCols = minOf(defaultCols, totalCols)
 
                 var targetX = 0
@@ -190,14 +190,14 @@ fun WidgetGridEditor(
     val context = LocalContext.current
     val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val widgetsColsKey = if (containerId != "sidebar" || prefs.contains("handle_${containerId}_widgets_grid_cols_$pageId")) "handle_${containerId}_widgets_grid_cols_$pageId" else "widgets_grid_cols_$pageId"
-    var cols by remember { mutableIntStateOf(prefs.getInt(widgetsColsKey, prefs.getInt("widgets_grid_cols_$pageId", 4))) }
+    var cols by remember { mutableIntStateOf(prefs.getInt(widgetsColsKey, prefs.getInt("widgets_grid_cols_$pageId", 3))) }
     var items by remember { mutableStateOf(loadLocalItems(prefs, pageId, containerId)) }
     var isUserInteracting by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     
     // Auto-save when cols change
     LaunchedEffect(cols) {
-        val currentCols = prefs.getInt(widgetsColsKey, 4)
+        val currentCols = prefs.getInt(widgetsColsKey, 3)
         if (cols != currentCols) {
             prefs.edit().putInt(widgetsColsKey, cols).commit()
             com.example.core.OverlaySyncManager.syncInt(context, widgetsColsKey, cols)
