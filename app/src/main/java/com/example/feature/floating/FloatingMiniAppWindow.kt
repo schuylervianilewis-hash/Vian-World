@@ -1,6 +1,8 @@
 package com.example.feature.floating
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
@@ -36,6 +38,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.SeekBar
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.example.core.FloatingWindow
@@ -234,6 +237,8 @@ class FloatingMiniAppWindow(
     var currentWordWrap: Boolean = true
         private set
     var currentLineSpacingMult: Float = 1.2f
+        private set
+    var currentAccentColorHex: String = NotePersistenceCoordinator.DEFAULT_ACCENT_COLOR
         private set
 
     var isCardClippedToOutline: Boolean = true
@@ -1229,6 +1234,10 @@ class FloatingMiniAppWindow(
         savedSnapshot?.payload?.get("font_style")?.let { currentFontStyle = it }
         savedSnapshot?.payload?.get("word_wrap")?.toBooleanStrictOrNull()?.let { currentWordWrap = it }
         savedSnapshot?.payload?.get("line_spacing")?.toFloatOrNull()?.let { currentLineSpacingMult = it }
+        savedSnapshot?.payload?.get(NotePersistenceCoordinator.KEY_ACCENT_COLOR)?.takeIf { it.isNotBlank() }?.let {
+            currentAccentColorHex = normalizeHexColor(it)
+        }
+        applyNoteAccentColor(currentAccentColorHex, persist = false)
 
         // Restore undo/redo history from snapshot
         notePersistence.restoreHistoryFromSnapshot(savedSnapshot)
@@ -1238,7 +1247,8 @@ class FloatingMiniAppWindow(
             fontStyle = currentFontStyle,
             wordWrap = currentWordWrap,
             lineSpacing = currentLineSpacingMult,
-            bounds = bounds
+            bounds = bounds,
+            accentColor = currentAccentColorHex
         )
 
         LogKeeper.log(
@@ -1400,7 +1410,8 @@ class FloatingMiniAppWindow(
                         fontStyle = currentFontStyle,
                         wordWrap = currentWordWrap,
                         lineSpacing = currentLineSpacingMult,
-                        bounds = bounds
+                        bounds = bounds,
+                        accentColor = currentAccentColorHex
                     )
                     notePersistence.scheduleDebouncedSave()
                     syncLiveTextToHeavy(updated, selectionStart.coerceIn(0, updated.length), selectionEnd.coerceIn(0, updated.length))
@@ -2241,7 +2252,8 @@ class FloatingMiniAppWindow(
                 fontStyle = currentFontStyle,
                 wordWrap = currentWordWrap,
                 lineSpacing = currentLineSpacingMult,
-                bounds = bounds
+                bounds = bounds,
+                accentColor = currentAccentColorHex
             )
             notePersistence.scheduleDebouncedSave()
             return
@@ -2919,6 +2931,7 @@ class FloatingMiniAppWindow(
                 "font_style" to currentFontStyle,
                 "word_wrap" to currentWordWrap.toString(),
                 "line_spacing" to currentLineSpacingMult.toString(),
+                NotePersistenceCoordinator.KEY_ACCENT_COLOR to currentAccentColorHex,
                 "source" to when (activeTextAuthority) {
                     TextAuthority.IME_BRIDGE -> "ime_bridge"
                     TextAuthority.FALLBACK -> "fallback_editor"
@@ -2950,7 +2963,8 @@ class FloatingMiniAppWindow(
                 fontStyle = currentFontStyle,
                 wordWrap = currentWordWrap,
                 lineSpacing = currentLineSpacingMult,
-                bounds = normalBoundsToSave
+                bounds = normalBoundsToSave,
+                accentColor = currentAccentColorHex
             )
             notePersistence.flushPendingSave(targetState = targetState)
         } else {
