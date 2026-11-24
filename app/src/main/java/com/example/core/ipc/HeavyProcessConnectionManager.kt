@@ -686,6 +686,20 @@ class HeavyProcessConnectionManager internal constructor(
                                     safeLog("HeavyProcessConnectionManager", "Executing NAVIGATE_PAGE delta=$delta from Heavy")
                                     com.example.feature.sidebar.SidebarWindowCoordinator.getInstance(ctx).navigatePage(delta)
                                 }
+                                "FLOATING_TRIGGER_ACTION" -> {
+                                    when (request.parameters["subAction"]) {
+                                        "ENSURE_ACTIVE" -> {
+                                            val targetId = request.parameters["targetElementId"].orEmpty()
+                                            val label = request.parameters["label"]
+                                            if (targetId.isNotBlank()) {
+                                                val record = com.example.feature.floating.trigger.FloatingTriggerManager
+                                                    .getInstance(ctx)
+                                                    .ensureActiveTrigger(targetId, label)
+                                                safeLog("HeavyProcessConnectionManager", "Floating Trigger ensure active target=$targetId success=${record != null}")
+                                            }
+                                        }
+                                    }
+                                }
                                 "MINIAPP_WINDOW_FOCUS" -> {
                                     val instanceId = request.parameters["instanceId"].orEmpty()
                                     val focusable = request.parameters["focusable"]?.toBoolean() ?: false
