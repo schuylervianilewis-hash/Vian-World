@@ -2824,6 +2824,28 @@ class FloatingMiniAppWindow(
         }
     }
 
+    fun openReaderBookById(epubBookId: Int): Boolean {
+        if (appType != "reader" && appType != "ebook_reader") return false
+        if (epubBookId <= 0) return false
+        val command = HeavyCommand(
+            commandId = UUID.randomUUID().toString(),
+            type = HeavyCommandType.START_OPERATION,
+            targetId = instanceId,
+            payload = mapOf(
+                "instance_id" to instanceId,
+                "app_type" to "reader",
+                "action" to "reader_open_book",
+                "epubBookId" to epubBookId.toString()
+            )
+        )
+        val result = HeavyProcessConnectionManager.getInstance(context)
+            .sendCommand(command, autoConnect = true)
+        if (!result.success) {
+            LogKeeper.log(context, "FloatingMiniAppWindow", "READER_OPEN_BOOK_FAILED id=$instanceId epubBookId=$epubBookId error=${result.message}")
+        }
+        return result.success
+    }
+
     fun openDictionaryQuery(query: String): Boolean {
         if (appType != "dictionary") return false
         val trimmed = query.trim()
