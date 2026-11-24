@@ -204,14 +204,14 @@ class HybridGridPageView(
         if (containerId.startsWith("handle_")) {
             val altKey = "${containerId}_hybrid_grid_cols_$pageId"
             if (prefs.contains(altKey)) {
-                val altCols = prefs.getInt(altKey, 4)
+                val altCols = prefs.getInt(altKey, 3)
                 prefs.edit().putInt(isolatedKey, altCols).apply()
                 return isolatedKey
             }
         }
         val legacyKey = "hybrid_grid_cols_$pageId"
         if (prefs.contains(legacyKey) && (containerId == "sidebar" || containerId == "handle_1_swipe_left" || containerId == "handle_1")) {
-            val legacyCols = prefs.getInt(legacyKey, 4)
+            val legacyCols = prefs.getInt(legacyKey, 3)
             prefs.edit().putInt(isolatedKey, legacyCols).apply()
             return isolatedKey
         }
@@ -307,7 +307,7 @@ class HybridGridPageView(
         if (items.none { it.id == "widget:$widgetId" || it.id.startsWith("widget:$widgetId:") }) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val info = appWidgetManager.getAppWidgetInfo(widgetId)
-            val totalCols = prefs.getInt(getGridColsPrefKey(), 4)
+            val totalCols = prefs.getInt(getGridColsPrefKey(), 3)
             val density = context.resources.displayMetrics.density
             val cellW = if (width > 0) width / totalCols else (60 * density).toInt()
             val (cols, rows) = com.example.calculateWidgetSpan(info, totalCols, cellW, density)
@@ -339,7 +339,7 @@ class HybridGridPageView(
                 if (wId != null && (cols <= 1 || rows <= 1)) {
                     val appWidgetManager = AppWidgetManager.getInstance(context)
                     val info = appWidgetManager.getAppWidgetInfo(wId)
-                    val totalCols = prefs.getInt(getGridColsPrefKey(), 4)
+                    val totalCols = prefs.getInt(getGridColsPrefKey(), 3)
                     val density = context.resources.displayMetrics.density
                     val cellW = if (width > 0) width / totalCols else (60 * density).toInt()
                     val (calcCols, calcRows) = com.example.calculateWidgetSpan(info, totalCols, cellW, density)
@@ -378,7 +378,7 @@ class HybridGridPageView(
             return
         }
         gridLayout.removeAllViews()
-        val totalCols = prefs.getInt(getGridColsPrefKey(), 4)
+        val totalCols = prefs.getInt(getGridColsPrefKey(), 3)
         
         val gridWidth = effectiveWidth
         val cellWidth = gridWidth / totalCols
