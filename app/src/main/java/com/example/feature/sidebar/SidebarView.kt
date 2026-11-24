@@ -115,14 +115,14 @@ class SidebarView(
                 "calculator", "compass", "resources_tracker", "media_player" -> 320
                 "scheduler", "notifications", "notification", "app_tracker" -> 330
                 "widgets_grid", "widget" -> {
-                    val cols = prefs.getInt("handle_${containerId}_widgets_grid_cols_${initialPage?.id}", prefs.getInt("widgets_grid_cols_${initialPage?.id}", 4))
-                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    val cols = prefs.getInt("handle_${containerId}_widgets_grid_cols_${initialPage?.id}", prefs.getInt("widgets_grid_cols_${initialPage?.id}", 3))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
                     else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
                     else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
                 }
                 "hybrid_grid", "default_hybrid" -> {
-                    val cols = prefs.getInt("handle_${containerId}_hybrid_grid_cols_${initialPage?.id}", prefs.getInt("hybrid_grid_cols_${initialPage?.id}", 4))
-                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    val cols = prefs.getInt("handle_${containerId}_hybrid_grid_cols_${initialPage?.id}", prefs.getInt("hybrid_grid_cols_${initialPage?.id}", 3))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
                     else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
                     else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
                 }
@@ -130,11 +130,11 @@ class SidebarView(
                     val c = prefs.getInt("handle_${containerId}_page_${initialPage?.id}_columns", prefs.getInt("handle_${physicalHandleId}_page_${initialPage?.id}_columns", -1))
                     val defaultCols = prefs.getInt("handle_${containerId}_columns", prefs.getInt("handle_${physicalHandleId}_columns", prefs.getInt("sidebar_columns", 3)))
                     val cols = if (initialPage?.useCustomSettings == true) initialPage.gridColumns else (if (c != -1) c else defaultCols)
-                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
                     else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
                     else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
                 }
-                else -> prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                else -> prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
             }
         }
         val widthPx = (targetWidthDp * density).toInt()
@@ -202,15 +202,9 @@ class SidebarView(
         isFocusableInTouchMode = true
         setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                if (isKeyboardActive()) {
-                    hideKeyboard()
-                    true
-                } else if (SystemClock.uptimeMillis() - lastKeyboardCloseTime < 500L) {
-                    true
-                } else {
-                    onClose()
-                    true
-                }
+                if (isKeyboardActive()) hideKeyboard()
+                onClose()
+                true
             } else {
                 false
             }
@@ -556,14 +550,14 @@ class SidebarView(
                 "resources_tracker" -> 320
                 "scheduler", "notifications", "notification", "app_tracker" -> 330
                 "widgets_grid", "widget" -> {
-                    val cols = prefs.getInt("handle_${containerId}_widgets_grid_cols_${page.id}", prefs.getInt("widgets_grid_cols_${page.id}", 4))
-                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    val cols = prefs.getInt("handle_${containerId}_widgets_grid_cols_${page.id}", prefs.getInt("widgets_grid_cols_${page.id}", 3))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
                     else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
                     else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
                 }
                 "hybrid_grid", "default_hybrid" -> {
-                    val cols = prefs.getInt("handle_${containerId}_hybrid_grid_cols_${page.id}", prefs.getInt("hybrid_grid_cols_${page.id}", 4))
-                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    val cols = prefs.getInt("handle_${containerId}_hybrid_grid_cols_${page.id}", prefs.getInt("hybrid_grid_cols_${page.id}", 3))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
                     else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
                     else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
                 }
@@ -571,11 +565,11 @@ class SidebarView(
                     val c = prefs.getInt("handle_${containerId}_page_${page.id}_columns", prefs.getInt("handle_${physicalHandleId}_page_${page.id}_columns", -1))
                     val defaultCols = prefs.getInt("handle_${containerId}_columns", prefs.getInt("handle_${physicalHandleId}_columns", prefs.getInt("sidebar_columns", 3)))
                     val cols = if (page.useCustomSettings) page.gridColumns else (if (c != -1) c else defaultCols)
-                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                    if (cols == 3) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
                     else if (cols <= 2) prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 155))
                     else prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 265))
                 }
-                else -> prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 220))
+                else -> prefs.getInt("handle_${containerId}_sidebar_width", prefs.getInt("sidebar_width", 219))
             }
         }
         val targetWidthPx = (targetWidthDp * density).toInt()
@@ -890,15 +884,8 @@ class SidebarView(
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) {
-                if (isKeyboardActive()) {
-                    hideKeyboard()
-                    return true
-                }
-                if (SystemClock.uptimeMillis() - lastKeyboardCloseTime < 500L) {
-                    return true
-                }
+                if (isKeyboardActive()) hideKeyboard()
                 onClose()
-                return true
             }
             return true
         }
