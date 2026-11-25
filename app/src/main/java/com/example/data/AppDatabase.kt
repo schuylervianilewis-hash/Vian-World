@@ -87,10 +87,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        }
-                }
-        
-                private val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+        private val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
                     override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                         database.execSQL("ALTER TABLE `epubs` ADD COLUMN `author` TEXT NOT NULL DEFAULT ''")
                         database.execSQL("ALTER TABLE `epubs` ADD COLUMN `lastActivityTimestamp` INTEGER NOT NULL DEFAULT 0")
