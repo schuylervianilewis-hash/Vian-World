@@ -203,66 +203,8 @@ class DefaultMiniAppInstance(
 /**
  * DefaultMiniAppFactory: Factory registering default mini-apps in HeavyFloatingHost.
  */
-class DefaultMiniAppFactory(private val context: Context? = null) : MiniAppFactory {
+class DefaultMiniAppFactory : MiniAppFactory {
     override fun createAppInstance(instanceId: String, appType: String): MiniAppInstance {
-        return when (appType) {
-            "reader", "ebook_reader" ->
-                com.example.feature.reader.ReaderMiniAppInstance(
-                    instanceId = instanceId,
-                    appType = appType,
-                    onRequestWindowFocusable = { focusable -> requestWindowFocusable(instanceId, focusable) },
-                    onOpenTracker = { epubBookId ->
-                        context?.let {
-                            com.example.feature.reader.BookTrackerActivity.launchForEpubBook(it, epubBookId, instanceId)
-                        }
-                    },
-                    onOpenReaderSettings = {
-                        context?.let {
-                            it.startActivity(
-                                android.content.Intent(it, com.example.SettingsActivity::class.java).apply {
-                                    putExtra("start_route", "reader_settings")
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                            )
-                        }
-                    }
-                )
-            "dictionary" ->
-                com.example.feature.language.DictionaryMiniAppInstance(
-                    instanceId = instanceId,
-                    appType = appType,
-                    onRequestWindowFocusable = { focusable -> requestWindowFocusable(instanceId, focusable) },
-                    onOpenSettings = {
-                        context?.let {
-                            it.startActivity(
-                                android.content.Intent(it, com.example.SettingsActivity::class.java).apply {
-                                    putExtra("start_route", com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS)
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                            )
-                        }
-                    }
-                )
-            else -> DefaultMiniAppInstance(instanceId, appType)
-        }
-    }
-
-    private fun requestWindowFocusable(instanceId: String, focusable: Boolean) {
-        val ctx = context ?: return
-        try {
-            com.example.core.ipc.HeavyProcessHost.getInstance(ctx).requestMainAction(
-                com.example.core.ipc.MainCommandRequest(
-                    requestId = java.util.UUID.randomUUID().toString(),
-                    action = com.example.core.ipc.MainActionType.CUSTOM,
-                    targetId = "MINIAPP_WINDOW_FOCUS",
-                    parameters = mapOf(
-                        "instanceId" to instanceId,
-                        "focusable" to focusable.toString()
-                    )
-                )
-            )
-        } catch (t: Throwable) {
-            com.example.core.LogKeeper.log(ctx, "DefaultMiniAppFactory", "Window focus request failed for $instanceId: ${t.message}")
-        }
+        return DefaultMiniAppInstance(instanceId, appType)
     }
 }

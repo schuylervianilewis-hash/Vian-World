@@ -289,6 +289,25 @@
             </intent-filter>
         </activity>
 
+        <!-- Main-process only: ML Kit Translation must not initialize in :heavy. -->
+        <activity
+            android:name=".feature.settings.TranslationSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".feature.selection.TranslateSelectionActivity"
+            android:label="Translate"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.VianSide.SelectionPopup">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"

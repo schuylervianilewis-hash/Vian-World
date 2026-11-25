@@ -164,11 +164,23 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun bringToFront(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        val wasAlreadyTop = zOrderedWindowIds.lastOrNull() == windowId
-
+        if (window.state == WindowState.DESTROYED) return false
         val toElevate = LinkedHashSet<String>()
         collectDescendants(windowId, toElevate)
         toElevate.add(windowId)
+
+        val currentIdx = zOrderedWindowIds.indexOf(windowId)
+        val hasVisibleAttachedAbove = if (currentIdx >= 0) {
+            ((currentIdx + 1) until zOrderedWindowIds.size).any { idx ->
+                val otherId = zOrderedWindowIds[idx]
+                if (otherId in toElevate) return@any false
+                val other = windows[otherId]
+                other != null && other.isAttached && other.isVisible
+            }
+        } else {
+            false
+        }
+        val wasAlreadyTop = zOrderedWindowIds.lastOrNull() == windowId
 
         var orderChanged = false
         val lastIdx = zOrderedWindowIds.size - 1
@@ -187,11 +199,11 @@ class FloatingWindowManager private constructor(context: Context) {
 
         recomputeZOrders()
 
-        val refreshPerformed = orderChanged && !wasAlreadyTop
-        log("WINDOW_BRING_TO_FRONT id=$windowId alreadyTop=$wasAlreadyTop orderChanged=$orderChanged zOrder=${window.zOrder} refreshPerformed=$refreshPerformed")
+        val refreshPerformed = orderChanged && !wasAlreadyTop && hasVisibleAttachedAbove
+        log("WINDOW_BRING_TO_FRONT id=$windowId alreadyTop=$wasAlreadyTop hasVisibleAttachedAbove=$hasVisibleAttachedAbove orderChanged=$orderChanged zOrder=${window.zOrder} refreshPerformed=$refreshPerformed")
 
-        // Only refresh WindowManager view order if order actually changed and wasn't already top!
-        // Never remove and re-add if already at the top, which destroys active touch streams and flickers.
+        // Only refresh WindowManager view order when another visible attached window actually sits above this window!
+        // Never remove and re-add if already visually on top, which destroys active SurfaceViews / touch streams.
         if (refreshPerformed) {
             for (id in toElevate) {
                 val w = windows[id] ?: continue
@@ -201,7 +213,9 @@ class FloatingWindowManager private constructor(context: Context) {
             }
         }
 
-        setFocus(windowId)
+        if (window.state != WindowState.DETACHED && window.state != WindowState.DESTROYED) {
+            setFocus(windowId)
+        }
         return true
     }
 
@@ -219,6 +233,36 @@ class FloatingWindowManager private constructor(context: Context) {
     }
 
     @Synchronized
+    private fun restoreSuppressedWindow(windowId: String): Boolean {
+        val window = windows[windowId] ?: return false
+        if (!window.isAttached && !attachOverlay(windowId)) {
+            suppressedVisibleWindowIds.add(windowId)
+            return false
+        }
+        val container = window.getView() ?: return false
+        container.visibility = View.VISIBLE
+        window.isFolded = false
+        window.notifyStateChanged(window.state, WindowState.VISIBLE)
+        window.onShow()
+        bringToFront(windowId)
+        return true
+    }
+
+    fun setOverlaySuppressed(shouldSuppress: Boolean) {
+        if (shouldSuppress) {
+            windows.values.toList().forEach { window ->
+                if (window.isAttached) {
+                    if (window.getView()?.visibility == View.VISIBLE) suppressedVisibleWindowIds.add(window.windowId)
+                    detachOverlay(window.windowId)
+                }
+            }
+        } else {
+            val restoreIds = suppressedVisibleWindowIds.toList()
+            suppressedVisibleWindowIds.clear()
+            restoreIds.forEach { restoreSuppressedWindow(it) }
+        }
+    }
+
     fun setFocus(windowId: String?): Boolean {
         if (focusedWindowId == windowId) return true
 
@@ -273,14 +317,78 @@ class FloatingWindowManager private constructor(context: Context) {
         }
     }
 
-    private fun refreshOverlayZOrder(window: FloatingWindow) {
-        val view = window.getView() ?: return
-        if (!canDrawOverlays()) return
+    @Synchronized
+    internal fun refreshOverlayZOrder(windowId: String): Boolean {
+        val window = windows[windowId] ?: return false
+        return refreshOverlayZOrder(window)
+    }
+
+    private fun refreshOverlayZOrder(window: FloatingWindow): Boolean {
+        if (window.state == WindowState.DESTROYED) return false
+        val view = window.getView() ?: return false
+        val wasAttached = view.isAttachedToWindow || window.isOverlayViewAttached
+        if (!wasAttached) return false
+
+        val previousState = window.state
+        val previousVisibility = if (previousState == WindowState.HIDDEN) View.GONE else view.visibility
+
         try {
             windowManager.removeViewImmediate(view)
-            windowManager.addView(view, window.layoutParams)
+            window.isOverlayViewAttached = view.isAttachedToWindow
+        } catch (e: IllegalArgumentException) {
+            if (view.isAttachedToWindow) {
+                window.isOverlayViewAttached = true
+                logError("Failed to remove overlay during Z-order refresh for ${window.windowId}: ${e.message}", e)
+                return false
+            }
+            window.isOverlayViewAttached = false
         } catch (e: Exception) {
-            log("Failed to refresh Z-order for ${window.windowId}: ${e.message}")
+            window.isOverlayViewAttached = view.isAttachedToWindow || window.isOverlayViewAttached
+            logError("Failed to remove overlay during Z-order refresh for ${window.windowId}: ${e.message}", e)
+            return false
+        }
+
+        if (window.isAttached) {
+            logError("Overlay view remained attached after removal during Z-order refresh for ${window.windowId}")
+            return false
+        }
+
+        if (!canDrawOverlays()) {
+            window.isOverlayViewAttached = false
+            window.isFolded = false
+            if (previousState != WindowState.DETACHED) {
+                window.notifyStateChanged(previousState, WindowState.DETACHED)
+                window.onDetach(windowManager)
+            }
+            if (focusedWindowId == window.windowId) {
+                setFocus(getTopVisibleWindow()?.windowId)
+            }
+            logError("WINDOW_ZORDER_REATTACH_FAILURE id=${window.windowId}: overlay permission denied")
+            return false
+        }
+
+        return try {
+            view.visibility = previousVisibility
+            windowManager.addView(view, window.layoutParams)
+            window.isOverlayViewAttached = true
+            if (window.state != previousState) {
+                window.state = previousState
+            }
+            true
+        } catch (e: Exception) {
+            window.isOverlayViewAttached = view.isAttachedToWindow
+            if (!window.isAttached) {
+                window.isFolded = false
+                if (previousState != WindowState.DETACHED) {
+                    window.notifyStateChanged(previousState, WindowState.DETACHED)
+                    window.onDetach(windowManager)
+                }
+                if (focusedWindowId == window.windowId) {
+                    setFocus(getTopVisibleWindow()?.windowId)
+                }
+            }
+            logError("Failed to re-add overlay during Z-order refresh for ${window.windowId}: ${e.message}", e)
+            false
         }
     }
 
@@ -288,7 +396,16 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun attachOverlay(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        if (window.isAttached) return true
+        if (window.state == WindowState.DESTROYED) return false
+
+        val existingView = window.getView()
+        if (existingView?.isAttachedToWindow == true || window.isOverlayViewAttached) {
+            if (existingView != null) {
+                window.isOverlayViewAttached = true
+                return true
+            }
+            window.isOverlayViewAttached = false
+        }
 
         if (!canDrawOverlays()) {
             logError("WINDOW_ATTACH_FAILURE id=$windowId: overlay permission denied")
@@ -297,13 +414,28 @@ class FloatingWindowManager private constructor(context: Context) {
 
         return try {
             val container = window.getOrCreateContainerView()
+            if (container.isAttachedToWindow) {
+                window.isOverlayViewAttached = true
+                val oldState = window.state
+                if (oldState == WindowState.CREATED || oldState == WindowState.DETACHED || oldState == WindowState.FOLDED) {
+                    window.isFolded = false
+                    window.notifyStateChanged(oldState, WindowState.ATTACHED)
+                    window.onAttach(windowManager)
+                }
+                return true
+            }
             windowManager.addView(container, window.layoutParams)
+            window.isOverlayViewAttached = true
+            window.isFolded = false
             val oldState = window.state
-            window.notifyStateChanged(oldState, WindowState.ATTACHED)
+            if (oldState != WindowState.ATTACHED) {
+                window.notifyStateChanged(oldState, WindowState.ATTACHED)
+            }
             window.onAttach(windowManager)
             log("WINDOW_ATTACH id=$windowId bounds=${window.bounds} type=${window.windowType}")
             true
         } catch (e: Exception) {
+            window.isOverlayViewAttached = window.getView()?.isAttachedToWindow == true
             logError("WINDOW_ATTACH_FAILURE id=$windowId: ${e.message}", e)
             false
         }
@@ -312,16 +444,39 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun detachOverlay(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        if (!window.isAttached) return true
+        val view = window.getView()
+        if (!window.isAttached) {
+            if (window.state == WindowState.ATTACHED || window.state == WindowState.VISIBLE) {
+                window.notifyStateChanged(window.state, WindowState.DETACHED)
+                window.onDetach(windowManager)
+                if (focusedWindowId == windowId) {
+                    setFocus(getTopVisibleWindow()?.windowId)
+                }
+            }
+            return true
+        }
 
         return try {
-            val view = window.getView()
             if (view != null) {
-                windowManager.removeViewImmediate(view)
+                try {
+                    windowManager.removeViewImmediate(view)
+                } catch (e: IllegalArgumentException) {
+                    if (view.isAttachedToWindow) {
+                        throw e
+                    }
+                }
             }
+            window.isOverlayViewAttached = view?.isAttachedToWindow == true
+            if (window.isAttached) {
+                logError("WINDOW_DETACH_FAILURE id=$windowId: view remained attached")
+                return false
+            }
+            window.isFolded = false
             val oldState = window.state
-            window.notifyStateChanged(oldState, WindowState.DETACHED)
-            window.onDetach(windowManager)
+            if (oldState != WindowState.DETACHED) {
+                window.notifyStateChanged(oldState, WindowState.DETACHED)
+                window.onDetach(windowManager)
+            }
 
             if (focusedWindowId == windowId) {
                 setFocus(getTopVisibleWindow()?.windowId)
@@ -329,6 +484,7 @@ class FloatingWindowManager private constructor(context: Context) {
             log("WINDOW_DETACH id=$windowId")
             true
         } catch (e: Exception) {
+            window.isOverlayViewAttached = (view?.isAttachedToWindow == true) || window.isOverlayViewAttached
             logError("WINDOW_DETACH_FAILURE id=$windowId: ${e.message}", e)
             false
         }
@@ -337,108 +493,87 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun showWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
+        if (window.state == WindowState.DESTROYED) return false
         if (!canDrawOverlays()) {
-            if (OverlayAccessPolicy.isForegroundExcluded(appContext)) {
-                suppressedVisibleWindowIds.add(windowId)
-            }
+            if (OverlayAccessPolicy.isForegroundExcluded(appContext)) suppressedVisibleWindowIds.add(windowId)
             return false
         }
+        val wasFolded = window.isFolded
         if (!window.isAttached && !attachOverlay(windowId)) return false
-
-        val container = window.getView() ?: return false
-        container.visibility = View.VISIBLE
-        window.isFolded = false
-
-        val oldState = window.state
-        window.notifyStateChanged(oldState, WindowState.VISIBLE)
-        window.onShow()
-
-        bringToFront(windowId)
-
-        for (child in getChildren(windowId)) {
-            showWindow(child.windowId)
+        var container = window.getView()
+        if (container == null) {
+            window.isOverlayViewAttached = false
+            if (!attachOverlay(windowId)) return false
+            container = window.getView()
         }
+        val attachedContainer = container ?: return false
+        attachedContainer.visibility = View.VISIBLE
+        window.isFolded = false
+        val oldState = window.state
+        if (oldState != WindowState.VISIBLE) {
+            window.notifyStateChanged(oldState, WindowState.VISIBLE)
+            window.onShow()
+        }
+        if (wasFolded) window.onFold(false)
+        bringToFront(windowId)
+        for (child in getChildren(windowId)) showWindow(child.windowId)
         return true
     }
 
     @Synchronized
     fun hideWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
+        if (window.state == WindowState.DESTROYED) return false
         suppressedVisibleWindowIds.remove(windowId)
         window.getView()?.visibility = View.GONE
-
         val oldState = window.state
-        window.notifyStateChanged(oldState, WindowState.HIDDEN)
-        window.onHide()
-
-        for (child in getChildren(windowId)) {
-            hideWindow(child.windowId)
+        if (oldState != WindowState.HIDDEN) {
+            window.notifyStateChanged(oldState, WindowState.HIDDEN)
+            window.onHide()
         }
-
-        if (focusedWindowId == windowId) {
-            setFocus(getTopVisibleWindow()?.windowId)
-        }
+        for (child in getChildren(windowId)) hideWindow(child.windowId)
+        if (focusedWindowId == windowId) setFocus(getTopVisibleWindow()?.windowId)
         return true
-    }
-
-    /**
-     * Restores one previously visible window without recursively showing its children.
-     * Each child is restored separately only if it was visible before suppression.
-     */
-    private fun restoreSuppressedWindow(windowId: String): Boolean {
-        val window = windows[windowId] ?: return false
-        if (!window.isAttached && !attachOverlay(windowId)) {
-            suppressedVisibleWindowIds.add(windowId)
-            return false
-        }
-        val container = window.getView() ?: return false
-        container.visibility = View.VISIBLE
-        window.isFolded = false
-        window.notifyStateChanged(window.state, WindowState.VISIBLE)
-        window.onShow()
-        bringToFront(windowId)
-        return true
-    }
-
-    /** Detach managed overlays while remembering only those that were visible. */
-    @Synchronized
-    fun setOverlaySuppressed(shouldSuppress: Boolean) {
-        if (shouldSuppress) {
-            windows.values.toList().forEach { window ->
-                if (window.isAttached) {
-                    if (window.getView()?.visibility == View.VISIBLE) {
-                        suppressedVisibleWindowIds.add(window.windowId)
-                    }
-                    detachOverlay(window.windowId)
-                }
-            }
-        } else {
-            val restoreIds = suppressedVisibleWindowIds.toList()
-            suppressedVisibleWindowIds.clear()
-            restoreIds.forEach { restoreSuppressedWindow(it) }
-        }
     }
 
     // Dormant Folding & Memory Trim (Historical Reference: RECEIPTS_008 & 009)
     @Synchronized
     fun foldWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        suppressedVisibleWindowIds.remove(windowId)
-        if (window.isFolded) return true
+        if (window.state == WindowState.DESTROYED) return false
+        if (window.isFolded && !window.isAttached && window.state == WindowState.FOLDED) return true
 
         val view = window.getView()
         if (view != null && window.isAttached) {
             try {
                 windowManager.removeViewImmediate(view)
+                window.isOverlayViewAttached = view.isAttachedToWindow
+            } catch (e: IllegalArgumentException) {
+                if (view.isAttachedToWindow) {
+                    window.isOverlayViewAttached = true
+                    logError("Fold detach failure for $windowId: ${e.message}", e)
+                    return false
+                }
+                window.isOverlayViewAttached = false
             } catch (e: Exception) {
-                log("Fold detach error: ${e.message}")
+                window.isOverlayViewAttached = view.isAttachedToWindow || window.isOverlayViewAttached
+                logError("Fold detach failure for $windowId: ${e.message}", e)
+                return false
             }
+            if (window.isAttached) {
+                logError("Fold detach failure for $windowId: view remained attached")
+                return false
+            }
+        } else if (view == null) {
+            window.isOverlayViewAttached = false
         }
 
         window.isFolded = true
         val oldState = window.state
-        window.notifyStateChanged(oldState, WindowState.FOLDED)
-        window.onFold(true)
+        if (oldState != WindowState.FOLDED) {
+            window.notifyStateChanged(oldState, WindowState.FOLDED)
+            window.onFold(true)
+        }
 
         if (focusedWindowId == windowId) {
             setFocus(getTopVisibleWindow()?.windowId)
@@ -449,23 +584,57 @@ class FloatingWindowManager private constructor(context: Context) {
     @Synchronized
     fun unfoldWindow(windowId: String): Boolean {
         val window = windows[windowId] ?: return false
-        if (!canDrawOverlays()) return false
-        if (!window.isFolded) return true
+        if (window.state == WindowState.DESTROYED) return false
+        if (!window.isFolded && window.isAttached && window.state == WindowState.VISIBLE) return true
 
-        window.isFolded = false
-        window.notifyStateChanged(window.state, WindowState.VISIBLE)
-        window.onFold(false)
-
-        val container = window.getOrCreateContainerView()
-        container.visibility = View.VISIBLE
-        try {
-            windowManager.addView(container, window.layoutParams)
-        } catch (e: Exception) {
-            log("Unfold attach error: ${e.message}")
+        if (window.isAttached) {
+            val container = window.getView()
+            if (container != null) {
+                container.visibility = View.VISIBLE
+                window.isFolded = false
+                val oldState = window.state
+                if (oldState != WindowState.VISIBLE) {
+                    window.notifyStateChanged(oldState, WindowState.VISIBLE)
+                }
+                window.onFold(false)
+                bringToFront(windowId)
+                return true
+            }
+            window.isOverlayViewAttached = false
         }
 
-        bringToFront(windowId)
-        return true
+        if (!canDrawOverlays()) {
+            logError("WINDOW_UNFOLD_ATTACH_FAILURE id=$windowId: overlay permission denied")
+            return false
+        }
+
+        val container = window.getOrCreateContainerView()
+        val previousVisibility = container.visibility
+        return try {
+            container.visibility = View.VISIBLE
+            if (!container.isAttachedToWindow) {
+                windowManager.addView(container, window.layoutParams)
+            }
+            window.isOverlayViewAttached = true
+            window.isFolded = false
+            window.onAttach(windowManager)
+
+            val oldState = window.state
+            if (oldState != WindowState.VISIBLE) {
+                window.notifyStateChanged(oldState, WindowState.VISIBLE)
+            }
+            window.onFold(false)
+            bringToFront(windowId)
+            true
+        } catch (e: Exception) {
+            window.isOverlayViewAttached = container.isAttachedToWindow
+            if (!window.isAttached) {
+                container.visibility = previousVisibility
+                window.isFolded = true
+            }
+            logError("Unfold attach error for $windowId: ${e.message}", e)
+            false
+        }
     }
 
     @Synchronized
@@ -536,8 +705,7 @@ class FloatingWindowManager private constructor(context: Context) {
         )
     }
 
-    private fun canDrawOverlays(): Boolean =
-        OverlayAccessPolicy.canShowApplicationOverlays(appContext)
+    private fun canDrawOverlays(): Boolean = OverlayAccessPolicy.canShowApplicationOverlays(appContext)
 
     companion object {
         private const val TAG = "FloatingWindowManager"
@@ -553,6 +721,13 @@ class FloatingWindowManager private constructor(context: Context) {
 
         fun setOverlaySuppressedIfInitialized(suppressed: Boolean) {
             instance?.setOverlaySuppressed(suppressed)
+        }
+
+        internal fun resetForTesting() {
+            synchronized(this) {
+                instance?.unregisterAll()
+                instance = null
+            }
         }
     }
 }

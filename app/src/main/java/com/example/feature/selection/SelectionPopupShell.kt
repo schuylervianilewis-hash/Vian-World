@@ -11,6 +11,7 @@ import android.widget.TextView
 import com.example.SettingsActivity
 import com.example.feature.language.LanguageMiniAppUiHelper
 import com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS
+import com.example.feature.settings.TranslationSettingsActivity
 
 /**
  * Shared compact dialog shell for Android text-selection (`ACTION_PROCESS_TEXT`) popup activities.
@@ -145,5 +146,10 @@ object SelectionPopupShell {
             }
             activity.startActivity(intent)
         } catch (_: Throwable) {}
+    }    fun openDictionaryTranslationSettings(activity: Activity) {
+        try {
+            activity.startActivity(Intent(activity, TranslationSettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Throwable) {}
     }
+
 }

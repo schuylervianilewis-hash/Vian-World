@@ -267,6 +267,7 @@ class BookTrackerActivity : ComponentActivity() {
 
     private fun dispatchRestoreReaderInMain(context: Context, instanceId: String) {
         try {
+            ReaderEventManager.notifyExternalActivityClosed(context, instanceId)
             HeavyProcessHost.getInstance(context).requestMainAction(
                 MainCommandRequest(
                     requestId = UUID.randomUUID().toString(),
@@ -287,6 +288,7 @@ class BookTrackerActivity : ComponentActivity() {
         if (epubBookId <= 0) return
         try {
             // 1. Broadcast across processes to Main's FloatingMiniAppBridge
+            ReaderEventManager.requestOpenBookInReader(context, epubBookId)
             // 2. Also send via HeavyProcessHost IPC if bound
             HeavyProcessHost.getInstance(context).requestMainAction(
                 MainCommandRequest(

@@ -22,16 +22,14 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     private val factories = ConcurrentHashMap<String, MiniAppFactory>()
     private val activeInstances = LinkedHashMap<String, MiniAppInstance>()
     private val lock = Any()
-    private val defaultFactory = DefaultMiniAppFactory(context)
+    private val defaultFactory = DefaultMiniAppFactory()
     private val testNotesFactory = TestNotesMiniAppFactory()
 
     init {
-        // Register default and test mini-app factories
+        // Register default and Heavy-hosted mini-app factories (Note and Reader run in Main)
         registerFactory("generic", defaultFactory)
         registerFactory("work_notes", defaultFactory)
-        registerFactory("reader", defaultFactory)
         registerFactory("dictionary", defaultFactory)
-        registerFactory("translation", defaultFactory)
         registerFactory(TestNotesMiniAppInstance.APP_TYPE, testNotesFactory)
         registerFactory(TestNotesMiniAppInstance.APP_TYPE_NOTE, testNotesFactory)
     }
@@ -51,10 +49,17 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     }
 
     /**
-     * Returns true only when a mini-app factory is explicitly registered for [appType].
+     * Returns true if a mini-app factory is explicitly registered for [appType].
      */
     fun isFactoryRegistered(appType: String): Boolean {
         return appType.isNotBlank() && factories.containsKey(appType)
+    }
+
+    /**
+     * Returns a snapshot of all explicitly registered mini-app types (built-in and dynamic).
+     */
+    fun getRegisteredAppTypes(): Set<String> {
+        return factories.keys.toSet()
     }
 
     /**
@@ -170,6 +175,22 @@ class HeavyFloatingHost private constructor(private val context: Context) {
             return false
         }
     }
+
+    fun dispatchEmbeddedImeBlur(instanceId: String): Boolean {
+        synchronized(lock) {
+            val instance = activeInstances[instanceId] ?: return false
+            return when (instance) {
+                is com.example.feature.reader.ReaderMiniAppInstance -> {
+                    instance.clearEmbeddedImeFocus()
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+
 
     /**
      * Non-destructive snapshot retrieval: gathers state from the active instance WITHOUT releasing it.
@@ -368,39 +389,6 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     /**
      * Returns an active instance if running in Heavy.
      */
-    fun dispatchReaderOpenBook(instanceId: String, epubBookId: Int): Boolean {
-        if (epubBookId <= 0) return false
-        val existing = synchronized(lock) { activeInstances[instanceId] }
-        val reader = existing as? com.example.feature.reader.ReaderMiniAppInstance
-        if (reader != null) {
-            reader.openBookById(epubBookId)
-            return true
-        }
-        val payload = mapOf(
-            com.example.feature.reader.ReaderMiniAppInstance.KEY_SCREEN_MODE to
-                com.example.feature.reader.ReaderScreenMode.READING.name,
-            com.example.feature.reader.ReaderMiniAppInstance.KEY_BOOK_ID to epubBookId.toString(),
-            com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START to "false"
-        )
-        return startInstance(instanceId, "reader", initialPayload = payload) != null
-    }
-
-    fun dispatchDictionaryQuery(instanceId: String, query: String): Boolean {
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) return false
-        val existing = synchronized(lock) { activeInstances[instanceId] }
-        val dictionary = existing as? com.example.feature.language.DictionaryMiniAppInstance
-        if (dictionary != null) {
-            dictionary.openQuery(trimmed)
-            return true
-        }
-        val payload = mapOf(
-            com.example.feature.language.DictionaryMiniAppInstance.KEY_QUERY to trimmed,
-            com.example.feature.language.DictionaryMiniAppInstance.KEY_SUBMITTED_QUERY to trimmed
-        )
-        return startInstance(instanceId, "dictionary", initialPayload = payload) != null
-    }
-
     fun getActiveInstance(instanceId: String): MiniAppInstance? {
         synchronized(lock) {
             return activeInstances[instanceId]

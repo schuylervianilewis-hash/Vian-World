@@ -216,12 +216,13 @@ class FloatingMiniAppFrameworkTest {
     fun testHeavyFloatingHostActiveInstanceTrackingAndTeardown() {
         val host = HeavyFloatingHost.getInstance(testContext)
 
-        val inst = host.startInstance("reader_1", "reader")
-        assertNotNull("Should start reader instance", inst)
+        // Reader is Main-only now; use a Heavy-owned work-notes instance to verify host lifecycle.
+        val inst = host.startInstance("work_notes_1", "work_notes")
+        assertNotNull("Should start work-notes instance", inst)
         assertEquals("Active instance count must be at least 1", 1, host.getActiveInstanceCount())
 
         // Sleep instance -> runtime must be dismantled and active count must drop to 0
-        val sleepPayload = host.prepareSleep("reader_1")
+        val sleepPayload = host.prepareSleep("work_notes_1")
         assertNotNull(sleepPayload)
         assertEquals("Active instance count must be 0 when mini-app is sleeping", 0, host.getActiveInstanceCount())
     }
@@ -1774,7 +1775,9 @@ class FloatingMiniAppFrameworkTest {
         // Confirm bridge recognizes Note as Main-only
         assertTrue(bridge.isMainOnlyMiniApp("test_notes"))
         assertTrue(bridge.isMainOnlyMiniApp("note"))
-        assertFalse(bridge.isMainOnlyMiniApp("reader"))
+        assertTrue("Reader runs in Main", bridge.isMainOnlyMiniApp("reader"))
+        assertTrue("Dictionary runs in Main", bridge.isMainOnlyMiniApp("dictionary"))
+        assertTrue("Translation runs in Main", bridge.isMainOnlyMiniApp("translation"))
         assertFalse(bridge.isMainOnlyMiniApp("speed_monitor"))
 
         // Open Note window

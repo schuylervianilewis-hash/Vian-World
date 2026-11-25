@@ -339,6 +339,9 @@ class AddElementActivity : ComponentActivity() {
         addItem(android.R.drawable.ic_menu_search, "Dictionary") {
             handleElementSelected("system:dictionary_floating", "Dictionary")
         }
+        addItem(android.R.drawable.ic_menu_compass, "Translation") {
+            handleElementSelected("system:translation_floating", "Translation")
+        }
         addItem(com.example.R.drawable.ic_library_books, "eBook Reader") {
             handleElementSelected("system:ebook_reader", "eBook Reader")
         }

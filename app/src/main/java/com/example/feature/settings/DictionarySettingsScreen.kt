@@ -61,6 +61,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 const val ROUTE_DICTIONARY_SETTINGS = "dictionary_settings"
+const val ROUTE_DICTIONARY_TRANSLATION_SETTINGS = "dictionary_translation_settings"
+const val ROUTE_LEGACY_TRANSLATION_SETTINGS = "translation_settings"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

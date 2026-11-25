@@ -50,6 +50,14 @@ class SettingsActivity : ComponentActivity() {
 
         try {
             val startRoute = intent.getStringExtra("start_route") ?: "main"
+            if (
+                startRoute == com.example.feature.settings.ROUTE_DICTIONARY_TRANSLATION_SETTINGS ||
+                startRoute == com.example.feature.settings.ROUTE_LEGACY_TRANSLATION_SETTINGS
+            ) {
+                startActivity(Intent(this, com.example.feature.settings.TranslationSettingsActivity::class.java))
+                finish()
+                return
+            }
 
             setContent {
                 MaterialTheme(colorScheme = lightColorScheme()) {

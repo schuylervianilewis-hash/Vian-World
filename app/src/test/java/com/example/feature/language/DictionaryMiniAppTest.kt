@@ -165,7 +165,7 @@ class DictionaryMiniAppTest {
     @Test
     fun testDictionaryLaunchesWithCompactBoundsAndSharedChrome() {
         assertTrue(bridge.isMainOnlyMiniApp("dictionary"))
-        assertFalse("Translation must no longer be registered as an active mini-app", bridge.isMainOnlyMiniApp("translation"))
+        assertTrue("Translation is also Main-only", bridge.isMainOnlyMiniApp("translation"))
 
         val dictWin = bridge.openMiniApp("miniapp_dictionary", "dictionary")
         assertTrue(dictWin.isDictionaryApp())
@@ -238,16 +238,11 @@ class DictionaryMiniAppTest {
     }
 
     @Test
-    fun testDictionarySettingsAndDeferralCleanupAreConsistentWithoutMlKit() {
+    fun testDictionarySettingsAndTranslationMainProcessIntegration() {
         val dictSettingsSrc = resolveProjectPath("app/src/main/java/com/example/feature/settings/DictionarySettingsScreen.kt").readText()
         assertTrue(dictSettingsSrc.contains("settings_section_dictionary"))
         assertTrue(dictSettingsSrc.contains("DictionaryService.getInstance"))
         assertTrue(dictSettingsSrc.contains("ActivityResultContracts.OpenDocument"))
-        assertTrue(dictSettingsSrc.contains("DeferredTranslationNoticeScreen"))
-        assertFalse(dictSettingsSrc.contains("com.google.mlkit"))
-        assertFalse(dictSettingsSrc.contains("settings_section_translation"))
-        assertFalse(dictSettingsSrc.contains("translation_wifi_only_switch"))
-        assertFalse(dictSettingsSrc.contains("translation_browse_models_button"))
         assertEquals("dictionary_settings", ROUTE_DICTIONARY_SETTINGS)
         assertEquals("dictionary_translation_settings", ROUTE_DICTIONARY_TRANSLATION_SETTINGS)
         assertEquals("translation_settings", ROUTE_LEGACY_TRANSLATION_SETTINGS)
@@ -256,54 +251,53 @@ class DictionaryMiniAppTest {
         assertTrue(settingsActivitySrc.contains("ROUTE_DICTIONARY_SETTINGS"))
         assertTrue(settingsActivitySrc.contains("ROUTE_DICTIONARY_TRANSLATION_SETTINGS"))
         assertTrue(settingsActivitySrc.contains("ROUTE_LEGACY_TRANSLATION_SETTINGS"))
-        assertTrue(settingsActivitySrc.contains("DictionarySettingsScreen"))
-        assertTrue(settingsActivitySrc.contains("DeferredTranslationNoticeScreen"))
-        assertTrue(settingsActivitySrc.contains("Text(\"Dictionary Settings\")"))
+        assertTrue(settingsActivitySrc.contains("TranslationSettingsActivity::class.java"))
+        assertFalse("The :heavy SettingsActivity must not initialize ML Kit directly", settingsActivitySrc.contains("com.google.mlkit"))
+        assertFalse("The :heavy SettingsActivity must not own TranslationService", settingsActivitySrc.contains("TranslationService"))
 
         val addElementSrc = resolveProjectPath("app/src/main/java/com/example/feature/settings/AddElementActivity.kt").readText()
         assertTrue(addElementSrc.contains("\"Floating Trigger\""))
         assertTrue(addElementSrc.contains("system:dictionary_floating"))
-        assertFalse("AddElementActivity must not expose Translation entry", addElementSrc.contains("system:translation_floating"))
+        assertTrue("Translation must be available in Add Element", addElementSrc.contains("system:translation_floating"))
 
         val sidebarItemSrc = resolveProjectPath("app/src/main/java/com/example/feature/sidebar/SidebarItem.kt").readText()
         assertTrue(sidebarItemSrc.contains("dictionary_floating"))
-        assertFalse("SidebarItem must not expose translation_floating", sidebarItemSrc.contains("translation_floating"))
+        assertTrue(sidebarItemSrc.contains("translation_floating"))
 
-        // Action dispatcher rejects legacy translation_floating and FloatingTriggerCompat blocks translation targets
-        assertFalse(
-            ElementActionDispatcher.execute(
-                context,
-                SidebarItem.SystemAction("translation_floating", "Translation (Floating)", 0)
-            )
-        )
+        val bridgeSrc = resolveProjectPath("app/src/main/java/com/example/feature/floating/FloatingMiniAppBridge.kt").readText()
+        val windowSrc = resolveProjectPath("app/src/main/java/com/example/feature/floating/FloatingMiniAppWindow.kt").readText()
+        assertTrue(bridgeSrc.contains("isTranslationMiniApp"))
+        assertTrue(bridgeSrc.contains("launchDictionaryTranslationSettings"))
+        assertFalse("Translation snapshots must no longer be skipped during restore", bridgeSrc.contains("WAKE_SKIPPED_DEFERRED"))
+        assertTrue(windowSrc.contains("setupTranslationContentView"))
+        assertTrue(windowSrc.contains("getTranslationInstanceForTesting"))
+        assertTrue(windowSrc.contains("translation_topbar_edit_button"))
+        assertTrue(bridge.isMainOnlyMiniApp("translation"))
+
         assertTrue(FloatingTriggerCompat.validateTarget(context, "system:dictionary_floating") is FloatingTriggerTargetValidation.ValidStandalone)
+        assertTrue(FloatingTriggerCompat.validateTarget(context, "system:translation_floating") is FloatingTriggerTargetValidation.ValidStandalone)
         assertTrue(FloatingTriggerCompat.validateTarget(context, "page_window:dictionary") is FloatingTriggerTargetValidation.ValidStandalone)
-        assertTrue(FloatingTriggerCompat.validateTarget(context, "system:translation_floating") is FloatingTriggerTargetValidation.Unsupported)
         assertTrue(FloatingTriggerCompat.validateTarget(context, "page_window:translation") is FloatingTriggerTargetValidation.Unsupported)
 
-        // Legacy persisted "translation" snapshots on disk must be safely skipped without opening Heavy
-        store.saveSnapshot(
-            MiniAppRecoverySnapshot(
-                instanceId = "miniapp_translation",
-                appType = "translation",
-                state = MiniAppState.ACTIVE,
-                windowBounds = WindowBounds(100, 100, 500, 600)
-            )
-        )
-        val restored = bridge.restoreActiveMiniApps()
-        assertTrue("Stale deferred translation snapshot must not be restored", restored.none { it.appType == "translation" })
-
-        // Verify zero ML Kit dependencies or active imports and confirm deferred handoff exists
         val gradleSrc = resolveProjectPath("app/build.gradle.kts").readText()
-        assertFalse("app/build.gradle.kts must not include ML Kit", gradleSrc.contains("com.google.mlkit"))
+        assertTrue(gradleSrc.contains("com.google.mlkit:translate:17.0.3"))
+        assertTrue(gradleSrc.contains("com.google.mlkit:language-id:17.0.6"))
 
-        val mainSrcDir = resolveProjectPath("app/src/main/java")
-        val mlkitFiles = mainSrcDir.walkTopDown().filter { it.isFile && it.extension == "kt" }.filter {
-            val txt = it.readText()
-            txt.contains("com.google.mlkit") || txt.contains("TranslationService") || txt.contains("TranslationMiniAppInstance")
-        }.toList()
-        assertTrue("Expected zero active ML Kit or Translation service references in app/src/main/java, found: $mlkitFiles", mlkitFiles.isEmpty())
+        val manifestSrc = resolveProjectPath("app/src/main/AndroidManifest.xml").readText()
+        assertTrue(manifestSrc.contains(".feature.selection.TranslateSelectionActivity"))
+        assertTrue(manifestSrc.contains(".feature.settings.TranslationSettingsActivity"))
+        val translationSettingsTag = manifestSrc.substringAfter("android:name=\".feature.settings.TranslationSettingsActivity\"").substringBefore("/>")
+        assertFalse("Translation Settings must stay in the main process", translationSettingsTag.contains("android:process"))
 
+        val translationSettingsActivitySrc = resolveProjectPath("app/src/main/java/com/example/feature/settings/TranslationSettingsActivity.kt").readText()
+        assertTrue(translationSettingsActivitySrc.contains("TranslationSettingsSectionReference"))
+        val translationMainFiles = resolveProjectPath("app/src/main/java").walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filter { file ->
+                val source = file.readText()
+                source.contains("TranslationService") || source.contains("TranslationMiniAppInstance") || source.contains("TranslateSelectionActivity")
+            }.toList()
+        assertTrue("Expected active Main-process Translation sources", translationMainFiles.size >= 5)
         assertTrue(resolveProjectPath("deferred/vian-world/translation/README.md").isFile)
     }
 

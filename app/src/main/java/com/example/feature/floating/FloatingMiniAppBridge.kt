@@ -2,7 +2,6 @@ package com.example.feature.floating
 
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import com.example.core.FloatingWindowManager
 import com.example.core.LogKeeper
 import com.example.core.WindowBounds
@@ -29,16 +28,254 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     private val windowManager = FloatingWindowManager.getInstance(context)
     private val durableStore = DurableMiniAppStore.getInstance(context)
     private val activeBubbles = LinkedHashMap<String, FloatingMiniAppLauncherBubble>()
+    private var noteStaggerIndex = 0
+    @Volatile
+    private var hiddenReaderInstanceIdForExternal: String? = null
 
-    fun isMainOnlyMiniApp(appType: String): Boolean = (appType == "note" || appType == "test_notes")
+    private val readerActionReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            when (intent?.action) {
+                com.example.feature.reader.ReaderEventManager.ACTION_OPEN_BOOK_IN_READER -> {
+                    val epubId = intent.getIntExtra(com.example.feature.reader.ReaderEventManager.EXTRA_EPUB_BOOK_ID, -1)
+                    if (epubId > 0) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            openBookInFloatingReader(epubId)
+                        }
+                    }
+                }
+                com.example.feature.reader.ReaderEventManager.ACTION_READER_DB_CHANGED -> {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        com.example.feature.reader.ReaderEventManager.notifyLibraryChanged()
+                    }
+                }
+                com.example.feature.reader.ReaderEventManager.ACTION_RESTORE_READER_AFTER_ACTIVITY -> {
+                    val targetId = intent.getStringExtra(com.example.feature.reader.ReaderEventManager.EXTRA_READER_INSTANCE_ID)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        restoreReaderAfterExternalActivity(targetId)
+                    }
+                }
+            }
+        }
+    }
 
-    sealed class DictionaryHandoffResult {
-        data class Success(val window: FloatingMiniAppWindow) : DictionaryHandoffResult()
-        data class Failure(
-            val reasonCode: String,
-            val userMessage: String,
-            val cause: Throwable? = null
-        ) : DictionaryHandoffResult()
+    init {
+        try {
+            val filter = android.content.IntentFilter().apply {
+                addAction(com.example.feature.reader.ReaderEventManager.ACTION_OPEN_BOOK_IN_READER)
+                addAction(com.example.feature.reader.ReaderEventManager.ACTION_READER_DB_CHANGED)
+                addAction(com.example.feature.reader.ReaderEventManager.ACTION_RESTORE_READER_AFTER_ACTIVITY)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(readerActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(readerActionReceiver, filter)
+            }
+        } catch (_: Throwable) {}
+    }
+
+    fun isNoteMiniApp(appType: String): Boolean = (appType == "note" || appType == "test_notes")
+
+    fun isReaderMiniApp(appType: String): Boolean = (appType == "reader" || appType == "ebook_reader")
+
+    fun isDictionaryMiniApp(appType: String): Boolean = (appType == com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE)
+
+    fun isTranslationMiniApp(appType: String): Boolean = appType == "translation"
+
+    fun isMainOnlyMiniApp(appType: String): Boolean =
+        isNoteMiniApp(appType) ||
+            isReaderMiniApp(appType) ||
+            isDictionaryMiniApp(appType) ||
+            isTranslationMiniApp(appType)
+
+    /**
+     * Opens or wakes the Main-process floating Reader window and loads the specified [epubBookId]
+     * at its saved resume chapter and scroll offset.
+     */
+    fun openBookInFloatingReader(epubBookId: Int, targetInstanceId: String? = null): FloatingMiniAppWindow {
+        val instanceId = targetInstanceId
+            ?: hiddenReaderInstanceIdForExternal
+            ?: durableStore.getAllSnapshots().firstOrNull { isReaderMiniApp(it.appType) }?.instanceId
+            ?: "miniapp_reader"
+        hiddenReaderInstanceIdForExternal = null
+        com.example.feature.reader.ReaderSessionTracker.markWarmSession(instanceId)
+        val saved = durableStore.loadSnapshot(instanceId)
+        if (saved != null) {
+            saved.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_SCREEN_MODE] =
+                com.example.feature.reader.ReaderScreenMode.READING.name
+            saved.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_BOOK_ID] = epubBookId.toString()
+            saved.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START] = "false"
+            durableStore.saveSnapshot(saved)
+        }
+        val window = openMiniApp(instanceId, "reader")
+        window.openReaderBookById(epubBookId)
+        return window
+    }
+
+    /**
+     * Temporarily hides the active floating Reader window before opening full-screen [BookTrackerActivity]
+     * or Reader Settings so the `TYPE_APPLICATION_OVERLAY` window never floats on top of it,
+     * while preserving exact in-memory session, book, scroll, and UI state without spawning a bubble.
+     */
+    fun hideReaderForExternalActivity(instanceId: String? = null): String? {
+        val targetWindow = if (!instanceId.isNullOrBlank()) {
+            windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
+        } else {
+            windowManager.getAllWindows()
+                .filterIsInstance<FloatingMiniAppWindow>()
+                .firstOrNull { isReaderMiniApp(it.appType) && it.isVisible }
+        } ?: return null
+
+        if (!isReaderMiniApp(targetWindow.appType)) return null
+
+        targetWindow.saveReaderStateForExternalActivity()
+        com.example.feature.reader.ReaderSessionTracker.markWarmSession(targetWindow.windowId)
+        windowManager.hideWindow(targetWindow.windowId)
+        hiddenReaderInstanceIdForExternal = targetWindow.windowId
+        LogKeeper.log(context, TAG, "READER_HIDDEN_FOR_EXTERNAL id=${targetWindow.windowId}")
+        return targetWindow.windowId
+    }
+
+    /**
+     * Restores the previously hidden floating Reader window when [BookTrackerActivity] or
+     * Reader Settings closes, preserving its session, open screen, book, and scroll offset.
+     */
+    fun restoreReaderAfterExternalActivity(targetInstanceId: String? = null): Boolean {
+        val id = targetInstanceId?.takeIf { it.isNotBlank() }
+            ?: hiddenReaderInstanceIdForExternal
+            ?: return false
+
+        val existing = windowManager.getWindow(id) as? FloatingMiniAppWindow
+        if (existing != null) {
+            val needsShow = !existing.isAttached ||
+                existing.state != WindowState.VISIBLE ||
+                existing.getView()?.visibility != android.view.View.VISIBLE
+            if (needsShow && !windowManager.showWindow(id)) {
+                LogKeeper.logError(
+                    context,
+                    TAG,
+                    "READER_RESTORE_FAILED id=$id state=${existing.state} attached=${existing.isAttached}"
+                )
+                return false
+            }
+            if (windowManager.getTopVisibleWindow()?.windowId != id) {
+                windowManager.bringToFront(id)
+            }
+            if (hiddenReaderInstanceIdForExternal == id) {
+                hiddenReaderInstanceIdForExternal = null
+            }
+            LogKeeper.log(context, TAG, "READER_RESTORED_AFTER_EXTERNAL id=$id fromMemory=true")
+            return true
+        }
+
+        val snapshot = durableStore.loadSnapshot(id)
+        if (snapshot != null && isReaderMiniApp(snapshot.appType) && snapshot.state == MiniAppState.ACTIVE) {
+            if (hiddenReaderInstanceIdForExternal == id) {
+                hiddenReaderInstanceIdForExternal = null
+            }
+            openMiniApp(id, snapshot.appType, snapshot.windowBounds.copyBounds())
+            LogKeeper.log(context, TAG, "READER_RESTORED_AFTER_EXTERNAL id=$id fromSnapshot=true")
+            return true
+        }
+        return false
+    }
+
+    fun launchBookTrackerFromReader(instanceId: String? = null, epubBookId: Int = -1) {
+        val hiddenId = hideReaderForExternalActivity(instanceId)
+        if (epubBookId > 0) {
+            com.example.feature.reader.BookTrackerActivity.launchForEpubBook(
+                context = context,
+                epubBookId = epubBookId,
+                restoreReaderInstanceId = hiddenId
+            )
+        } else {
+            com.example.feature.reader.BookTrackerActivity.launch(
+                context = context,
+                openBackupPanel = false,
+                restoreReaderInstanceId = hiddenId
+            )
+        }
+    }
+
+    fun launchReaderSettingsFromReader(instanceId: String? = null) {
+        val hiddenId = hideReaderForExternalActivity(instanceId)
+        try {
+            val intent = Intent(context, com.example.SettingsActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("start_route", "reader_settings")
+                if (!hiddenId.isNullOrBlank()) {
+                    putExtra(com.example.SettingsActivity.EXTRA_RESTORE_READER_INSTANCE_ID, hiddenId)
+                }
+            }
+            context.startActivity(intent)
+        } catch (e: Throwable) {
+            LogKeeper.log(context, TAG, "Failed to launch Reader Settings: ${e.message}")
+            if (!hiddenId.isNullOrBlank()) {
+                restoreReaderAfterExternalActivity(hiddenId)
+            }
+        }
+    }
+
+    fun launchDictionarySettings(sourceInstanceId: String? = null) {
+        try {
+            val intent = Intent(context, com.example.SettingsActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("start_route", com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS)
+                if (!sourceInstanceId.isNullOrBlank()) {
+                    putExtra("source_miniapp_instance_id", sourceInstanceId)
+                }
+            }
+            context.startActivity(intent)
+            LogKeeper.log(context, TAG, "OPEN_DICTIONARY_SETTINGS source=$sourceInstanceId")
+        } catch (e: Throwable) {
+            LogKeeper.log(context, TAG, "Failed to launch Dictionary Settings: ${e.message}")
+        }
+    }
+
+    fun launchDictionaryTranslationSettings(sourceInstanceId: String? = null) {
+        try {
+            val intent = Intent(context, com.example.feature.settings.TranslationSettingsActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (!sourceInstanceId.isNullOrBlank()) putExtra("source_miniapp_instance_id", sourceInstanceId)
+            }
+            context.startActivity(intent)
+            LogKeeper.log(context, TAG, "OPEN_TRANSLATION_SETTINGS source=$sourceInstanceId process=main")
+        } catch (e: Throwable) {
+            LogKeeper.log(context, TAG, "Failed to launch Translation Settings: ${e.message}")
+        }
+    }
+
+    internal fun getHiddenReaderInstanceIdForTesting(): String? = hiddenReaderInstanceIdForExternal
+
+    /**
+     * Creates and opens a brand-new blank Note mini-app instance with a unique persistent instanceId
+     * and staggered initial window bounds so multiple notes remain independent and visually distinct.
+     */
+    fun openNewNoteInstance(appType: String = "test_notes"): FloatingMiniAppWindow {
+        val normalizedType = if (appType == "note") "test_notes" else appType
+        val newInstanceId = "note_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(4)}"
+        val density = context.resources.displayMetrics.density
+        val stepPx = (28 * density).toInt().coerceAtLeast(16)
+        val openNoteCount = windowManager.getAllWindows()
+            .count { it is FloatingMiniAppWindow && isNoteMiniApp(it.appType) }
+        val slot = (openNoteCount + noteStaggerIndex) % 6
+        noteStaggerIndex = (noteStaggerIndex + 1) % 60
+
+        val screenW = windowManager.screenWidth.takeIf { it > 0 } ?: 1080
+        val screenH = windowManager.screenHeight.takeIf { it > 0 } ?: 1920
+        val width = minOf(650, maxOf((260 * density).toInt(), screenW - (48 * density).toInt()))
+        val height = minOf(850, maxOf((240 * density).toInt(), screenH - (160 * density).toInt()))
+        val baseX = (80 * density).toInt()
+        val baseY = (110 * density).toInt()
+        val x = (baseX + slot * stepPx).coerceIn(0, maxOf(0, screenW - width))
+        val y = (baseY + slot * stepPx).coerceIn(0, maxOf(0, screenH - height))
+        val staggeredBounds = WindowBounds(x, y, width, height)
+
+        LogKeeper.log(
+            context,
+            TAG,
+            "OPEN_NEW_NOTE_INSTANCE id=$newInstanceId type=$normalizedType slot=$slot bounds=$staggeredBounds"
+        )
+        return openMiniApp(newInstanceId, normalizedType, staggeredBounds)
     }
 
     /**
@@ -71,7 +308,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
         val existing = windowManager.getWindow(instanceId)
         if (existing is FloatingMiniAppWindow) {
-            if (existing.state != WindowState.VISIBLE) {
+            if (existing.state != WindowState.VISIBLE || !existing.isAttached) {
                 windowManager.showWindow(instanceId)
             }
             windowManager.bringToFront(instanceId)
@@ -80,11 +317,26 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             return existing
         }
 
-        // Determine bounds from initialBounds, saved snapshot, or defaults
+        // Determine bounds from initialBounds, saved snapshot, or compact type-aware defaults
         val savedSnapshot = durableStore.loadSnapshot(instanceId)
         val bounds = initialBounds?.copyBounds()
             ?: savedSnapshot?.windowBounds?.copyBounds()
-            ?: WindowBounds(120, 150, 650, 850)
+            ?: when {
+                isDictionaryMiniApp(appType) -> com.example.feature.language.LanguageMiniAppUiHelper.computeCompactDictionaryBounds(
+                    context = context,
+                    screenWidth = windowManager.screenWidth,
+                    screenHeight = windowManager.screenHeight
+                )
+                isTranslationMiniApp(appType) -> com.example.feature.language.LanguageMiniAppUiHelper.computeCompactTranslationBounds(
+                    context = context,
+                    screenWidth = windowManager.screenWidth,
+                    screenHeight = windowManager.screenHeight
+                )
+                else -> WindowBounds(120, 150, 650, 850)
+            }
+
+        val isReader = isReaderMiniApp(appType)
+        val isWarmReaderSession = isReader && com.example.feature.reader.ReaderSessionTracker.isWarmSession(instanceId)
 
         // Ensure snapshot exists and is marked ACTIVE
         if (savedSnapshot == null) {
@@ -94,11 +346,23 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                 state = MiniAppState.ACTIVE,
                 windowBounds = bounds.copyBounds()
             )
+            if (isReader) {
+                newSnapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START] =
+                    if (isWarmReaderSession) "false" else "true"
+            }
             durableStore.saveSnapshot(newSnapshot)
         } else {
             savedSnapshot.state = MiniAppState.ACTIVE
             savedSnapshot.windowBounds = bounds.copyBounds()
+            if (isReader) {
+                savedSnapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START] =
+                    if (isWarmReaderSession) "false" else "true"
+            }
             durableStore.saveSnapshot(savedSnapshot)
+        }
+
+        if (isReader) {
+            com.example.feature.reader.ReaderSessionTracker.markWarmSession(instanceId)
         }
 
         val window = FloatingMiniAppWindow(instanceId, context, appType)
@@ -112,114 +376,156 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         return window
     }
 
-    fun openBookInFloatingReader(epubBookId: Int, targetInstanceId: String? = null): FloatingMiniAppWindow {
-        require(epubBookId > 0) { "epubBookId must be positive" }
-        val instanceId = targetInstanceId
-            ?: durableStore.getAllSnapshots().firstOrNull { it.appType == "reader" }?.instanceId
-            ?: "miniapp_reader"
-        val snapshot = durableStore.loadSnapshot(instanceId) ?: MiniAppRecoverySnapshot(
-            instanceId = instanceId,
-            appType = "reader",
-            state = MiniAppState.ACTIVE,
-            windowBounds = WindowBounds(120, 150, 650, 850)
-        )
-        snapshot.state = MiniAppState.ACTIVE
-        snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_SCREEN_MODE] =
-            com.example.feature.reader.ReaderScreenMode.READING.name
-        snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_BOOK_ID] = epubBookId.toString()
-        snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START] = "false"
-        if (!durableStore.saveSnapshot(snapshot)) {
-            throw IllegalStateException("Could not persist Reader launch state")
-        }
-        val window = openMiniApp(instanceId, "reader")
-        if (!window.openReaderBookById(epubBookId)) {
-            LogKeeper.logError(context, TAG, "READER_OPEN_BOOK_HANDOFF_FAILED id=$instanceId epubBookId=$epubBookId")
-        }
-        return window
+    sealed class DictionaryHandoffResult {
+        data class Success(val window: FloatingMiniAppWindow) : DictionaryHandoffResult()
+        data class Failure(
+            val reasonCode: String,
+            val userMessage: String,
+            val cause: Throwable? = null
+        ) : DictionaryHandoffResult()
     }
 
-    fun restoreReaderAfterExternalActivity(instanceId: String): Boolean {
-        val saved = durableStore.loadSnapshot(instanceId) ?: return false
-        if (saved.appType != "reader" && saved.appType != "ebook_reader") return false
-        val existing = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
-        if (existing != null) {
-            if (existing.state != WindowState.VISIBLE) windowManager.showWindow(instanceId)
-            windowManager.bringToFront(instanceId)
-            return true
-        }
-        openMiniApp(instanceId, saved.appType)
-        return true
-    }
-
+    /**
+     * Opens, wakes, or focuses the single floating Dictionary window with [query] and verifies
+     * that the floating window is actually attached, visible, and hosting a live Dictionary
+     * runtime before reporting [DictionaryHandoffResult.Success].
+     *
+     * Never silently reports success when overlay attachment fails (for example due to missing
+     * overlay permission or a WindowManager failure), and cleans up any newly-created unattached
+     * window so a subsequent retry starts cleanly without creating duplicates.
+     */
     fun openDictionaryWithQueryResult(
         query: String,
         instanceId: String = DEFAULT_DICTIONARY_INSTANCE_ID
     ): DictionaryHandoffResult {
         val trimmed = query.trim()
         val existedBefore = windowManager.getWindow(instanceId) != null
-        if (!Settings.canDrawOverlays(context)) {
-            return DictionaryHandoffResult.Failure(
-                reasonCode = "OVERLAY_PERMISSION_DENIED",
-                userMessage = "Grant overlay permission for Vian World, then tap Open Full Dictionary to retry."
-            )
-        }
         return try {
-            val current = durableStore.loadSnapshot(instanceId)
-            if (current != null && current.appType != "dictionary") {
-                return DictionaryHandoffResult.Failure(
-                    reasonCode = "INSTANCE_TYPE_CONFLICT",
-                    userMessage = "The Dictionary window is unavailable because its saved instance has a different type."
-                )
-            }
-            val snapshot = current ?: MiniAppRecoverySnapshot(
-                instanceId = instanceId,
-                appType = "dictionary",
-                state = MiniAppState.ACTIVE,
-                windowBounds = WindowBounds(120, 150, 650, 850)
-            )
-            snapshot.state = MiniAppState.ACTIVE
-            if (trimmed.isNotEmpty()) {
-                snapshot.payload[com.example.feature.language.DictionaryMiniAppInstance.KEY_QUERY] = trimmed
-                snapshot.payload[com.example.feature.language.DictionaryMiniAppInstance.KEY_SUBMITTED_QUERY] = trimmed
-            }
-            if (!durableStore.saveSnapshot(snapshot)) {
-                return DictionaryHandoffResult.Failure(
-                    reasonCode = "SNAPSHOT_SAVE_FAILED",
-                    userMessage = "Could not prepare the Dictionary window. Tap Open Full Dictionary to retry."
-                )
-            }
-
-            val window = openMiniApp(instanceId, "dictionary")
-            val queryAccepted = trimmed.isEmpty() || window.openDictionaryQuery(trimmed)
+            val window = openDictionaryWindowInternal(trimmed, instanceId)
             val attachedAndVisible = window.isAttached && window.state == WindowState.VISIBLE
-            if (!attachedAndVisible || !queryAccepted) {
-                val reason = when {
+            val ready = window.isDictionaryReady()
+            if (!attachedAndVisible || !ready) {
+                if (!existedBefore && !window.isAttached) {
+                    windowManager.unregisterWindow(instanceId)
+                }
+                val overlayDenied = isOverlayPermissionDenied()
+                val reasonCode = when {
+                    overlayDenied -> "OVERLAY_PERMISSION_DENIED"
                     !attachedAndVisible -> "WINDOW_SHOW_FAILED"
-                    else -> "DICTIONARY_QUERY_APPLY_FAILED"
+                    else -> "DICTIONARY_NOT_READY"
+                }
+                val userMessage = if (overlayDenied) {
+                    "Could not open Full Dictionary. Grant overlay permission for Sidebar and tap to retry."
+                } else {
+                    "Could not open Full Dictionary right now. Tap Open Full Dictionary to retry."
                 }
                 LogKeeper.logError(
                     context,
                     TAG,
-                    "DICTIONARY_HANDOFF_FAILED id=$instanceId reason=$reason attached=${window.isAttached} state=${window.state} queryAccepted=$queryAccepted"
+                    "DICTIONARY_HANDOFF_FAILED id=$instanceId reason=$reasonCode attached=${window.isAttached} state=${window.state} ready=$ready"
                 )
                 return DictionaryHandoffResult.Failure(
-                    reasonCode = reason,
-                    userMessage = if (!attachedAndVisible) {
-                        "Could not open Full Dictionary right now. Tap Open Full Dictionary to retry."
-                    } else {
-                        "Could not pass the selected word to Full Dictionary. Tap to retry."
-                    }
+                    reasonCode = reasonCode,
+                    userMessage = userMessage
                 )
             }
-            LogKeeper.log(context, TAG, "DICTIONARY_HANDOFF_SUCCESS id=$instanceId reused=$existedBefore queryPresent=${trimmed.isNotEmpty()}")
+
+            if (trimmed.isNotEmpty() && !window.openDictionaryQuery(trimmed)) {
+                LogKeeper.logError(
+                    context,
+                    TAG,
+                    "DICTIONARY_HANDOFF_FAILED id=$instanceId reason=DICTIONARY_QUERY_APPLY_FAILED"
+                )
+                return DictionaryHandoffResult.Failure(
+                    reasonCode = "DICTIONARY_QUERY_APPLY_FAILED",
+                    userMessage = "Could not pass the selected word to Full Dictionary. Tap to retry."
+                )
+            }
+
+            LogKeeper.log(
+                context,
+                TAG,
+                "DICTIONARY_HANDOFF_SUCCESS id=$instanceId reused=$existedBefore queryPresent=${trimmed.isNotEmpty()}"
+            )
             DictionaryHandoffResult.Success(window)
         } catch (t: Throwable) {
-            LogKeeper.logError(context, TAG, "DICTIONARY_HANDOFF_EXCEPTION id=$instanceId type=${t.javaClass.simpleName}", t)
+            val current = windowManager.getWindow(instanceId)
+            if (!existedBefore && current != null && !current.isAttached) {
+                try {
+                    windowManager.unregisterWindow(instanceId)
+                } catch (_: Throwable) {}
+            }
+            LogKeeper.logError(
+                context,
+                TAG,
+                "DICTIONARY_HANDOFF_EXCEPTION id=$instanceId type=${t.javaClass.simpleName}",
+                t
+            )
             DictionaryHandoffResult.Failure(
                 reasonCode = "HANDOFF_EXCEPTION",
                 userMessage = "Could not open Full Dictionary right now. Tap Open Full Dictionary to retry.",
                 cause = t
             )
+        }
+    }
+
+    /**
+     * Opens, wakes, or focuses the single floating Dictionary window with [query].
+     * Reuses the existing `"miniapp_dictionary"` floating instance rather than creating duplicate
+     * windows, and updates its active search query immediately.
+     */
+    fun openDictionaryWithQuery(
+        query: String,
+        instanceId: String = DEFAULT_DICTIONARY_INSTANCE_ID
+    ): FloatingMiniAppWindow {
+        val trimmed = query.trim()
+        val window = openDictionaryWindowInternal(trimmed, instanceId)
+        if (trimmed.isNotEmpty()) {
+            window.openDictionaryQuery(trimmed)
+        }
+        return window
+    }
+
+    private fun openDictionaryWindowInternal(
+        trimmedQuery: String,
+        instanceId: String
+    ): FloatingMiniAppWindow {
+        val existing = windowManager.getWindow(instanceId)
+        if (existing is FloatingMiniAppWindow && existing.isDictionaryApp()) {
+            return openMiniApp(instanceId, com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE)
+        }
+
+        if (trimmedQuery.isNotEmpty()) {
+            val existingSnapshot = durableStore.loadSnapshot(instanceId)
+            val bounds = existingSnapshot?.windowBounds?.copyBounds()
+                ?: com.example.feature.language.LanguageMiniAppUiHelper.computeCompactDictionaryBounds(
+                    context = context,
+                    screenWidth = windowManager.screenWidth,
+                    screenHeight = windowManager.screenHeight
+                )
+            val snapshot = existingSnapshot ?: MiniAppRecoverySnapshot(
+                instanceId = instanceId,
+                appType = com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE,
+                state = MiniAppState.ACTIVE,
+                windowBounds = bounds
+            )
+            snapshot.payload[com.example.feature.language.DictionaryMiniAppInstance.KEY_QUERY] = trimmedQuery
+            snapshot.payload[com.example.feature.language.DictionaryMiniAppInstance.KEY_SUBMITTED_QUERY] = trimmedQuery
+            durableStore.saveSnapshot(snapshot)
+        }
+
+        return openMiniApp(instanceId, com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE)
+    }
+
+    private fun isOverlayPermissionDenied(): Boolean {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                !android.provider.Settings.canDrawOverlays(context)
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
@@ -248,6 +554,9 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
         if (isMainOnlyMiniApp(appType)) {
             LogKeeper.log(context, TAG, "SLEEP_MAIN_ONLY id=$instanceId type=$appType (skipping Heavy)")
+            if (isReaderMiniApp(appType)) {
+                com.example.feature.reader.ReaderSessionTracker.markWarmSession(instanceId)
+            }
 
             if (window != null) {
                 // Authoritative non-blocking asynchronous flush to MiniAppState.SLEEPING
@@ -259,7 +568,6 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                             state = MiniAppState.SLEEPING,
                             windowBounds = window.normalFloatingBounds.copyBounds()
                         )
-                        window.releaseNotePersistenceRuntime()
                         windowManager.unregisterWindow(instanceId)
                         showLauncherBubble(snapshot)
                         LogKeeper.log(context, TAG, "FOLDED_LAUNCHER_SHOWN id=$instanceId buttonPosition=${snapshot.buttonPosition}")
@@ -423,6 +731,10 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         }
 
         val appType = snapshot?.appType ?: "generic"
+        if (isReaderMiniApp(appType)) {
+            // Waking a sleeping bubble in the same process is a warm unfold; if process restarted, ReaderSessionTracker.isWarmSession is false
+            // Note: if ReaderSessionTracker.isWarmSession(instanceId) is already true, openMiniApp will preserve the active book/chapter/scroll!
+        }
         val bounds = snapshot?.windowBounds?.copyBounds()
 
         openMiniApp(instanceId, appType, bounds)
@@ -448,8 +760,8 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             LogKeeper.log(context, TAG, "CLOSE_MAIN_ONLY id=$instanceId type=$appType (skipping Heavy)")
 
             if (deleteDurable) {
-                dismissLauncherBubble(instanceId)
                 window?.prepareForPermanentDelete()
+                dismissLauncherBubble(instanceId)
                 windowManager.unregisterWindow(instanceId)
                 durableStore.deleteSnapshot(instanceId)
                 LogKeeper.log(context, TAG, "RECOVERY_DELETED id=$instanceId")
@@ -464,7 +776,6 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                 window.flushPendingSaveAsync(targetState = MiniAppState.CLOSED) { success ->
                     if (success) {
                         dismissLauncherBubble(instanceId)
-                        window.releaseNotePersistenceRuntime()
                         windowManager.unregisterWindow(instanceId)
                         LogKeeper.log(context, TAG, "RECOVERY_RETAINED id=$instanceId state=CLOSED")
                         LogKeeper.log(context, TAG, "INSTANCE_CLOSED id=$instanceId")
@@ -541,7 +852,9 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             "ROUTING_DIAG: BRIDGE_TOGGLE_MINI_APP type=$appType targetId=$targetInstanceId caller=$caller"
         )
         val instanceId = targetInstanceId
-            ?: durableStore.getAllSnapshots().firstOrNull { it.appType == appType }?.instanceId
+            ?: durableStore.getAllSnapshots().firstOrNull {
+                if (isReaderMiniApp(appType)) isReaderMiniApp(it.appType) else it.appType == appType
+            }?.instanceId
             ?: "miniapp_$appType"
 
         val activeWindow = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
@@ -567,12 +880,15 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
     private fun showLauncherBubble(snapshot: MiniAppRecoverySnapshot) {
         dismissLauncherBubble(snapshot.instanceId)
+        val accentHex = snapshot.payload[NotePersistenceCoordinator.KEY_ACCENT_COLOR]
+            ?: if (isTranslationMiniApp(snapshot.appType)) com.example.feature.language.LanguageMiniAppUiHelper.ACCENT_TRANSLATION_HEX else null
         val bubble = FloatingMiniAppLauncherBubble(
             instanceId = snapshot.instanceId,
             appType = snapshot.appType,
             context = context,
             initialX = snapshot.buttonPosition.first,
             initialY = snapshot.buttonPosition.second,
+            accentColorHex = accentHex,
             onBubbleTapped = { id -> wakeMiniApp(id) }
         )
         activeBubbles[snapshot.instanceId] = bubble
@@ -600,6 +916,12 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             when (snapshot.state) {
                 MiniAppState.ACTIVE -> {
                     if (windowManager.getWindow(snapshot.instanceId) == null) {
+                        if (isReaderMiniApp(snapshot.appType) &&
+                            !com.example.feature.reader.ReaderSessionTracker.isWarmSession(snapshot.instanceId)
+                        ) {
+                            snapshot.payload[com.example.feature.reader.ReaderMiniAppInstance.KEY_COLD_START] = "true"
+                            durableStore.saveSnapshot(snapshot)
+                        }
                         val window = FloatingMiniAppWindow(snapshot.instanceId, context, snapshot.appType)
                         window.setWindowBounds(snapshot.windowBounds)
                         windowManager.registerWindow(window)
