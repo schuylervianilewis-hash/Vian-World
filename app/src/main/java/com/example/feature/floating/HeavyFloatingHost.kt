@@ -51,6 +51,13 @@ class HeavyFloatingHost private constructor(private val context: Context) {
     }
 
     /**
+     * Returns true only when a mini-app factory is explicitly registered for [appType].
+     */
+    fun isFactoryRegistered(appType: String): Boolean {
+        return appType.isNotBlank() && factories.containsKey(appType)
+    }
+
+    /**
      * Starts or resumes a mini-app instance in the Heavy process.
      */
     fun startInstance(
