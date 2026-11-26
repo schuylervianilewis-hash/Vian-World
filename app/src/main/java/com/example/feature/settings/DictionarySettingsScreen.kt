@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.feature.language.LanguageFeatureSettings
 import com.example.feature.language.dictionary.DictionaryImportProgress
 import com.example.feature.language.dictionary.DictionaryImportResult
 import com.example.feature.language.dictionary.DictionaryService
@@ -73,12 +74,16 @@ fun DictionarySettingsScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val dictionaryService = remember(context) { DictionaryService.getInstance(context) }
+    val featureSettings = remember(context) { LanguageFeatureSettings.getInstance(context) }
 
     var dictionaries by remember { mutableStateOf<List<InstalledDictionary>>(emptyList()) }
     var isImporting by remember { mutableStateOf(false) }
     var importProgress by remember { mutableStateOf<DictionaryImportProgress?>(null) }
     var importFeedback by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var dictionaryPendingDelete by remember { mutableStateOf<InstalledDictionary?>(null) }
+    var dictionaryMasterEnabled by remember { mutableStateOf(true) }
+    var translationMasterEnabled by remember { mutableStateOf(false) }
+    var featureSwitchFeedback by remember { mutableStateOf<String?>(null) }
 
     fun reloadDictionaries() {
         coroutineScope.launch {
@@ -89,6 +94,9 @@ fun DictionarySettingsScreen(
     }
 
     LaunchedEffect(Unit) {
+        val featureState = withContext(Dispatchers.IO) { featureSettings.getState() }
+        dictionaryMasterEnabled = featureState.dictionaryEnabled
+        translationMasterEnabled = featureState.translationEnabled
         dictionaries = withContext(Dispatchers.IO) {
             dictionaryService.getInstalledDictionaries()
         }
@@ -142,7 +150,7 @@ fun DictionarySettingsScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
-                title = { Text("Dictionary Settings") },
+                title = { Text("Dictionary & Translation") },
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
@@ -167,7 +175,7 @@ fun DictionarySettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Shared offline StarDict dictionaries used by both the floating Dictionary window and the Meaning text-selection popup.",
+                text = "Manage offline dictionaries and control the Dictionary and Translation floating windows and text-selection popups.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -186,6 +194,60 @@ fun DictionarySettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dictionary_master_switch_row"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "Enable Dictionary",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Controls the Dictionary floating window and Meaning text-selection popup. Individual dictionary settings are preserved.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = dictionaryMasterEnabled,
+                            onCheckedChange = { enabled ->
+                                coroutineScope.launch {
+                                    val saved = withContext(Dispatchers.IO) {
+                                        featureSettings.setDictionaryEnabled(enabled)
+                                    }
+                                    if (saved) {
+                                        dictionaryMasterEnabled = enabled
+                                        featureSwitchFeedback = null
+                                    } else {
+                                        featureSwitchFeedback = "Could not save the Dictionary switch. Please try again."
+                                    }
+                                }
+                            },
+                            modifier = Modifier.testTag("dictionary_master_switch")
+                        )
+                    }
+
+                    featureSwitchFeedback?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("language_feature_switch_feedback")
+                        )
+                    }
+
+                    HorizontalDivider()
+
                     DictionarySectionHeaderRow(
                         title = "Offline Dictionaries (StarDict)",
                         statusLabel = dictStatusLabel,
@@ -334,6 +396,23 @@ fun DictionarySettingsScreen(
                     }
                 }
             }
+
+            TranslationSettingsDisabledSection(
+                enabled = translationMasterEnabled,
+                onEnabledChange = { enabled ->
+                    coroutineScope.launch {
+                        val saved = withContext(Dispatchers.IO) {
+                            featureSettings.setTranslationEnabled(enabled)
+                        }
+                        if (saved) {
+                            translationMasterEnabled = enabled
+                            featureSwitchFeedback = null
+                        } else {
+                            featureSwitchFeedback = "Could not save the Translation switch. Please try again."
+                        }
+                    }
+                }
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
         }
