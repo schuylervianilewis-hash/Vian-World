@@ -122,16 +122,34 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             .forEach { disabledIds.add(it.instanceId) }
 
         for (instanceId in disabledIds) {
-            dismissLauncherBubble(instanceId)
-            val snapshot = durableStore.loadSnapshot(instanceId)
-            val activeWindow = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
-            if (activeWindow != null) {
-                closeMiniApp(instanceId, deleteDurable = false) { success ->
-                    if (success && snapshot?.state != MiniAppState.CLOSED) {
-                        durableStore.updateState(instanceId, MiniAppState.SLEEPING)
-                    }
-                }
-            } else if (snapshot?.state == MiniAppState.ACTIVE) {
+            closeLanguageMiniAppForDisable(instanceId)
+        }
+    }
+
+    private fun closeLanguageMiniAppForDisable(instanceId: String) {
+        dismissLauncherBubble(instanceId)
+        val snapshot = durableStore.loadSnapshot(instanceId)
+        val shouldRetainAsSleeping = snapshot?.state != MiniAppState.CLOSED
+        val activeWindow = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
+        if (activeWindow == null) {
+            if (snapshot?.state == MiniAppState.ACTIVE) {
+                durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+            }
+            return
+        }
+
+        // Hide immediately to stop interaction, then persist the latest payload before teardown.
+        try { windowManager.hideWindow(instanceId) } catch (_: Throwable) {}
+        closeMiniApp(instanceId, deleteDurable = false) { success ->
+            if (!success) {
+                LogKeeper.logError(
+                    context,
+                    TAG,
+                    "FEATURE_DISABLE_FORCED_TEARDOWN id=$instanceId after snapshot save failure"
+                )
+                try { windowManager.unregisterWindow(instanceId) } catch (_: Throwable) {}
+            }
+            if (shouldRetainAsSleeping) {
                 durableStore.updateState(instanceId, MiniAppState.SLEEPING)
             }
         }
@@ -345,16 +363,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     ): FloatingMiniAppWindow {
         if (isLanguageMiniApp(appType) && !languageFeatureSettings.isMiniAppEnabled(appType)) {
             val existing = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
-            dismissLauncherBubble(instanceId)
-            if (existing != null) {
-                closeMiniApp(instanceId, deleteDurable = false) { success ->
-                    if (success) durableStore.updateState(instanceId, MiniAppState.SLEEPING)
-                }
-            } else {
-                durableStore.loadSnapshot(instanceId)?.takeIf { it.state == MiniAppState.ACTIVE }?.let {
-                    durableStore.updateState(instanceId, MiniAppState.SLEEPING)
-                }
-            }
+            closeLanguageMiniAppForDisable(instanceId)
             showLanguageFeatureDisabled(appType)
             // openMiniApp has a non-null legacy return contract. This unregistered object is only a
             // safe sentinel; it is never attached, registered, or shown.
@@ -816,9 +825,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
         val appType = snapshot?.appType ?: "generic"
         if (isLanguageMiniApp(appType) && !languageFeatureSettings.isMiniAppEnabled(appType)) {
-            if (snapshot?.state == MiniAppState.ACTIVE) {
-                durableStore.updateState(instanceId, MiniAppState.SLEEPING)
-            }
+            closeLanguageMiniAppForDisable(instanceId)
             showLanguageFeatureDisabled(appType)
             return
         }
@@ -937,6 +944,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
      */
     fun toggleMiniApp(appType: String, targetInstanceId: String? = null) {
         if (isLanguageMiniApp(appType) && !languageFeatureSettings.isMiniAppEnabled(appType)) {
+            enforceFeatureAvailability()
             showLanguageFeatureDisabled(appType)
             return
         }
@@ -1019,10 +1027,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             if (isLanguageMiniApp(snapshot.appType) &&
                 !languageFeatureSettings.isMiniAppEnabled(snapshot.appType)
             ) {
-                dismissLauncherBubble(snapshot.instanceId)
-                if (snapshot.state == MiniAppState.ACTIVE) {
-                    durableStore.updateState(snapshot.instanceId, MiniAppState.SLEEPING)
-                }
+                closeLanguageMiniAppForDisable(snapshot.instanceId)
                 continue
             }
             when (snapshot.state) {
