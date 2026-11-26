@@ -31,6 +31,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     private val durableStore = DurableMiniAppStore.getInstance(context)
     private val languageFeatureSettings = LanguageFeatureSettings.getInstance(context)
     private val activeBubbles = LinkedHashMap<String, FloatingMiniAppLauncherBubble>()
+    private val featureDisableInProgress = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var noteStaggerIndex = 0
     @Volatile
     private var hiddenReaderInstanceIdForExternal: String? = null
