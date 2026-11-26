@@ -305,8 +305,8 @@ class TranslateSelectionActivity : Activity() {
             LanguageMiniAppUiHelper.createStatusNoticeCard(
                 context = this,
                 badgeText = pairText.uppercase(),
-                titleText = "Translating on device...",
-                bodyText = "Running local ML Kit translation..."
+                titleText = "Checking Translation availability...",
+                bodyText = "The Translation engine is not included in this build."
             )
         )
     }
@@ -398,7 +398,7 @@ class TranslateSelectionActivity : Activity() {
                         context = this,
                         badgeText = "MODEL REQUIRED",
                         titleText = "Missing model: $missingNames",
-                        bodyText = "${detectedNote}Download the required offline ML Kit model(s) to translate locally.$errSuffix",
+                        bodyText = "${detectedNote}Offline model support is unavailable in this build.$errSuffix",
                         actionLabel = if (downloadErrorMessage != null) "Retry Download" else "Download Model(s)",
                         actionTag = TAG_DOWNLOAD_MODEL_BUTTON,
                         onActionClick = { triggerModelDownload(outcome.missingLanguageCodes) }
@@ -421,7 +421,7 @@ class TranslateSelectionActivity : Activity() {
                         context = this,
                         badgeText = "UNSUPPORTED LANGUAGE",
                         titleText = "Unsupported language (${outcome.detectedLanguageTag})",
-                        bodyText = "This language is not supported by on-device ML Kit Translation."
+                        bodyText = "This language is not supported by the configured Translation engine."
                     )
                 )
             }
