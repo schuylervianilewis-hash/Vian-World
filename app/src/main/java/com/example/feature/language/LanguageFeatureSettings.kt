@@ -61,15 +61,23 @@ class LanguageFeatureSettings private constructor(context: Context) {
      * Translate is declared disabled in the manifest and only enabled when explicitly switched on.
      */
     fun syncProcessTextComponents() {
-        val state = getState()
-        setComponentEnabled(
-            com.example.feature.selection.MeaningSelectionActivity::class.java,
-            state.dictionaryEnabled
-        )
-        setComponentEnabled(
-            com.example.feature.selection.TranslateSelectionActivity::class.java,
-            state.translationEnabled
-        )
+        try {
+            // Hold the same cross-process lock through PackageManager updates. This prevents a
+            // startup sync in one process from overwriting a newer toggle from the other process.
+            withFileLock {
+                val state = readStateLocked()
+                setComponentEnabled(
+                    com.example.feature.selection.MeaningSelectionActivity::class.java,
+                    state.dictionaryEnabled
+                )
+                setComponentEnabled(
+                    com.example.feature.selection.TranslateSelectionActivity::class.java,
+                    state.translationEnabled
+                )
+            }
+        } catch (t: Throwable) {
+            LogKeeper.logError(appContext, TAG, "Could not synchronize PROCESS_TEXT components", t)
+        }
     }
 
     private fun updateState(transform: (LanguageFeatureState) -> LanguageFeatureState): Boolean {
