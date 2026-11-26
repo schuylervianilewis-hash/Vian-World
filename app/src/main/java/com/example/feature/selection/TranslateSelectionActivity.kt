@@ -5,6 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -46,6 +48,17 @@ class TranslateSelectionActivity : Activity() {
     private var translateJob: Job? = null
     private var downloadJob: Job? = null
 
+    private val featureSwitchReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED &&
+                !LanguageFeatureSettings.getInstance(this@TranslateSelectionActivity).isTranslationEnabled()
+            ) {
+                finish()
+            }
+        }
+    }
+    private var featureSwitchReceiverRegistered = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!LanguageFeatureSettings.getInstance(this).isTranslationEnabled()) {
@@ -68,6 +81,25 @@ class TranslateSelectionActivity : Activity() {
         translatedResult = null
         downloadErrorMessage = null
         triggerTranslation()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(featureSwitchReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(featureSwitchReceiver, filter)
+        }
+        featureSwitchReceiverRegistered = true
+    }
+
+    override fun onStop() {
+        if (featureSwitchReceiverRegistered) {
+            try { unregisterReceiver(featureSwitchReceiver) } catch (_: Throwable) {}
+            featureSwitchReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onResume() {
