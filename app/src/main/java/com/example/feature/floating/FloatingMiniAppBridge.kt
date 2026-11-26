@@ -127,6 +127,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     }
 
     private fun closeLanguageMiniAppForDisable(instanceId: String) {
+        if (!featureDisableInProgress.add(instanceId)) return
         dismissLauncherBubble(instanceId)
         val snapshot = durableStore.loadSnapshot(instanceId)
         val shouldRetainAsSleeping = snapshot?.state != MiniAppState.CLOSED
@@ -140,23 +141,37 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             if (snapshot?.state == MiniAppState.ACTIVE) {
                 durableStore.updateState(instanceId, MiniAppState.SLEEPING)
             }
+            featureDisableInProgress.remove(instanceId)
             return
         }
 
         // Hide immediately to stop interaction, then persist the latest payload before teardown.
         try { windowManager.hideWindow(instanceId) } catch (_: Throwable) {}
-        closeMiniApp(instanceId, deleteDurable = false) { success ->
-            if (!success) {
-                LogKeeper.logError(
-                    context,
-                    TAG,
-                    "FEATURE_DISABLE_FORCED_TEARDOWN id=$instanceId after snapshot save failure"
-                )
-                try { windowManager.unregisterWindow(instanceId) } catch (_: Throwable) {}
+        try {
+            closeMiniApp(instanceId, deleteDurable = false) { success ->
+                try {
+                    if (!success) {
+                        LogKeeper.logError(
+                            context,
+                            TAG,
+                            "FEATURE_DISABLE_FORCED_TEARDOWN id=$instanceId after snapshot save failure"
+                        )
+                        try { windowManager.unregisterWindow(instanceId) } catch (_: Throwable) {}
+                    }
+                    if (shouldRetainAsSleeping) {
+                        durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+                    }
+                } finally {
+                    featureDisableInProgress.remove(instanceId)
+                }
             }
+        } catch (t: Throwable) {
+            LogKeeper.logError(context, TAG, "FEATURE_DISABLE_CLOSE_FAILED id=$instanceId", t)
+            try { windowManager.unregisterWindow(instanceId) } catch (_: Throwable) {}
             if (shouldRetainAsSleeping) {
                 durableStore.updateState(instanceId, MiniAppState.SLEEPING)
             }
+            featureDisableInProgress.remove(instanceId)
         }
     }
 
