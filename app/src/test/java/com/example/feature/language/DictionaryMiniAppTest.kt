@@ -293,8 +293,8 @@ class DictionaryMiniAppTest {
         val translationSettingsTag = manifestSrc.substringAfter("android:name=\".feature.settings.TranslationSettingsActivity\"").substringBefore("/>")
         assertFalse("Translation Settings must stay in the main process", translationSettingsTag.contains("android:process"))
 
-        val translationSettingsActivitySrc = resolveProjectPath("app/src/main/java/com/example/feature/settings/TranslationSettingsActivity.kt").readText()
-        assertTrue(translationSettingsActivitySrc.contains("TranslationSettingsSectionReference"))
+        val dictionarySettingsScreenSrc = resolveProjectPath("app/src/main/java/com/example/feature/settings/DictionarySettingsScreen.kt").readText()
+        assertTrue("The unified settings screen must retain the Translation settings section", dictionarySettingsScreenSrc.contains("TranslationSettingsSectionReference"))
         val translationMainFiles = resolveProjectPath("app/src/main/java").walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .filter { file ->
