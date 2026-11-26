@@ -35,8 +35,8 @@ class LanguageFeatureSettings private constructor(context: Context) {
         return try {
             withFileLock { readStateLocked() }
         } catch (t: Throwable) {
-            LogKeeper.logError(appContext, TAG, "Could not read language feature switches", t)
-            LanguageFeatureState()
+            LogKeeper.logError(appContext, TAG, "Could not read language feature switches; failing closed", t)
+            LanguageFeatureState(dictionaryEnabled = false, translationEnabled = false)
         }
     }
 
@@ -46,7 +46,7 @@ class LanguageFeatureSettings private constructor(context: Context) {
 
     fun isMiniAppEnabled(appType: String): Boolean = when (appType) {
         DictionaryMiniAppInstance.APP_TYPE -> isDictionaryEnabled()
-        "translation" -> isTranslationEnabled()
+        TranslationMiniAppInstance.APP_TYPE -> isTranslationEnabled()
         else -> true
     }
 
