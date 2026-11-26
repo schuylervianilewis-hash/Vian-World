@@ -103,6 +103,9 @@ class TranslationUiAndSelectionTest {
             File(filesDir, "mlkit_translation/prefs.json"),
             translationBackend
         )
+        // The production default is OFF; this integration test explicitly exercises the
+        // enabled Translation UI and popup path.
+        check(LanguageFeatureSettings.getInstance(context).setTranslationEnabled(true))
         val wm = FloatingWindowManager.getInstance(context)
         wm.getAllWindows().map { it.windowId }.forEach { wm.unregisterWindow(it) }
         bridge = FloatingMiniAppBridge.getInstance(context)
