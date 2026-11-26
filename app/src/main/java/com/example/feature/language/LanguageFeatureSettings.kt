@@ -4,7 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.util.AtomicFile
 import com.example.core.LogKeeper
 import org.json.JSONObject
 import java.io.File
@@ -128,10 +127,32 @@ class LanguageFeatureSettings private constructor(context: Context) {
         }
     }
 
+    private val backupFile: File
+        get() = File(stateFile.parentFile, "${stateFile.name}.bak")
+
+    private val pendingFile: File
+        get() = File(stateFile.parentFile, "${stateFile.name}.new")
+
+    /**
+     * Recover the previous committed state if the process died between the two same-directory
+     * renames in writeStateLocked(). A leftover .new file was never committed and is discarded.
+     */
+    private fun recoverStateFileLocked() {
+        if (backupFile.exists()) {
+            if (stateFile.exists()) {
+                backupFile.delete()
+            } else {
+                backupFile.renameTo(stateFile)
+            }
+        }
+        if (pendingFile.exists()) pendingFile.delete()
+    }
+
     private fun readStateLocked(): LanguageFeatureState {
-        if (!stateFile.isFile) return LanguageFeatureState()
         return try {
-            AtomicFile(stateFile).openRead().bufferedReader(StandardCharsets.UTF_8).use { reader ->
+            recoverStateFileLocked()
+            if (!stateFile.isFile) return LanguageFeatureState()
+            stateFile.bufferedReader(StandardCharsets.UTF_8).use { reader ->
                 val json = JSONObject(reader.readText())
                 LanguageFeatureState(
                     dictionaryEnabled = json.optBoolean("dictionaryEnabled", true),
@@ -144,22 +165,47 @@ class LanguageFeatureSettings private constructor(context: Context) {
         }
     }
 
+    /**
+     * Write and fsync a sibling temp file, then swap it into place under the cross-process lock.
+     * The backup makes the rename sequence recoverable after process death. This uses ordinary
+     * java.io APIs so the same persistence path is exercised by local JVM tests as on-device.
+     */
     private fun writeStateLocked(state: LanguageFeatureState): Boolean {
-        val atomicFile = AtomicFile(stateFile)
-        var stream: FileOutputStream? = null
         return try {
-            stateFile.parentFile?.mkdirs()
+            val parent = stateFile.parentFile
+                ?: throw java.io.IOException("Feature state has no parent directory")
+            if (!parent.exists() && !parent.mkdirs() && !parent.isDirectory) {
+                throw java.io.IOException("Could not create feature state directory")
+            }
+            recoverStateFileLocked()
             val json = JSONObject().apply {
                 put("dictionaryEnabled", state.dictionaryEnabled)
                 put("translationEnabled", state.translationEnabled)
             }
-            val output = atomicFile.startWrite()
-            stream = output
-            output.write(json.toString().toByteArray(StandardCharsets.UTF_8))
-            atomicFile.finishWrite(output)
+            FileOutputStream(pendingFile).use { output ->
+                output.write(json.toString().toByteArray(StandardCharsets.UTF_8))
+                output.flush()
+                output.fd.sync()
+            }
+
+            if (stateFile.exists()) {
+                if (backupFile.exists() && !backupFile.delete()) {
+                    throw java.io.IOException("Could not clear previous feature state backup")
+                }
+                if (!stateFile.renameTo(backupFile)) {
+                    throw java.io.IOException("Could not preserve previous feature state")
+                }
+            }
+
+            if (!pendingFile.renameTo(stateFile)) {
+                if (backupFile.exists() && !stateFile.exists()) backupFile.renameTo(stateFile)
+                throw java.io.IOException("Could not commit new feature state")
+            }
+            backupFile.delete()
             true
         } catch (t: Throwable) {
-            stream?.let { atomicFile.failWrite(it) }
+            pendingFile.delete()
+            if (backupFile.exists() && !stateFile.exists()) backupFile.renameTo(stateFile)
             LogKeeper.logError(appContext, TAG, "Could not atomically write language feature switches", t)
             false
         }
