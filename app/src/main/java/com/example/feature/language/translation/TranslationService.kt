@@ -1,6 +1,7 @@
 package com.example.feature.language.translation
 
 import android.content.Context
+import android.util.AtomicFile
 import com.example.core.LogKeeper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 
@@ -27,6 +29,7 @@ class TranslationService private constructor(
 ) {
 
     private val prefsLock = Any()
+    private val prefsLockFile = File(prefsFile.parentFile, "${prefsFile.name}.lock")
     private val activeDownloads = ConcurrentHashMap<String, Boolean>()
     private val _modelStates = MutableStateFlow<Map<String, ModelDownloadState>>(emptyMap())
     val modelStates: StateFlow<Map<String, ModelDownloadState>> = _modelStates.asStateFlow()
@@ -67,23 +70,30 @@ class TranslationService private constructor(
         return backend.normalizeLanguageTag(raw)?.takeIf { it in supported }
     }
 
-    fun getConfig(): TranslationConfig = synchronized(prefsLock) {
+    fun getConfig(): TranslationConfig = withPrefsFileLock {
+        readConfigLocked()
+    }
+
+    private fun readConfigLocked(): TranslationConfig {
         val defaultConfig = TranslationConfig()
         if (!prefsFile.isFile) return defaultConfig
         return try {
-            val raw = prefsFile.readText(StandardCharsets.UTF_8)
-            if (raw.isBlank()) return defaultConfig
-            val obj = JSONObject(raw)
-            val src = resolveLanguageCode(obj.optString("sourceLanguageCode", CODE_AUTO_DETECT), allowAuto = true)
-                ?: CODE_AUTO_DETECT
-            val tgt = resolveLanguageCode(obj.optString("targetLanguageCode", DEFAULT_TARGET_LANGUAGE_CODE), allowAuto = false)
-                ?: DEFAULT_TARGET_LANGUAGE_CODE
-            val wifiOnly = obj.optBoolean("wifiOnlyDownloads", true)
-            TranslationConfig(
-                sourceLanguageCode = src,
-                targetLanguageCode = tgt,
-                wifiOnlyDownloads = wifiOnly
-            )
+            AtomicFile(prefsFile).openRead().bufferedReader(StandardCharsets.UTF_8).use { reader ->
+                val obj = JSONObject(reader.readText())
+                val src = resolveLanguageCode(
+                    obj.optString("sourceLanguageCode", CODE_AUTO_DETECT),
+                    allowAuto = true
+                ) ?: CODE_AUTO_DETECT
+                val tgt = resolveLanguageCode(
+                    obj.optString("targetLanguageCode", DEFAULT_TARGET_LANGUAGE_CODE),
+                    allowAuto = false
+                ) ?: DEFAULT_TARGET_LANGUAGE_CODE
+                TranslationConfig(
+                    sourceLanguageCode = src,
+                    targetLanguageCode = tgt,
+                    wifiOnlyDownloads = obj.optBoolean("wifiOnlyDownloads", true)
+                )
+            }
         } catch (e: Throwable) {
             LogKeeper.logError(appContext, TAG, "Failed to read translation prefs", e)
             defaultConfig
@@ -94,8 +104,8 @@ class TranslationService private constructor(
         sourceLanguageCode: String? = null,
         targetLanguageCode: String? = null,
         wifiOnlyDownloads: Boolean? = null
-    ): TranslationConfig = synchronized(prefsLock) {
-        val current = getConfig()
+    ): TranslationConfig = withPrefsFileLock {
+        val current = readConfigLocked()
         val newSrc = if (sourceLanguageCode != null) {
             resolveLanguageCode(sourceLanguageCode, allowAuto = true) ?: current.sourceLanguageCode
         } else {
@@ -313,6 +323,8 @@ class TranslationService private constructor(
     }
 
     private fun writeConfigLocked(config: TranslationConfig) {
+        val atomicFile = AtomicFile(prefsFile)
+        var stream: FileOutputStream? = null
         try {
             prefsFile.parentFile?.mkdirs()
             val obj = JSONObject().apply {
@@ -320,18 +332,29 @@ class TranslationService private constructor(
                 put("targetLanguageCode", config.targetLanguageCode)
                 put("wifiOnlyDownloads", config.wifiOnlyDownloads)
             }
-            val tmp = File(prefsFile.parentFile, "${prefsFile.name}.tmp")
-            FileOutputStream(tmp).use { fos ->
-                fos.write(obj.toString().toByteArray(StandardCharsets.UTF_8))
-                fos.flush()
-                try { fos.fd.sync() } catch (_: Throwable) {}
-            }
-            if (!tmp.renameTo(prefsFile)) {
-                prefsFile.writeText(obj.toString(), StandardCharsets.UTF_8)
-                tmp.delete()
-            }
+            val output = atomicFile.startWrite()
+            stream = output
+            output.write(obj.toString().toByteArray(StandardCharsets.UTF_8))
+            atomicFile.finishWrite(output)
         } catch (e: Throwable) {
+            stream?.let { atomicFile.failWrite(it) }
             LogKeeper.logError(appContext, TAG, "Failed to save translation prefs", e)
+        }
+    }
+
+    /**
+     * Shared by Main and :heavy. The OS file lock prevents concurrent processes from reading a
+     * partially-written preferences file or overwriting one another's updates.
+     */
+    private fun <T> withPrefsFileLock(block: () -> T): T = synchronized(prefsLock) {
+        prefsLockFile.parentFile?.mkdirs()
+        RandomAccessFile(prefsLockFile, "rw").use { randomAccessFile ->
+            val lock = randomAccessFile.channel.lock()
+            try {
+                block()
+            } finally {
+                lock.release()
+            }
         }
     }
 
