@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Single shared on-device Translation service used by:
  * - [com.example.feature.language.TranslationMiniAppInstance] (Main process)
  * - [com.example.feature.selection.TranslateSelectionActivity] (Main process)
- * - Settings UI (note: must run in ML Kit-initialized process or via IPC; see deferred README.md)
+ * - Settings UI (reads the retained language preferences without initializing an engine)
  *
  * Cross-process consistency:
  * Shared language preferences are persisted atomically in the legacy `filesDir/mlkit_translation/prefs.json` location so existing settings survive engine removal.
