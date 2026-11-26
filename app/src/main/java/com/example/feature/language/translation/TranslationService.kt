@@ -70,8 +70,13 @@ class TranslationService private constructor(
         return backend.normalizeLanguageTag(raw)?.takeIf { it in supported }
     }
 
-    fun getConfig(): TranslationConfig = withPrefsFileLock {
-        readConfigLocked()
+    fun getConfig(): TranslationConfig {
+        return try {
+            withPrefsFileLock { readConfigLocked() }
+        } catch (e: Throwable) {
+            LogKeeper.logError(appContext, TAG, "Could not lock/read translation preferences", e)
+            TranslationConfig()
+        }
     }
 
     private fun readConfigLocked(): TranslationConfig {
@@ -104,27 +109,34 @@ class TranslationService private constructor(
         sourceLanguageCode: String? = null,
         targetLanguageCode: String? = null,
         wifiOnlyDownloads: Boolean? = null
-    ): TranslationConfig = withPrefsFileLock {
-        val current = readConfigLocked()
-        val newSrc = if (sourceLanguageCode != null) {
-            resolveLanguageCode(sourceLanguageCode, allowAuto = true) ?: current.sourceLanguageCode
-        } else {
-            current.sourceLanguageCode
-        }
-        val newTgt = if (targetLanguageCode != null) {
-            resolveLanguageCode(targetLanguageCode, allowAuto = false) ?: current.targetLanguageCode
-        } else {
-            current.targetLanguageCode
-        }
-        val newWifi = wifiOnlyDownloads ?: current.wifiOnlyDownloads
+    ): TranslationConfig {
+        return try {
+            withPrefsFileLock {
+                val current = readConfigLocked()
+                val newSrc = if (sourceLanguageCode != null) {
+                    resolveLanguageCode(sourceLanguageCode, allowAuto = true) ?: current.sourceLanguageCode
+                } else {
+                    current.sourceLanguageCode
+                }
+                val newTgt = if (targetLanguageCode != null) {
+                    resolveLanguageCode(targetLanguageCode, allowAuto = false) ?: current.targetLanguageCode
+                } else {
+                    current.targetLanguageCode
+                }
+                val newWifi = wifiOnlyDownloads ?: current.wifiOnlyDownloads
 
-        val updated = TranslationConfig(
-            sourceLanguageCode = newSrc,
-            targetLanguageCode = newTgt,
-            wifiOnlyDownloads = newWifi
-        )
-        writeConfigLocked(updated)
-        updated
+                val updated = TranslationConfig(
+                    sourceLanguageCode = newSrc,
+                    targetLanguageCode = newTgt,
+                    wifiOnlyDownloads = newWifi
+                )
+                writeConfigLocked(updated)
+                updated
+            }
+        } catch (e: Throwable) {
+            LogKeeper.logError(appContext, TAG, "Could not lock/update translation preferences", e)
+            getConfig()
+        }
     }
 
     suspend fun refreshDownloadedModels(): Result<Set<String>> {
