@@ -157,3 +157,18 @@ private fun DisabledTranslationPreference(
         )
     }
 }
+
+
+/**
+ * Compatibility wrapper for any legacy in-module call sites. It intentionally exposes no
+ * interactive model controls; the unified page owns the functional master switch.
+ */
+@Deprecated("Use TranslationSettingsDisabledSection from Dictionary & Translation Settings")
+@Composable
+fun TranslationSettingsSectionReference() {
+    TranslationSettingsDisabledSection(
+        enabled = false,
+        switchEnabled = false,
+        onEnabledChange = {}
+    )
+}
