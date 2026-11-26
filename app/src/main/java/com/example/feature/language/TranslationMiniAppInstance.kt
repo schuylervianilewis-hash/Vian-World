@@ -33,12 +33,12 @@ import kotlinx.coroutines.launch
 /**
  * Standalone floating Translation mini-app (hosted in Main process).
  *
- * Connected to the shared on-device [TranslationService] (Google ML Kit Translate + Language ID):
+ * Connected to the shared [TranslationService] contract.
  * - Preserves source/target selectors, swap control, input box, Translate/Copy/Clear actions,
  *   output area, Settings shortcut, and sleep/restore lifecycle.
- * - Uses ML Kit's full supported language list via an overlay-safe inline searchable picker.
- * - Executes language identification, model availability checks, downloads, and translation off
- *   the main thread. Never fabricates placeholder translations.
+ * - Uses the retained language-code list via an overlay-safe inline searchable picker.
+ * - The production engine is intentionally absent from this APK; requests fail explicitly and
+ *   never fabricate placeholder translations.
  */
 class TranslationMiniAppInstance(
     override val instanceId: String,
