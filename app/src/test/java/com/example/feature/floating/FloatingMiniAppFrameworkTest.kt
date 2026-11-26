@@ -784,7 +784,8 @@ class FloatingMiniAppFrameworkTest {
                 deliveredCommands.add(commandJson)
                 if (commandJson.contains("release_sleeping_instance")) {
                     val persisted = store.loadSnapshot(instanceId)
-                    releaseObservedAfterDurableSave = persisted?.state == MiniAppState.SLEEPING &&
+                    releaseObservedAfterDurableSave = persisted != null &&
+                        persisted.state == MiniAppState.SLEEPING &&
                         persisted.payload["text"] == "Durable Note to Fold"
                 }
                 return com.example.core.ipc.IpcResult.success("Snapshot", mapOf("text" to "Durable Note to Fold")).toJson()
