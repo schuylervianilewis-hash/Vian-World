@@ -440,10 +440,24 @@ class FloatingTriggerTest {
         )
         val source = candidates.first { it.isFile }.readText()
 
-        assertTrue("Full picker must hide Widget, Popup Widget, and Folder during trigger selection", source.contains("if (!isFloatingTrigger)"))
-        assertTrue("launchFullFloatingTriggerPicker must force IS_HYBRID_GRID=false", source.contains("putExtra(\"IS_HYBRID_GRID\", false)"))
-        assertTrue("Full picker must validate via FloatingTriggerCompat.validateTarget", source.contains("FloatingTriggerCompat"))
-        assertTrue("Full picker must show user-facing explanation on unsupported selection", source.contains("showUnsupportedFloatingTriggerExplanation"))
+        assertTrue("Trigger selection must exclude Widget", source.contains("""if (!isFloatingTrigger) {
+            addItem(android.R.drawable.ic_menu_gallery, "Widget")"""))
+        assertTrue("Trigger selection must exclude Popup Widget", source.contains("""addItem(android.R.drawable.ic_menu_gallery, "Popup Widget") {
+                val intent"""))
+        assertTrue("Trigger selection must exclude Folder", source.contains("""if (!isFloatingTrigger) {
+            addItem(android.R.drawable.ic_menu_more, "Folder")"""))
+        assertTrue("Fallback picker must mark trigger-selection mode", source.contains("putExtra(\"IS_FLOATING_TRIGGER_SELECTION\", true)"))
+        assertTrue("Fallback picker must force IS_HYBRID_GRID=false", source.contains("putExtra(\"IS_HYBRID_GRID\", false)"))
+        assertTrue("Selected target must be sent to Main for authoritative activation", source.contains("\"subAction\" to \"ENSURE_ACTIVE\""))
+
+        val managerCandidates = listOf(
+            File("src/main/java/com/example/feature/floating/trigger/FloatingTriggerManager.kt"),
+            File("app/src/main/java/com/example/feature/floating/trigger/FloatingTriggerManager.kt"),
+            File("../app/src/main/java/com/example/feature/floating/trigger/FloatingTriggerManager.kt")
+        )
+        val managerSource = managerCandidates.first { it.isFile }.readText()
+        assertTrue("Main must validate targets through FloatingTriggerCompat", managerSource.contains("FloatingTriggerCompat.validateTarget(context, targetElementId)"))
+        assertTrue("Main must report unsupported targets to the user", managerSource.contains("userMessageNotifier(context, reason)"))
     }
 
     @Test
