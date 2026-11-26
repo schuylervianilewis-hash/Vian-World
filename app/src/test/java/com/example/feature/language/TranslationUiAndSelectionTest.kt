@@ -106,7 +106,11 @@ class TranslationUiAndSelectionTest {
         )
         // The production default is OFF; this integration test explicitly exercises the
         // enabled Translation UI and popup path.
-        check(LanguageFeatureSettings.getInstance(context).setTranslationEnabled(true))
+        val featureSettings = LanguageFeatureSettings.getInstance(context)
+        check(featureSettings.setTranslationEnabled(true))
+        // Recreate the settings accessor to verify the master switch was durably written.
+        LanguageFeatureSettings.resetForTesting()
+        check(LanguageFeatureSettings.getInstance(context).isTranslationEnabled())
         val wm = FloatingWindowManager.getInstance(context)
         wm.getAllWindows().map { it.windowId }.forEach { wm.unregisterWindow(it) }
         bridge = FloatingMiniAppBridge.getInstance(context)
