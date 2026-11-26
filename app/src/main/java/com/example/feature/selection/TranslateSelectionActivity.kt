@@ -13,6 +13,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.example.feature.language.LanguageFeatureSettings
 import com.example.feature.language.LanguageMiniAppUiHelper
 import com.example.feature.language.translation.TranslationOutcome
 import com.example.feature.language.translation.TranslationService
@@ -47,6 +48,10 @@ class TranslateSelectionActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!LanguageFeatureSettings.getInstance(this).isTranslationEnabled()) {
+            finish()
+            return
+        }
         selectedText = SelectionTextHelper.extractSelectedText(intent)
         buildUi()
         triggerTranslation()
@@ -54,11 +59,22 @@ class TranslateSelectionActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (!LanguageFeatureSettings.getInstance(this).isTranslationEnabled()) {
+            finish()
+            return
+        }
         setIntent(intent)
         selectedText = SelectionTextHelper.extractSelectedText(intent)
         translatedResult = null
         downloadErrorMessage = null
         triggerTranslation()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!LanguageFeatureSettings.getInstance(this).isTranslationEnabled()) {
+            finish()
+        }
     }
 
     private fun buildUi() {
@@ -210,6 +226,10 @@ class TranslateSelectionActivity : Activity() {
     }
 
     private fun triggerTranslation() {
+        if (!LanguageFeatureSettings.getInstance(this).isTranslationEnabled()) {
+            finish()
+            return
+        }
         translateJob?.cancel()
         translatedResult = null
         copyFeedbackView?.visibility = View.GONE
