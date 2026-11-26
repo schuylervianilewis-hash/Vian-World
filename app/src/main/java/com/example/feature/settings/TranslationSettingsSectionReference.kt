@@ -16,14 +16,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -118,28 +116,10 @@ fun TranslationSettingsDisabledSection(
 fun TranslationSettingsSectionReference() {
     val context = LocalContext.current
     val translationService = remember(context) { TranslationService.getInstance(context) }
-
-    var translationConfig by remember { mutableStateOf(TranslationConfig()) }
+    val translationConfig = remember(translationService) { translationService.getConfig() }
     val downloadedLanguages by translationService.downloadedLanguages.collectAsState()
-
-    val sourceLanguageOptions = remember(translationService) {
-        translationService.getSupportedSourceLanguages()
-    }
-    val targetLanguageOptions = remember(translationService) {
-        translationService.getSupportedTargetLanguages()
-    }
-
-
-    LaunchedEffect(Unit) {
-        translationConfig = withContext(Dispatchers.IO) {
-            translationService.getConfig()
-        }
-    }
-
     val downloadedSorted = remember(downloadedLanguages, translationService) {
-        downloadedLanguages
-            .map { code -> LanguageOption(code, translationService.getLanguageDisplayName(code)) }
-            .sortedBy { it.displayName.lowercase() }
+        downloadedLanguages.sortedBy { translationService.getLanguageDisplayName(it).lowercase() }
     }
     val translationStatusLabel = when {
         downloadedSorted.isEmpty() -> "Engine unavailable"
@@ -279,43 +259,6 @@ fun TranslationSettingsSectionReference() {
                 fontWeight = FontWeight.SemiBold
             )
 
-            translationFeedback?.let { (success, message) ->
-                Surface(
-                    color = if (success) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.errorContainer,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("translation_action_feedback")
-                ) {
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (success) MaterialTheme.colorScheme.onSecondaryContainer
-                        else MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-            }
-
-            val activeDownloadingCodes = modelStates.filterValues { it is ModelDownloadState.Downloading }.keys
-            if (activeDownloadingCodes.isNotEmpty()) {
-                val names = activeDownloadingCodes.joinToString(", ") {
-                    translationService.getLanguageDisplayName(it)
-                }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text(
-                        text = "Downloading model(s): $names...",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             if (downloadedSorted.isEmpty()) {
                 Text(
                     text = "Model status and downloads are disabled because the Translation engine is not included in this build.",
@@ -338,12 +281,12 @@ fun TranslationSettingsSectionReference() {
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = lang.displayName,
+                                    text = translationService.getLanguageDisplayName(lang),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "${lang.code.uppercase()} • On-device model installed",
+                                    text = "${lang.uppercase()} • On-device model installed",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -351,11 +294,11 @@ fun TranslationSettingsSectionReference() {
                             IconButton(
                                 onClick = {},
                                 enabled = false,
-                                modifier = Modifier.testTag("delete_downloaded_model_${lang.code}")
+                                modifier = Modifier.testTag("delete_downloaded_model_${lang}")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete ${lang.displayName} model",
+                                    contentDescription = "Delete ${translationService.getLanguageDisplayName(lang)} model",
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             }
@@ -374,7 +317,7 @@ fun TranslationSettingsSectionReference() {
                     .fillMaxWidth()
                     .testTag("translation_browse_models_button")
             ) {
-                Text("Browse & Download Language Models (${targetLanguageOptions.size})")
+                Text("Browse & Download Language Models")
             }
         }
     }
