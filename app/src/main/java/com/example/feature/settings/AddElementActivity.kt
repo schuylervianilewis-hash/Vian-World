@@ -240,46 +240,46 @@ class AddElementActivity : ComponentActivity() {
 
         addHeader("Special items")
         if (!isFloatingTrigger) {
-            addItem(android.R.drawable.ic_menu_more, "Folder") {
-            if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
-                // This picker is hosted by the launcher. Ask it to create its native
-                // launcher folder so folder contents, gestures and appearance remain
-                // managed by the launcher's own folder implementation.
-                setResult(
-                    Activity.RESULT_OK,
-                    Intent().putExtra("CREATE_LAUNCHER_FOLDER", true)
-                )
-                finish()
-            } else {
-                val options = arrayOf("Grid", "Stack")
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Folder style")
-                    .setItems(options) { _, which ->
-                        val input = android.widget.EditText(this)
-                        input.hint = "Folder Name"
-                        input.setText("New Folder")
-                        android.app.AlertDialog.Builder(this)
-                            .setTitle("Folder Name")
-                            .setView(input)
-                            .setPositiveButton("OK") { _, _ ->
-                                val folderName = input.text.toString().takeIf { it.isNotEmpty() } ?: "New Folder"
-                                val uuid = java.util.UUID.randomUUID().toString()
-                                val folderJson = JSONObject().apply {
-                                    put("name", folderName)
-                                    put("colorHex", "#444444")
-                                    put("items", org.json.JSONArray())
-                                    put("folderStyle", which)
-                                    put("popupColumns", 3)
-                                    put("popupRows", 3)
+                addItem(android.R.drawable.ic_menu_more, "Folder") {
+                if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
+                    // This picker is hosted by the launcher. Ask it to create its native
+                    // launcher folder so folder contents, gestures and appearance remain
+                    // managed by the launcher's own folder implementation.
+                    setResult(
+                        Activity.RESULT_OK,
+                        Intent().putExtra("CREATE_LAUNCHER_FOLDER", true)
+                    )
+                    finish()
+                } else {
+                    val options = arrayOf("Grid", "Stack")
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Folder style")
+                        .setItems(options) { _, which ->
+                            val input = android.widget.EditText(this)
+                            input.hint = "Folder Name"
+                            input.setText("New Folder")
+                            android.app.AlertDialog.Builder(this)
+                                .setTitle("Folder Name")
+                                .setView(input)
+                                .setPositiveButton("OK") { _, _ ->
+                                    val folderName = input.text.toString().takeIf { it.isNotEmpty() } ?: "New Folder"
+                                    val uuid = java.util.UUID.randomUUID().toString()
+                                    val folderJson = JSONObject().apply {
+                                        put("name", folderName)
+                                        put("colorHex", "#444444")
+                                        put("items", org.json.JSONArray())
+                                        put("folderStyle", which)
+                                        put("popupColumns", 3)
+                                        put("popupRows", 3)
+                                    }
+                                    val folderId = "folder:$uuid:${folderJson.toString()}"
+                                    handleElementSelected(folderId, folderName)
                                 }
-                                val folderId = "folder:$uuid:${folderJson.toString()}"
-                                handleElementSelected(folderId, folderName)
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                    .show()
-            }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        }
+                        .show()
+                }
         }
         }
         addItem(com.example.R.drawable.ic_language, "Link") {
