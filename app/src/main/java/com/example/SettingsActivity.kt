@@ -1,6 +1,5 @@
 package com.example
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -57,15 +56,6 @@ class SettingsActivity : ComponentActivity() {
 
         try {
             val startRoute = intent.getStringExtra("start_route") ?: "main"
-            if (
-                startRoute == com.example.feature.settings.ROUTE_DICTIONARY_TRANSLATION_SETTINGS ||
-                startRoute == com.example.feature.settings.ROUTE_LEGACY_TRANSLATION_SETTINGS
-            ) {
-                startActivity(Intent(this, com.example.feature.settings.TranslationSettingsActivity::class.java))
-                finish()
-                return
-            }
-
             setContent {
                 MaterialTheme(colorScheme = lightColorScheme()) {
                     Surface(
@@ -181,7 +171,9 @@ fun SettingsNavigationApp(initialRoute: String, onFinish: () -> Unit) {
         currentRoute == "reader_settings" || currentRoute == "reader" -> {
             com.example.feature.settings.ReaderSettingsScreen(onBack = { navigateBack() })
         }
-        currentRoute == com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS -> {
+        currentRoute == com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS ||
+            currentRoute == com.example.feature.settings.ROUTE_DICTIONARY_TRANSLATION_SETTINGS ||
+            currentRoute == com.example.feature.settings.ROUTE_LEGACY_TRANSLATION_SETTINGS -> {
             com.example.feature.settings.DictionarySettingsScreen(onBack = { navigateBack() })
         }
         else -> {
@@ -298,8 +290,8 @@ fun MainSettingsScreen(
             }
             item {
                 ListItem(
-                    headlineContent = { Text("Dictionary Settings") },
-                    supportingContent = { Text("Import and manage offline StarDict dictionaries") },
+                    headlineContent = { Text("Dictionary & Translation") },
+                    supportingContent = { Text("Manage offline dictionaries and Translation availability") },
                     modifier = Modifier
                         .clickable { onNavigateToDictionary() }
                         .testTag("settings_item_dictionary")
