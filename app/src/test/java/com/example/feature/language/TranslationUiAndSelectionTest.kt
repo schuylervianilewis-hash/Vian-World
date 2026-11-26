@@ -96,6 +96,7 @@ class TranslationUiAndSelectionTest {
         DurableMiniAppStore.resetForTesting()
         FloatingMiniAppBridge.resetForTesting()
         TranslationService.resetForTesting()
+        LanguageFeatureSettings.resetForTesting()
 
         translationBackend = TranslationServiceTest.FakeTranslationEngineBackend()
         translationService = TranslationService.createForTesting(
@@ -113,6 +114,7 @@ class TranslationUiAndSelectionTest {
 
     @After
     fun tearDown() {
+        LanguageFeatureSettings.resetForTesting()
         FloatingMiniAppBridge.resetForTesting()
         val wm = FloatingWindowManager.getInstance(context)
         wm.getAllWindows().map { it.windowId }.forEach { wm.unregisterWindow(it) }
