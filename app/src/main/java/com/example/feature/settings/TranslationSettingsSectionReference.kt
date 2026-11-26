@@ -50,7 +50,7 @@ fun TranslationSettingsDisabledSection(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("translation_settings_disabled_controls"),
+            .testTag("settings_section_translation"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
@@ -321,6 +321,7 @@ fun TranslationSettingsSectionReference() {
             }
         }
     }
+}
 
 @Composable
 private fun LanguagePreferenceRow(
