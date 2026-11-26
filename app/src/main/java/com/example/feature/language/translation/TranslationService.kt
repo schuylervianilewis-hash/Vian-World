@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - Settings UI (note: must run in ML Kit-initialized process or via IPC; see deferred README.md)
  *
  * Cross-process consistency:
- * Shared language and download preferences are persisted atomically to `filesDir/mlkit_translation/prefs.json`.
+ * Shared language preferences are persisted atomically in the legacy `filesDir/mlkit_translation/prefs.json` location so existing settings survive engine removal.
  */
 class TranslationService private constructor(
     private val appContext: Context,
@@ -341,6 +341,7 @@ class TranslationService private constructor(
 
     companion object {
         private const val TAG = "TranslationService"
+        // Keep the legacy directory name to preserve previously saved source/target preferences.
         private const val DIR_TRANSLATION = "mlkit_translation"
         private const val FILE_PREFS_JSON = "prefs.json"
 
