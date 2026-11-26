@@ -586,3 +586,61 @@ Capped at 500 lines per file.
   - CI does not verify real Android IME/overlay key delivery, widget-provider configuration, popup geometry across OEM display cutouts/insets, or persistence on a physical device.
   - The launcher Back bridge is effective while Vian World is the foreground launcher Activity. Android does not deliver system Back to a non-focusable overlay displayed over another app; global interception there would require changing overlay focus behaviour or adding an AccessibilityService, neither of which is included.
   - Existing saved four-column settings are intentionally preserved; three columns is the default for pages without an explicit stored value.
+
+
+---
+
+### Receipt 113 — Dictionary & Translation Master Switches; ML Kit Runtime Deferred
+
+* Timestamp: 2026-11-27
+* One-line summary: Consolidate Dictionary and Translation controls into one settings page, gate both entry-point families with durable master switches, and remove ML Kit Translate/Language ID runtime payloads while preserving the disabled Translation settings/service shell.
+* Exact files touched:
+  - `app/build.gradle.kts`
+  - `app/src/main/AndroidManifest.xml`
+  - `app/src/main/java/com/example/App.kt`
+  - `app/src/main/java/com/example/SettingsActivity.kt`
+  - `app/src/main/java/com/example/feature/floating/FloatingMiniAppBridge.kt`
+  - `app/src/main/java/com/example/feature/language/LanguageFeatureSettings.kt` (new)
+  - `app/src/main/java/com/example/feature/language/TranslationMiniAppInstance.kt`
+  - `app/src/main/java/com/example/feature/language/translation/TranslationEngineBackend.kt`
+  - `app/src/main/java/com/example/feature/language/translation/TranslationModels.kt`
+  - `app/src/main/java/com/example/feature/language/translation/TranslationService.kt`
+  - `app/src/main/java/com/example/feature/selection/MeaningSelectionActivity.kt`
+  - `app/src/main/java/com/example/feature/selection/SelectionPopupShell.kt`
+  - `app/src/main/java/com/example/feature/selection/TranslateSelectionActivity.kt`
+  - `app/src/main/java/com/example/feature/settings/AddElementActivity.kt`
+  - `app/src/main/java/com/example/feature/settings/DictionarySettingsScreen.kt`
+  - `app/src/main/java/com/example/feature/settings/TranslationSettingsActivity.kt`
+  - `app/src/main/java/com/example/feature/settings/TranslationSettingsSectionReference.kt`
+  - `app/src/test/java/com/example/feature/language/DictionaryMiniAppTest.kt`
+  - `app/src/test/java/com/example/feature/language/TranslationUiAndSelectionTest.kt`
+  - `app/src/test/java/com/example/feature/language/translation/TranslationBackendUnavailableTest.kt` (new)
+  - `receipts/RECEIPTS_100.md`
+* Implemented:
+  - Replaced separate Dictionary and Translation Settings list entries with one Dictionary & Translation entry and one unified settings screen. The Translation section is at the bottom of that screen.
+  - Dictionary master switch defaults ON; Translation master switch defaults OFF. Translation controls remain visible but disabled/greyed while Translation is off; language preferences and the service contract remain available for future engine restoration.
+  - Master switches gate Android text-selection popup entry points and floating mini-app entry points. Disabling a feature closes its active popup/window while retaining its saved configuration. Dictionary individual dictionary enablement and priority state remain independent of the master switch.
+  - Added durable cross-process feature state with a file lock and recoverable same-directory temp/backup rename protocol. The test verifies Translation state survives recreating the settings accessor.
+  - Retained a safe Translation backend/service shell. If Translation is enabled without an engine, it reports that the engine is unavailable; it does not return fake translated text.
+  - Removed ML Kit Translate and Language ID runtime dependencies from the app APK. OCR, QR and barcode placeholders were not changed.
+  - Updated integration tests for the unified screen, switch persistence and entry-point gating. Fixed test fixture singleton leakage and corrected source-contract assertions to the actual retained Translation composable.
+* Verification:
+  - GitHub Actions run [#620, attempt 2](https://github.com/schuylervianilewis-hash/Vian-World/actions/runs/45905838628) passed: Launcher unit tests, Firewall unit tests, app unit tests, debug APK assembly and artifact upload. Commit: `12cd26fbd78b4f01eae8864f543b4d622d38a5b9`.
+  - Downloaded and inspected the actual APK from artifact `vian-world-debug` (artifact ID `15159020009`). APK size: 59,720,319 bytes; SHA-256: `c50b8bde48d8f9eb3591cb23538350e6162bb2736a36433ef6beb45ad27c5adb`.
+  - Compared with the successful baseline APK at commit `d2f1702`: 92,016,857 bytes before versus 59,720,319 bytes after, a reduction of 32,296,538 bytes (35.1%, approximately 30.8 MiB).
+  - Inspected all 34 DEX files: no `com/google/mlkit`, `com.google.mlkit`, or internal ML Kit package strings found. Inspected native libraries: no `libtranslate_jni.so` or `liblanguage_id_l2c_jni.so` remains for any ABI. APK ZIP integrity check passed.
+  - The baseline APK was independently confirmed to contain ML Kit DEX references and both native libraries across four ABIs, so the before/after comparison is concrete rather than inferred from Gradle declarations.
+  - CI #620 attempt 1 had an external Maven fetch failure for Robolectric's `android-all-instrumented` artifact; retry attempt 2 passed without source changes.
+* On-device QA required:
+  1. Install the debug APK and confirm the Settings list contains exactly one Dictionary & Translation entry.
+  2. Confirm Dictionary defaults ON and Translation defaults OFF; inspect the Translation section at the bottom and verify its controls are visibly disabled/greyed.
+  3. With Dictionary OFF, verify the Android text-selection dictionary popup and Dictionary floating mini-app cannot open; verify an already-open Dictionary window closes and saved individual dictionary settings remain intact.
+  4. Turn Dictionary back ON and verify normal dictionary popup and floating-window behaviour, including independent per-dictionary enablement and priorities.
+  5. With Translation OFF, verify Translate text-selection and Translation floating-window entry points are blocked. Verify existing Translation UI state/preferences remain saved.
+  6. Turn Translation ON deliberately and verify the UI clearly reports that the engine is unavailable; verify no crash and no fabricated translation output.
+  7. Verify switch changes are observed across Main and `:heavy` processes, including after process recreation.
+  8. Verify source/target language and Wi-Fi-only preferences remain retained while Translation is disabled.
+* Known limitations:
+  - Automated tests and APK inspection do not replace physical-device verification of Android component enablement, process-to-process state propagation, popup closure and floating-window lifecycle.
+  - Translation is intentionally unavailable until a translation engine is restored in a later, separately approved task.
+  - This branch is not merged to main. Device QA and release approval remain pending.
