@@ -838,7 +838,7 @@ class TranslationMiniAppInstance(
                 })
                 addView(TextView(context).apply {
                     text = if (downloadedCount > 0) {
-                        "$downloadedCount offline ML Kit language ${if (downloadedCount == 1) "model" else "models"} installed. Enter text above and tap Translate."
+                        "$downloadedCount offline language ${if (downloadedCount == 1) "model" else "models"} installed. Enter text above and tap Translate."
                     } else {
                         "Enter text above and tap Translate, or download offline language models in Settings."
                     }
