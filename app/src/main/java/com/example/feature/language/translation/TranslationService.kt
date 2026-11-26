@@ -141,6 +141,9 @@ class TranslationService private constructor(
         languageCode: String,
         requireWifiOverride: Boolean? = null
     ): Result<Unit> {
+        if (!backend.isAvailable()) {
+            return Result.failure(IllegalStateException(TranslationEngineBackend.ENGINE_UNAVAILABLE_MESSAGE))
+        }
         val cleanCode = resolveLanguageCode(languageCode, allowAuto = false)
             ?: return Result.failure(IllegalArgumentException("Unsupported language code: $languageCode"))
 
@@ -186,6 +189,9 @@ class TranslationService private constructor(
         languageCodes: Collection<String>,
         requireWifiOverride: Boolean? = null
     ): Result<Unit> {
+        if (!backend.isAvailable()) {
+            return Result.failure(IllegalStateException(TranslationEngineBackend.ENGINE_UNAVAILABLE_MESSAGE))
+        }
         val downloaded = refreshDownloadedModels().getOrDefault(_downloadedLanguages.value)
         val needed = languageCodes.distinct().filter { it !in downloaded }
         if (needed.isEmpty()) return Result.success(Unit)
@@ -198,6 +204,9 @@ class TranslationService private constructor(
     }
 
     suspend fun deleteModel(languageCode: String): Result<Unit> {
+        if (!backend.isAvailable()) {
+            return Result.failure(IllegalStateException(TranslationEngineBackend.ENGINE_UNAVAILABLE_MESSAGE))
+        }
         val cleanCode = resolveLanguageCode(languageCode, allowAuto = false)
             ?: return Result.failure(IllegalArgumentException("Unsupported language code: $languageCode"))
         if (activeDownloads[cleanCode] == true) {
@@ -221,6 +230,9 @@ class TranslationService private constructor(
     ): TranslationOutcome {
         val text = rawText.trim()
         if (text.isEmpty()) return TranslationOutcome.EmptyInput
+        if (!backend.isAvailable()) {
+            return TranslationOutcome.Error(TranslationEngineBackend.ENGINE_UNAVAILABLE_MESSAGE)
+        }
 
         val config = getConfig()
         val requestedSource = resolveLanguageCode(overrideSourceCode, allowAuto = true)
@@ -348,7 +360,7 @@ class TranslationService private constructor(
                     TranslationService(
                         appContext = app,
                         prefsFile = prefs,
-                        backend = MlKitTranslationBackend(app)
+                        backend = UnavailableTranslationBackend(app)
                     ).also { instance = it }
                 }
             }
