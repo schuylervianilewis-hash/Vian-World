@@ -289,7 +289,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Main-process only: ML Kit Translation must not initialize in :heavy. -->
+        <!-- Legacy Translation Settings entry redirects to the unified Settings page. -->
         <activity
             android:name=".feature.settings.TranslationSettingsActivity"
             android:exported="false" />
@@ -297,6 +297,7 @@
         <activity
             android:name=".feature.selection.TranslateSelectionActivity"
             android:label="Translate"
+            android:enabled="false"
             android:exported="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
