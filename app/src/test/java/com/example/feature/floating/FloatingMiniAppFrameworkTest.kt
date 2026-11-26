@@ -248,7 +248,7 @@ class FloatingMiniAppFrameworkTest {
         testNotes.onCreate(null)
         testNotes.onStart()
         testNotes.onResume()
-        assertEquals(TestNotesMiniAppInstance.DEFAULT_INSTRUCTIONAL_TEXT, testNotes.noteText)
+        assertEquals("A newly created Note starts empty", "", testNotes.noteText)
 
         // Simulate user typing text
         val editedUserText = "Validation on physical device: Move, Resize, Sleep, Wake."
@@ -662,7 +662,7 @@ class FloatingMiniAppFrameworkTest {
         val instanceId = "close_order_test"
         val snapshot = MiniAppRecoverySnapshot(
             instanceId = instanceId,
-            appType = "reader",
+            appType = "work_notes",
             state = MiniAppState.ACTIVE,
             windowBounds = WindowBounds(100, 100, 500, 600)
         )
@@ -682,7 +682,7 @@ class FloatingMiniAppFrameworkTest {
         connManager.setMockProxyForTesting(mockProxy, ConnectionState.CONNECTED)
         connManager.acquireConsumer("miniapp_$instanceId", reason = "test")
 
-        val window = FloatingMiniAppWindow(instanceId, testContext, "reader")
+        val window = FloatingMiniAppWindow(instanceId, testContext, "work_notes")
         wm.registerWindow(window)
         assertNotNull(wm.getWindow(instanceId))
 
@@ -770,7 +770,7 @@ class FloatingMiniAppFrameworkTest {
         val instanceId = "fold_persist_test"
         val initialSnapshot = MiniAppRecoverySnapshot(
             instanceId = instanceId,
-            appType = "reader",
+            appType = "work_notes",
             state = MiniAppState.ACTIVE,
             windowBounds = WindowBounds(150, 180, 520, 620),
             payload = mutableMapOf("text" to "Durable Note to Fold")
@@ -778,9 +778,15 @@ class FloatingMiniAppFrameworkTest {
         store.saveSnapshot(initialSnapshot)
 
         val deliveredCommands = mutableListOf<String>()
+        var releaseObservedAfterDurableSave = false
         val mockProxy = object : IHeavyHostContract {
             override fun sendCommand(commandJson: String): String {
                 deliveredCommands.add(commandJson)
+                if (commandJson.contains("release_sleeping_instance")) {
+                    val persisted = store.loadSnapshot(instanceId)
+                    releaseObservedAfterDurableSave = persisted?.state == MiniAppState.SLEEPING &&
+                        persisted.payload["text"] == "Durable Note to Fold"
+                }
                 return com.example.core.ipc.IpcResult.success("Snapshot", mapOf("text" to "Durable Note to Fold")).toJson()
             }
             override fun syncSnapshot(snapshotJson: String): String = com.example.core.ipc.IpcResult.success().toJson()
@@ -791,7 +797,7 @@ class FloatingMiniAppFrameworkTest {
         connManager.setMockProxyForTesting(mockProxy, ConnectionState.CONNECTED)
         connManager.acquireConsumer("miniapp_$instanceId", reason = "fold_test")
 
-        val window = FloatingMiniAppWindow(instanceId, testContext, "reader")
+        val window = FloatingMiniAppWindow(instanceId, testContext, "work_notes")
         com.example.core.FloatingWindowManager.getInstance(testContext).registerWindow(window)
 
         // Execute sleep / fold
@@ -805,6 +811,7 @@ class FloatingMiniAppFrameworkTest {
 
         // Verify release command was delivered after snapshot
         assertTrue(deliveredCommands.any { it.contains("release_sleeping_instance") })
+        assertTrue("Heavy release must occur only after the sleeping snapshot is durable", releaseObservedAfterDurableSave)
 
         // Cleanup
         bridge.closeMiniApp(instanceId, deleteDurable = true)
