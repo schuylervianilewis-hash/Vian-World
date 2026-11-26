@@ -34,7 +34,7 @@ interface TranslationEngineBackend {
  * querying model state, downloading models, identifying text, or returning fabricated output.
  */
 class UnavailableTranslationBackend(
-    @Suppress("UNUSED_PARAMETER") context: Context
+    @Suppress("UNUSED_PARAMETER") context: Context? = null
 ) : TranslationEngineBackend {
 
     override fun isAvailable(): Boolean = false
