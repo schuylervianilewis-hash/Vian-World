@@ -1,5 +1,7 @@
 package com.example.feature.settings
 
+import com.example.feature.language.LanguageFeatureSettings
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -124,23 +126,27 @@ class AddElementActivity : ComponentActivity() {
             contentLayout.addView(header)
         }
         
-        fun addItem(iconRes: Int, text: String, onClick: () -> Unit) {
+        val languageFeatureSettings = LanguageFeatureSettings.getInstance(this)
+
+        fun addItem(iconRes: Int, text: String, enabled: Boolean = true, onClick: () -> Unit) {
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding((16 * density).toInt(), (16 * density).toInt(), (16 * density).toInt(), (16 * density).toInt())
-                isClickable = true
-                isFocusable = true
+                isClickable = enabled
+                isFocusable = enabled
+                alpha = if (enabled) 1f else 0.42f
                 val outValue = android.util.TypedValue()
                 theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
                 setBackgroundResource(outValue.resourceId)
-                setOnClickListener { onClick() }
+                if (enabled) setOnClickListener { onClick() }
             }
             
             val icon = ImageView(this).apply {
                 setImageResource(iconRes)
                 setColorFilter(Color.WHITE)
+                alpha = if (enabled) 1f else 0.42f
                 layoutParams = LinearLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt()).apply { marginEnd = (16 * density).toInt() }
             }
             
@@ -149,6 +155,7 @@ class AddElementActivity : ComponentActivity() {
                 setTextColor(Color.WHITE)
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
+                alpha = if (enabled) 1f else 0.42f
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
             
@@ -341,10 +348,18 @@ class AddElementActivity : ComponentActivity() {
                 showFloatingTriggerAssociationDialog(pageId, containerId, isHybridGrid, pageType)
             }
         }
-        addItem(android.R.drawable.ic_menu_search, "Dictionary") {
+        addItem(
+            android.R.drawable.ic_menu_search,
+            "Dictionary",
+            enabled = languageFeatureSettings.isDictionaryEnabled()
+        ) {
             handleElementSelected("system:dictionary_floating", "Dictionary")
         }
-        addItem(android.R.drawable.ic_menu_compass, "Translation") {
+        addItem(
+            android.R.drawable.ic_menu_compass,
+            "Translation",
+            enabled = languageFeatureSettings.isTranslationEnabled()
+        ) {
             handleElementSelected("system:translation_floating", "Translation")
         }
         addItem(com.example.R.drawable.ic_library_books, "eBook Reader") {
