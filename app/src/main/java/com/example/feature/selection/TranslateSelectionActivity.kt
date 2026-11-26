@@ -87,7 +87,7 @@ class TranslateSelectionActivity : Activity() {
         super.onStart()
         val filter = IntentFilter(LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(featureSwitchReceiver, filter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(featureSwitchReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(featureSwitchReceiver, filter)
         }
