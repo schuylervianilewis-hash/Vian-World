@@ -71,10 +71,8 @@ fun TranslationSettingsDisabledSection(
 
 /**
  * Preserved Compose layout for language preferences and offline-model management. Its interactive
- * controls are disabled by design; this function never initiates model refresh/download/delete.
+ * controls are disabled by design; model actions are not reachable from this settings page.
  */
-@Composable
-fun TranslationSettingsSectionReference() {
 @Composable
 fun TranslationSettingsSectionReference() {
     val context = LocalContext.current
