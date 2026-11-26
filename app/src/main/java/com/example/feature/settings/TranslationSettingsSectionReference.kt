@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.feature.language.translation.TranslationConfig
 import com.example.feature.language.translation.TranslationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,7 +42,7 @@ fun TranslationSettingsDisabledSection(
 ) {
     val context = LocalContext.current
     val translationService = remember(context) { TranslationService.getInstance(context) }
-    var config by remember { mutableStateOf(translationService.getConfig()) }
+    var config by remember { mutableStateOf(TranslationConfig()) }
 
     LaunchedEffect(Unit) {
         config = withContext(Dispatchers.IO) { translationService.getConfig() }
