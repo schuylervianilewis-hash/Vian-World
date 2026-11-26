@@ -2,6 +2,8 @@ package com.example.feature.selection
 
 import android.app.Activity
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.TextUtils
@@ -51,6 +53,17 @@ class MeaningSelectionActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var lookupJob: Job? = null
 
+    private val featureSwitchReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED &&
+                !LanguageFeatureSettings.getInstance(this@MeaningSelectionActivity).isDictionaryEnabled()
+            ) {
+                finish()
+            }
+        }
+    }
+    private var featureSwitchReceiverRegistered = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!LanguageFeatureSettings.getInstance(this).isDictionaryEnabled()) {
@@ -71,6 +84,25 @@ class MeaningSelectionActivity : Activity() {
         setIntent(intent)
         selectedText = SelectionTextHelper.extractSelectedText(intent)
         triggerLookup()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(featureSwitchReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(featureSwitchReceiver, filter)
+        }
+        featureSwitchReceiverRegistered = true
+    }
+
+    override fun onStop() {
+        if (featureSwitchReceiverRegistered) {
+            try { unregisterReceiver(featureSwitchReceiver) } catch (_: Throwable) {}
+            featureSwitchReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onResume() {
