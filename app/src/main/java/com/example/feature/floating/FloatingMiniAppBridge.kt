@@ -131,6 +131,11 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         val snapshot = durableStore.loadSnapshot(instanceId)
         val shouldRetainAsSleeping = snapshot?.state != MiniAppState.CLOSED
         val activeWindow = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
+        LogKeeper.log(
+            context,
+            TAG,
+            "FEATURE_DISABLE_CLOSE id=$instanceId appType=${snapshot?.appType ?: activeWindow?.appType ?: "unknown"}"
+        )
         if (activeWindow == null) {
             if (snapshot?.state == MiniAppState.ACTIVE) {
                 durableStore.updateState(instanceId, MiniAppState.SLEEPING)
