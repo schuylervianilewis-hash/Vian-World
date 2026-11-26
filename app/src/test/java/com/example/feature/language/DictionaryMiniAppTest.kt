@@ -281,8 +281,8 @@ class DictionaryMiniAppTest {
         assertTrue(FloatingTriggerCompat.validateTarget(context, "page_window:translation") is FloatingTriggerTargetValidation.ValidStandalone)
 
         val gradleSrc = resolveProjectPath("app/build.gradle.kts").readText()
-        assertTrue(gradleSrc.contains("com.google.mlkit:translate:17.0.3"))
-        assertTrue(gradleSrc.contains("com.google.mlkit:language-id:17.0.6"))
+        assertFalse("ML Kit Translate runtime must stay out of the APK", gradleSrc.contains("com.google.mlkit:translate"))
+        assertFalse("ML Kit Language ID runtime must stay out of the APK", gradleSrc.contains("com.google.mlkit:language-id"))
 
         val manifestSrc = resolveProjectPath("app/src/main/AndroidManifest.xml").readText()
         assertTrue(manifestSrc.contains(".feature.selection.TranslateSelectionActivity"))
