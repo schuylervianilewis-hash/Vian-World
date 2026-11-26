@@ -167,6 +167,7 @@ class AddElementActivity : ComponentActivity() {
         val pageId = intent.getStringExtra("PAGE_ID")
         val containerId = intent.getStringExtra("CONTAINER_ID") ?: "sidebar"
         val isHybridGrid = intent.getBooleanExtra("IS_HYBRID_GRID", false)
+        val isFloatingTrigger = intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
         val pageType = intent.getStringExtra("PAGE_TYPE")
 
         com.example.core.LogKeeper.log(
@@ -203,40 +204,43 @@ class AddElementActivity : ComponentActivity() {
             }
             startActivityForResult(iIntent, 301)
         }
-        addItem(android.R.drawable.ic_menu_gallery, "Widget") {
-            if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
-                // Home widgets belong to the launcher's AppWidgetHost, not Sidebar's host.
-                setResult(
-                    Activity.RESULT_OK,
-                    Intent().putExtra("OPEN_LAUNCHER_WIDGET_PICKER", true)
-                )
-                finish()
-            } else {
-                val pickerIntent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
+        if (!isFloatingTrigger) {
+            addItem(android.R.drawable.ic_menu_gallery, "Widget") {
+                if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
+                    // Home widgets belong to the launcher's AppWidgetHost, not Sidebar's host.
+                    setResult(
+                        Activity.RESULT_OK,
+                        Intent().putExtra("OPEN_LAUNCHER_WIDGET_PICKER", true)
+                    )
+                    finish()
+                } else {
+                    val pickerIntent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
+                        putExtra("ACTION_TYPE", "RETURN_ID")
+                        putExtra("PAGE_ID", pageId)
+                        putExtra("CONTAINER_ID", containerId)
+                        putExtra("IS_HYBRID_GRID", isHybridGrid)
+                        putExtra("PAGE_TYPE", pageType)
+                    }
+                    startActivityForResult(pickerIntent, 400)
+                }
+            }
+            
+            addItem(android.R.drawable.ic_menu_gallery, "Popup Widget") {
+                val intent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
                     putExtra("ACTION_TYPE", "RETURN_ID")
                     putExtra("PAGE_ID", pageId)
                     putExtra("CONTAINER_ID", containerId)
                     putExtra("IS_HYBRID_GRID", isHybridGrid)
                     putExtra("PAGE_TYPE", pageType)
                 }
-                startActivityForResult(pickerIntent, 400)
+                startActivityForResult(intent, 500)
             }
-        }
-        
-        addItem(android.R.drawable.ic_menu_gallery, "Popup Widget") {
-            val intent = Intent(this, com.example.WidgetPickerActivity::class.java).apply {
-                putExtra("ACTION_TYPE", "RETURN_ID")
-                putExtra("PAGE_ID", pageId)
-                putExtra("CONTAINER_ID", containerId)
-                putExtra("IS_HYBRID_GRID", isHybridGrid)
-                putExtra("PAGE_TYPE", pageType)
-            }
-            startActivityForResult(intent, 500)
+
         }
 
         addHeader("Special items")
-        val isFloatingTrigger = intent.getBooleanExtra("IS_FLOATING_TRIGGER_SELECTION", false)
-        addItem(android.R.drawable.ic_menu_more, "Folder") {
+        if (!isFloatingTrigger) {
+            addItem(android.R.drawable.ic_menu_more, "Folder") {
             if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
                 // This picker is hosted by the launcher. Ask it to create its native
                 // launcher folder so folder contents, gestures and appearance remain
@@ -276,6 +280,7 @@ class AddElementActivity : ComponentActivity() {
                     }
                     .show()
             }
+        }
         }
         addItem(com.example.R.drawable.ic_language, "Link") {
             val linkIntent = Intent(this, LinkPickerActivity::class.java).apply {
