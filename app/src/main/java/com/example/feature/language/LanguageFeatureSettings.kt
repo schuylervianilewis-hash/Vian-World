@@ -29,6 +29,7 @@ class LanguageFeatureSettings private constructor(context: Context) {
     private val appContext = context.applicationContext ?: context
     private val stateFile = File(appContext.filesDir, "language_features/feature_state.json")
     private val lockFile = File(stateFile.parentFile, "feature_state.lock")
+    private val processLock = Any()
 
     fun getState(): LanguageFeatureState {
         return try {
@@ -138,9 +139,10 @@ class LanguageFeatureSettings private constructor(context: Context) {
                 put("dictionaryEnabled", state.dictionaryEnabled)
                 put("translationEnabled", state.translationEnabled)
             }
-            stream = atomicFile.startWrite()
-            stream.write(json.toString().toByteArray(StandardCharsets.UTF_8))
-            atomicFile.finishWrite(stream)
+            val output = atomicFile.startWrite()
+            stream = output
+            output.write(json.toString().toByteArray(StandardCharsets.UTF_8))
+            atomicFile.finishWrite(output)
             true
         } catch (t: Throwable) {
             stream?.let { atomicFile.failWrite(it) }
@@ -149,12 +151,12 @@ class LanguageFeatureSettings private constructor(context: Context) {
         }
     }
 
-    private fun <T> withFileLock(block: () -> T): T {
+    private fun <T> withFileLock(block: () -> T): T = synchronized(processLock) {
         lockFile.parentFile?.mkdirs()
         RandomAccessFile(lockFile, "rw").use { randomAccessFile ->
             val lock = randomAccessFile.channel.lock()
             try {
-                return block()
+                block()
             } finally {
                 lock.release()
             }
