@@ -8,6 +8,9 @@ buildscript {
     }
     dependencies {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
+        // Resolve Compose compiler from its published implementation module, avoiding
+        // reliance on the separate Gradle Plugin Portal marker during CI builds.
+        classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.21")
         classpath("com.google.devtools.ksp:symbol-processing-gradle-plugin:2.3.12")
     }
 }
@@ -16,6 +19,5 @@ buildscript {
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
-    alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
 }
