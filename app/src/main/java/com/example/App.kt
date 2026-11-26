@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import com.example.core.FloatingWindowManager
+import com.example.feature.language.LanguageFeatureSettings
 import com.example.core.LogKeeper
 import com.example.core.OverlayAccessPolicy
 import com.example.core.OverlayWindowRegistry
@@ -27,6 +28,8 @@ class App : FossifyApp() {
 
         // One crash/logging foundation is installed by Sidebar in each process.
         LogKeeper.init(this)
+        // Keep Android text-selection actions synchronized with durable feature switches in every process.
+        LanguageFeatureSettings.getInstance(this).syncProcessTextComponents()
         OverlayAccessPolicy.registerProcessReceiver(this) { suppressed ->
             OverlayWindowRegistry.setSuppressed(suppressed)
             if (getProcessNameCompat() == packageName) {
