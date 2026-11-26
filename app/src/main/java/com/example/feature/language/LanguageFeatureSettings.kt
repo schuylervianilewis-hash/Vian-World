@@ -84,6 +84,12 @@ class LanguageFeatureSettings private constructor(context: Context) {
 
         if (saved) {
             syncProcessTextComponents()
+            val state = getState()
+            LogKeeper.log(
+                appContext,
+                TAG,
+                "MASTER_SWITCH_UPDATED dictionary_enabled=${state.dictionaryEnabled} translation_enabled=${state.translationEnabled}"
+            )
             try {
                 appContext.sendBroadcast(
                     Intent(ACTION_FEATURE_SETTINGS_CHANGED).setPackage(appContext.packageName)
