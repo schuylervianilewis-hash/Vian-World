@@ -1,7 +1,7 @@
 package com.example.feature.language.translation
 
 /**
- * A selectable language supported by the on-device ML Kit Translation engine.
+ * A selectable language retained for the Translation interface and preference compatibility.
  */
 data class LanguageOption(
     val code: String,
@@ -20,7 +20,7 @@ data class TranslationConfig(
 )
 
 /**
- * Download lifecycle state for a single ML Kit on-device language model.
+ * Retained model lifecycle state; production model operations are unavailable while the engine is excluded.
  */
 sealed class ModelDownloadState {
     data object NotDownloaded : ModelDownloadState()
