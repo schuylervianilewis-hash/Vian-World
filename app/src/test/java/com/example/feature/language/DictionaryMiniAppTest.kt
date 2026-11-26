@@ -115,6 +115,7 @@ class DictionaryMiniAppTest {
         FloatingMiniAppBridge.resetForTesting()
         FloatingWindowManager.resetForTesting()
         DictionaryService.resetForTesting()
+        LanguageFeatureSettings.resetForTesting()
 
         dictionaryService = DictionaryService.createForTesting(context, File(filesDir, "stardict_dictionaries"))
 
@@ -126,6 +127,7 @@ class DictionaryMiniAppTest {
 
     @After
     fun tearDown() {
+        LanguageFeatureSettings.resetForTesting()
         FloatingMiniAppBridge.resetForTesting()
         FloatingWindowManager.resetForTesting()
         DurableMiniAppStore.resetForTesting()
@@ -252,7 +254,8 @@ class DictionaryMiniAppTest {
         assertTrue(settingsActivitySrc.contains("ROUTE_DICTIONARY_SETTINGS"))
         assertTrue(settingsActivitySrc.contains("ROUTE_DICTIONARY_TRANSLATION_SETTINGS"))
         assertTrue(settingsActivitySrc.contains("ROUTE_LEGACY_TRANSLATION_SETTINGS"))
-        assertTrue(settingsActivitySrc.contains("TranslationSettingsActivity::class.java"))
+        assertTrue("The heavy-process settings route must render the unified Dictionary & Translation screen", settingsActivitySrc.contains("DictionarySettingsScreen(onBack"))
+        assertFalse("The heavy-process settings activity must not launch a separate Translation settings activity", settingsActivitySrc.contains("TranslationSettingsActivity::class.java"))
         assertFalse("The :heavy SettingsActivity must not initialize ML Kit directly", settingsActivitySrc.contains("com.google.mlkit"))
         assertFalse("The :heavy SettingsActivity must not own TranslationService", settingsActivitySrc.contains("TranslationService"))
 
