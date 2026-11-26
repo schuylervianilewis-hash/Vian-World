@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun TranslationSettingsDisabledSection(
     enabled: Boolean,
+    switchEnabled: Boolean = true,
     onEnabledChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -83,6 +84,7 @@ fun TranslationSettingsDisabledSection(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
+                    enabled = switchEnabled,
                     modifier = Modifier.testTag("translation_master_switch")
                 )
             }
