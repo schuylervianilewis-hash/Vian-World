@@ -1,7 +1,6 @@
 package com.example.feature.language.translation
 
 import android.content.Context
-import android.util.AtomicFile
 import com.example.core.LogKeeper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,22 +82,22 @@ class TranslationService private constructor(
         val defaultConfig = TranslationConfig()
         if (!prefsFile.isFile) return defaultConfig
         return try {
-            AtomicFile(prefsFile).openRead().bufferedReader(StandardCharsets.UTF_8).use { reader ->
-                val obj = JSONObject(reader.readText())
-                val src = resolveLanguageCode(
-                    obj.optString("sourceLanguageCode", CODE_AUTO_DETECT),
-                    allowAuto = true
-                ) ?: CODE_AUTO_DETECT
-                val tgt = resolveLanguageCode(
-                    obj.optString("targetLanguageCode", DEFAULT_TARGET_LANGUAGE_CODE),
-                    allowAuto = false
-                ) ?: DEFAULT_TARGET_LANGUAGE_CODE
-                TranslationConfig(
-                    sourceLanguageCode = src,
-                    targetLanguageCode = tgt,
-                    wifiOnlyDownloads = obj.optBoolean("wifiOnlyDownloads", true)
-                )
-            }
+            val raw = prefsFile.readText(StandardCharsets.UTF_8)
+            if (raw.isBlank()) return defaultConfig
+            val obj = JSONObject(raw)
+            val src = resolveLanguageCode(
+                obj.optString("sourceLanguageCode", CODE_AUTO_DETECT),
+                allowAuto = true
+            ) ?: CODE_AUTO_DETECT
+            val tgt = resolveLanguageCode(
+                obj.optString("targetLanguageCode", DEFAULT_TARGET_LANGUAGE_CODE),
+                allowAuto = false
+            ) ?: DEFAULT_TARGET_LANGUAGE_CODE
+            TranslationConfig(
+                sourceLanguageCode = src,
+                targetLanguageCode = tgt,
+                wifiOnlyDownloads = obj.optBoolean("wifiOnlyDownloads", true)
+            )
         } catch (e: Throwable) {
             LogKeeper.logError(appContext, TAG, "Failed to read translation prefs", e)
             defaultConfig
@@ -335,8 +334,7 @@ class TranslationService private constructor(
     }
 
     private fun writeConfigLocked(config: TranslationConfig) {
-        val atomicFile = AtomicFile(prefsFile)
-        var stream: FileOutputStream? = null
+        val tmp = File(prefsFile.parentFile, "${prefsFile.name}.tmp")
         try {
             prefsFile.parentFile?.mkdirs()
             val obj = JSONObject().apply {
@@ -344,12 +342,31 @@ class TranslationService private constructor(
                 put("targetLanguageCode", config.targetLanguageCode)
                 put("wifiOnlyDownloads", config.wifiOnlyDownloads)
             }
-            val output = atomicFile.startWrite()
-            stream = output
-            output.write(obj.toString().toByteArray(StandardCharsets.UTF_8))
-            atomicFile.finishWrite(output)
+            val bytes = obj.toString().toByteArray(StandardCharsets.UTF_8)
+            FileOutputStream(tmp).use { output ->
+                output.write(bytes)
+                output.flush()
+                try { output.fd.sync() } catch (_: Throwable) {}
+            }
+            try {
+                java.nio.file.Files.move(
+                    tmp.toPath(),
+                    prefsFile.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (_: Throwable) {
+                if (!tmp.renameTo(prefsFile)) {
+                    FileOutputStream(prefsFile).use { output ->
+                        output.write(bytes)
+                        output.flush()
+                        try { output.fd.sync() } catch (_: Throwable) {}
+                    }
+                    tmp.delete()
+                }
+            }
         } catch (e: Throwable) {
-            stream?.let { atomicFile.failWrite(it) }
+            tmp.delete()
             LogKeeper.logError(appContext, TAG, "Failed to save translation prefs", e)
         }
     }
