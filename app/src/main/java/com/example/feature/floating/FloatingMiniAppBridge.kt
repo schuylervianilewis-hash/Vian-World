@@ -2,10 +2,12 @@ package com.example.feature.floating
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import com.example.core.FloatingWindowManager
 import com.example.core.LogKeeper
 import com.example.core.WindowBounds
 import com.example.core.WindowState
+import com.example.feature.language.LanguageFeatureSettings
 import com.example.core.ipc.HeavyCommand
 import com.example.core.ipc.HeavyCommandType
 import com.example.core.ipc.HeavyProcessConnectionManager
@@ -27,6 +29,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
     private val windowManager = FloatingWindowManager.getInstance(context)
     private val durableStore = DurableMiniAppStore.getInstance(context)
+    private val languageFeatureSettings = LanguageFeatureSettings.getInstance(context)
     private val activeBubbles = LinkedHashMap<String, FloatingMiniAppLauncherBubble>()
     private var noteStaggerIndex = 0
     @Volatile
@@ -54,6 +57,11 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                         restoreReaderAfterExternalActivity(targetId)
                     }
                 }
+                LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED -> {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        enforceFeatureAvailability()
+                    }
+                }
             }
         }
     }
@@ -64,6 +72,7 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
                 addAction(com.example.feature.reader.ReaderEventManager.ACTION_OPEN_BOOK_IN_READER)
                 addAction(com.example.feature.reader.ReaderEventManager.ACTION_READER_DB_CHANGED)
                 addAction(com.example.feature.reader.ReaderEventManager.ACTION_RESTORE_READER_AFTER_ACTIVITY)
+                addAction(LanguageFeatureSettings.ACTION_FEATURE_SETTINGS_CHANGED)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(readerActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -80,6 +89,53 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     fun isDictionaryMiniApp(appType: String): Boolean = (appType == com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE)
 
     fun isTranslationMiniApp(appType: String): Boolean = appType == "translation"
+
+    private fun isLanguageMiniApp(appType: String): Boolean =
+        isDictionaryMiniApp(appType) || isTranslationMiniApp(appType)
+
+    private fun showLanguageFeatureDisabled(appType: String) {
+        val label = if (isDictionaryMiniApp(appType)) "Dictionary" else "Translation"
+        Toast.makeText(
+            context,
+            "$label is disabled in Settings > Dictionary & Translation.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    /**
+     * Closes active language windows and removes their launcher bubbles when a master switch is
+     * turned off. Durable snapshots are retained as sleeping records so re-enabling the feature
+     * does not destroy user state.
+     */
+    private fun enforceFeatureAvailability() {
+        val disabledIds = LinkedHashSet<String>()
+        durableStore.getAllSnapshots().forEach { snapshot ->
+            if (isLanguageMiniApp(snapshot.appType) &&
+                !languageFeatureSettings.isMiniAppEnabled(snapshot.appType)
+            ) {
+                disabledIds.add(snapshot.instanceId)
+            }
+        }
+        windowManager.getAllWindows()
+            .filterIsInstance<FloatingMiniAppWindow>()
+            .filter { isLanguageMiniApp(it.appType) && !languageFeatureSettings.isMiniAppEnabled(it.appType) }
+            .forEach { disabledIds.add(it.instanceId) }
+
+        for (instanceId in disabledIds) {
+            dismissLauncherBubble(instanceId)
+            val snapshot = durableStore.loadSnapshot(instanceId)
+            val activeWindow = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
+            if (activeWindow != null) {
+                closeMiniApp(instanceId, deleteDurable = false) { success ->
+                    if (success && snapshot?.state != MiniAppState.CLOSED) {
+                        durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+                    }
+                }
+            } else if (snapshot?.state == MiniAppState.ACTIVE) {
+                durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+            }
+        }
+    }
 
     fun isMainOnlyMiniApp(appType: String): Boolean =
         isNoteMiniApp(appType) ||
@@ -233,14 +289,15 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
     fun launchDictionaryTranslationSettings(sourceInstanceId: String? = null) {
         try {
-            val intent = Intent(context, com.example.feature.settings.TranslationSettingsActivity::class.java).apply {
+            val intent = Intent(context, com.example.SettingsActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("start_route", com.example.feature.settings.ROUTE_DICTIONARY_SETTINGS)
                 if (!sourceInstanceId.isNullOrBlank()) putExtra("source_miniapp_instance_id", sourceInstanceId)
             }
             context.startActivity(intent)
-            LogKeeper.log(context, TAG, "OPEN_TRANSLATION_SETTINGS source=$sourceInstanceId process=main")
+            LogKeeper.log(context, TAG, "OPEN_DICTIONARY_TRANSLATION_SETTINGS source=$sourceInstanceId")
         } catch (e: Throwable) {
-            LogKeeper.log(context, TAG, "Failed to launch Translation Settings: ${e.message}")
+            LogKeeper.log(context, TAG, "Failed to launch Dictionary & Translation Settings: ${e.message}")
         }
     }
 
@@ -286,6 +343,24 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         appType: String,
         initialBounds: WindowBounds? = null
     ): FloatingMiniAppWindow {
+        if (isLanguageMiniApp(appType) && !languageFeatureSettings.isMiniAppEnabled(appType)) {
+            val existing = windowManager.getWindow(instanceId) as? FloatingMiniAppWindow
+            dismissLauncherBubble(instanceId)
+            if (existing != null) {
+                closeMiniApp(instanceId, deleteDurable = false) { success ->
+                    if (success) durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+                }
+            } else {
+                durableStore.loadSnapshot(instanceId)?.takeIf { it.state == MiniAppState.ACTIVE }?.let {
+                    durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+                }
+            }
+            showLanguageFeatureDisabled(appType)
+            // openMiniApp has a non-null legacy return contract. This unregistered object is only a
+            // safe sentinel; it is never attached, registered, or shown.
+            return existing ?: FloatingMiniAppWindow(instanceId, context, appType)
+        }
+
         val caller = Throwable().stackTrace.getOrNull(1)?.let { "${it.className}.${it.methodName}:${it.lineNumber}" } ?: "unknown"
         LogKeeper.log(
             context,
@@ -398,6 +473,12 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         query: String,
         instanceId: String = DEFAULT_DICTIONARY_INSTANCE_ID
     ): DictionaryHandoffResult {
+        if (!languageFeatureSettings.isDictionaryEnabled()) {
+            return DictionaryHandoffResult.Failure(
+                reasonCode = "FEATURE_DISABLED",
+                userMessage = "Dictionary is disabled. Enable it in Settings > Dictionary & Translation."
+            )
+        }
         val trimmed = query.trim()
         val existedBefore = windowManager.getWindow(instanceId) != null
         return try {
@@ -490,6 +571,9 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         trimmedQuery: String,
         instanceId: String
     ): FloatingMiniAppWindow {
+        if (!languageFeatureSettings.isDictionaryEnabled()) {
+            return openMiniApp(instanceId, com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE)
+        }
         val existing = windowManager.getWindow(instanceId)
         if (existing is FloatingMiniAppWindow && existing.isDictionaryApp()) {
             return openMiniApp(instanceId, com.example.feature.language.DictionaryMiniAppInstance.APP_TYPE)
@@ -731,6 +815,13 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         }
 
         val appType = snapshot?.appType ?: "generic"
+        if (isLanguageMiniApp(appType) && !languageFeatureSettings.isMiniAppEnabled(appType)) {
+            if (snapshot?.state == MiniAppState.ACTIVE) {
+                durableStore.updateState(instanceId, MiniAppState.SLEEPING)
+            }
+            showLanguageFeatureDisabled(appType)
+            return
+        }
         if (isReaderMiniApp(appType)) {
             // Waking a sleeping bubble in the same process is a warm unfold; if process restarted, ReaderSessionTracker.isWarmSession is false
             // Note: if ReaderSessionTracker.isWarmSession(instanceId) is already true, openMiniApp will preserve the active book/chapter/scroll!
@@ -845,6 +936,10 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
      * Toggles a mini-app based on appType from Sidebar or element clicks, with optional specific targetInstanceId.
      */
     fun toggleMiniApp(appType: String, targetInstanceId: String? = null) {
+        if (isLanguageMiniApp(appType) && !languageFeatureSettings.isMiniAppEnabled(appType)) {
+            showLanguageFeatureDisabled(appType)
+            return
+        }
         val caller = Throwable().stackTrace.getOrNull(1)?.let { "${it.className}.${it.methodName}:${it.lineNumber}" } ?: "unknown"
         LogKeeper.log(
             context,
@@ -880,6 +975,14 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
 
     private fun showLauncherBubble(snapshot: MiniAppRecoverySnapshot) {
         dismissLauncherBubble(snapshot.instanceId)
+        if (isLanguageMiniApp(snapshot.appType) &&
+            !languageFeatureSettings.isMiniAppEnabled(snapshot.appType)
+        ) {
+            if (snapshot.state == MiniAppState.ACTIVE) {
+                durableStore.updateState(snapshot.instanceId, MiniAppState.SLEEPING)
+            }
+            return
+        }
         val accentHex = snapshot.payload[NotePersistenceCoordinator.KEY_ACCENT_COLOR]
             ?: if (isTranslationMiniApp(snapshot.appType)) com.example.feature.language.LanguageMiniAppUiHelper.ACCENT_TRANSLATION_HEX else null
         val bubble = FloatingMiniAppLauncherBubble(
@@ -913,6 +1016,15 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         val restored = mutableListOf<FloatingMiniAppWindow>()
 
         for (snapshot in snapshots) {
+            if (isLanguageMiniApp(snapshot.appType) &&
+                !languageFeatureSettings.isMiniAppEnabled(snapshot.appType)
+            ) {
+                dismissLauncherBubble(snapshot.instanceId)
+                if (snapshot.state == MiniAppState.ACTIVE) {
+                    durableStore.updateState(snapshot.instanceId, MiniAppState.SLEEPING)
+                }
+                continue
+            }
             when (snapshot.state) {
                 MiniAppState.ACTIVE -> {
                     if (windowManager.getWindow(snapshot.instanceId) == null) {
