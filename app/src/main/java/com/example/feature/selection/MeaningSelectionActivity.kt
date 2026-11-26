@@ -11,6 +11,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.example.core.LogKeeper
 import com.example.feature.floating.FloatingMiniAppBridge
+import com.example.feature.language.LanguageFeatureSettings
 import com.example.feature.language.LanguageMiniAppUiHelper
 import com.example.feature.language.dictionary.DictionaryDefinitionEntry
 import com.example.feature.language.dictionary.DictionaryLookupOutcome
@@ -52,6 +53,10 @@ class MeaningSelectionActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!LanguageFeatureSettings.getInstance(this).isDictionaryEnabled()) {
+            finish()
+            return
+        }
         selectedText = SelectionTextHelper.extractSelectedText(intent)
         buildUi()
         triggerLookup()
@@ -59,9 +64,20 @@ class MeaningSelectionActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (!LanguageFeatureSettings.getInstance(this).isDictionaryEnabled()) {
+            finish()
+            return
+        }
         setIntent(intent)
         selectedText = SelectionTextHelper.extractSelectedText(intent)
         triggerLookup()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!LanguageFeatureSettings.getInstance(this).isDictionaryEnabled()) {
+            finish()
+        }
     }
 
     private fun buildUi() {
@@ -336,6 +352,10 @@ class MeaningSelectionActivity : Activity() {
     internal fun getLastHandoffErrorForTesting(): String? = lastHandoffErrorMessage
 
     private fun triggerLookup() {
+        if (!LanguageFeatureSettings.getInstance(this).isDictionaryEnabled()) {
+            finish()
+            return
+        }
         lookupJob?.cancel()
         clearHandoffError()
         val text = selectedText
