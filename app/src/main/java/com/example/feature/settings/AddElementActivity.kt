@@ -240,7 +240,7 @@ class AddElementActivity : ComponentActivity() {
 
         addHeader("Special items")
         if (!isFloatingTrigger) {
-                addItem(android.R.drawable.ic_menu_more, "Folder") {
+            addItem(android.R.drawable.ic_menu_more, "Folder") {
                 if (intent.getBooleanExtra("SIDEBAR_HOME_PICKER", false)) {
                     // This picker is hosted by the launcher. Ask it to create its native
                     // launcher folder so folder contents, gestures and appearance remain
@@ -280,7 +280,7 @@ class AddElementActivity : ComponentActivity() {
                         }
                         .show()
                 }
-        }
+            }
         }
         addItem(com.example.R.drawable.ic_language, "Link") {
             val linkIntent = Intent(this, LinkPickerActivity::class.java).apply {
