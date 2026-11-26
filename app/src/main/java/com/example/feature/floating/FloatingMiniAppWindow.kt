@@ -4039,7 +4039,7 @@ class FloatingMiniAppWindow(
             isReaderApp() -> {
                 saveReaderSnapshotInternal(targetState)
             }
-            isDictionaryApp(), isTranslationApp() -> {
+            isDictionaryApp() || isTranslationApp() -> {
                 saveLanguageMiniAppSnapshotInternal(targetState)
             }
             else -> false
@@ -4114,7 +4114,7 @@ class FloatingMiniAppWindow(
                     mainHandler.post { onComplete(ok) }
                 }
             }
-            isDictionaryApp() -> {
+            isDictionaryApp() || isTranslationApp() -> {
                 val ok = saveLanguageMiniAppSnapshotInternal(targetState)
                 if (Looper.myLooper() == Looper.getMainLooper()) {
                     onComplete(ok)
@@ -4134,39 +4134,6 @@ class FloatingMiniAppWindow(
     fun performRedoForTesting(): Boolean = performNoteRedo()
     fun clearContentForTesting() = clearNoteContent()
     fun flushPendingSaveForTesting(): Boolean = flushPendingSave()
-
-    fun getAppliedLayoutParamsBoundsForTesting(): WindowBounds =
-        WindowBounds(layoutParams.x, layoutParams.y, layoutParams.width, layoutParams.height)
-
-    fun simulateTopBarDragForTesting(dx: Int, dy: Int): WindowBounds {
-        if (isMaximized) return bounds.copyBounds()
-        if (isImeShifted) {
-            bounds.y = layoutParams.y
-            normalFloatingBounds.y = layoutParams.y
-            isImeShifted = false
-            imeShiftOffsetY = 0
-        }
-        val safeBounds = getSafeDisplayBounds(context)
-        val density = context.resources.displayMetrics.density
-        val topBarH = getTopBarHeightPx()
-        val minGrabW = minOf(bounds.width, (72 * density).toInt().coerceAtLeast(48))
-        val minGrabH = maxOf(topBarH, (32 * density).toInt().coerceAtLeast(28))
-        val (newX, newY) = computeReachableDragPosition(
-            candidateX = bounds.x + dx, candidateY = bounds.y + dy,
-            windowWidth = bounds.width, windowHeight = bounds.height, safeBounds = safeBounds,
-            minVisibleGrabWidthPx = minGrabW, minVisibleTopBarHeightPx = minGrabH
-        )
-        bounds.x = newX
-        bounds.y = newY
-        normalFloatingBounds.x = newX
-        normalFloatingBounds.y = newY
-        layoutParams.x = newX
-        layoutParams.y = newY
-        (manager ?: FloatingWindowManager.getInstance(context)).updateBounds(windowId, bounds)
-        normalFloatingBounds = bounds.copyBounds()
-        durableStore.updateWindowBounds(instanceId, normalFloatingBounds)
-        return bounds.copyBounds()
-    }
 
     override fun onFold(folded: Boolean) {
         super.onFold(folded)
@@ -4443,36 +4410,6 @@ class FloatingMiniAppWindow(
          */
         @Volatile
         var EXPERIMENT_HEAVY_NATIVE_IME: Boolean = true
-            fun computeSafeDisplayBoundsFromInsets(
-            displayLeft: Int, displayTop: Int, displayRight: Int, displayBottom: Int,
-            leftInset: Int, topInset: Int, rightInset: Int, bottomInset: Int
-        ): WindowBounds {
-            val safeLeft = displayLeft + leftInset.coerceAtLeast(0)
-            val safeTop = displayTop + topInset.coerceAtLeast(0)
-            val safeRight = displayRight - rightInset.coerceAtLeast(0)
-            val safeBottom = displayBottom - bottomInset.coerceAtLeast(0)
-            return WindowBounds(safeLeft, safeTop, maxOf(300, safeRight - safeLeft), maxOf(400, safeBottom - safeTop))
-        }
-
-        fun computeSafeDisplayBoundsFromInsets(
-            displayRect: Rect, leftInset: Int, topInset: Int, rightInset: Int, bottomInset: Int
-        ): WindowBounds = computeSafeDisplayBoundsFromInsets(
-            displayRect.left, displayRect.top, displayRect.right, displayRect.bottom,
-            leftInset, topInset, rightInset, bottomInset
-        )
-
-        fun computeReachableDragPosition(
-            candidateX: Int, candidateY: Int, windowWidth: Int, windowHeight: Int,
-            safeBounds: WindowBounds, minVisibleGrabWidthPx: Int = 96, minVisibleTopBarHeightPx: Int = 32
-        ): Pair<Int, Int> {
-            val effectiveGrabW = minVisibleGrabWidthPx.coerceIn(32, maxOf(32, windowWidth))
-            val effectiveGrabH = minVisibleTopBarHeightPx.coerceIn(24, maxOf(24, windowHeight))
-            val minX = safeBounds.x - windowWidth + effectiveGrabW
-            val maxX = maxOf(minX, safeBounds.right - effectiveGrabW)
-            val minY = safeBounds.y
-            val maxY = maxOf(minY, safeBounds.bottom - effectiveGrabH)
-            return Pair(candidateX.coerceIn(minX, maxX), candidateY.coerceIn(minY, maxY))
-        }
 
 }
 
