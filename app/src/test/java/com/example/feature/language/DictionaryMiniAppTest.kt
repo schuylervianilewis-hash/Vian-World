@@ -234,7 +234,8 @@ class DictionaryMiniAppTest {
         val windowSrc = resolveProjectPath("app/src/main/java/com/example/feature/floating/FloatingMiniAppWindow.kt").readText()
         assertTrue(windowSrc.contains("tag = \"dictionary_topbar_edit_button\""))
         assertTrue(windowSrc.contains("launchDictionarySettings(instanceId)"))
-        assertFalse("Translation topbar Edit button must be removed from active app", windowSrc.contains("translation_topbar_edit_button"))
+        assertTrue("Translation topbar Edit button must open Translation Settings", windowSrc.contains("tag = \"translation_topbar_edit_button\""))
+        assertTrue(windowSrc.contains("launchDictionaryTranslationSettings(instanceId)"))
     }
 
     @Test
@@ -277,7 +278,7 @@ class DictionaryMiniAppTest {
         assertTrue(FloatingTriggerCompat.validateTarget(context, "system:dictionary_floating") is FloatingTriggerTargetValidation.ValidStandalone)
         assertTrue(FloatingTriggerCompat.validateTarget(context, "system:translation_floating") is FloatingTriggerTargetValidation.ValidStandalone)
         assertTrue(FloatingTriggerCompat.validateTarget(context, "page_window:dictionary") is FloatingTriggerTargetValidation.ValidStandalone)
-        assertTrue(FloatingTriggerCompat.validateTarget(context, "page_window:translation") is FloatingTriggerTargetValidation.Unsupported)
+        assertTrue(FloatingTriggerCompat.validateTarget(context, "page_window:translation") is FloatingTriggerTargetValidation.ValidStandalone)
 
         val gradleSrc = resolveProjectPath("app/build.gradle.kts").readText()
         assertTrue(gradleSrc.contains("com.google.mlkit:translate:17.0.3"))
