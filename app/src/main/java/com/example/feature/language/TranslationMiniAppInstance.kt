@@ -392,7 +392,7 @@ class TranslationMiniAppInstance(
     }
 
     /**
-     * Selects a source language by ML Kit code (e.g. `"es"`, `"auto"`) or display name (e.g. `"Spanish"`).
+     * Selects a source language by retained language code (e.g. `"es"`, `"auto"`) or display name (e.g. `"Spanish"`).
      */
     fun selectSourceLanguage(languageCodeOrName: String) {
         val ctx = hostContext ?: rootView?.context
@@ -419,7 +419,7 @@ class TranslationMiniAppInstance(
     }
 
     /**
-     * Selects a target language by ML Kit code (e.g. `"ja"`) or display name (e.g. `"Japanese"`).
+     * Selects a target language by retained language code (e.g. `"ja"`) or display name (e.g. `"Japanese"`).
      */
     fun selectTargetLanguage(languageCodeOrName: String) {
         val ctx = hostContext ?: rootView?.context
@@ -716,7 +716,7 @@ class TranslationMiniAppInstance(
             }
             if (filtered.isEmpty()) {
                 listHolder.addView(TextView(context).apply {
-                    text = "No matching ML Kit language"
+                    text = "No matching language"
                     textSize = 12f
                     setTextColor(LanguageMiniAppUiHelper.COLOR_TEXT_MUTED)
                     setPadding((8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
@@ -798,8 +798,8 @@ class TranslationMiniAppInstance(
                 LanguageMiniAppUiHelper.createStatusNoticeCard(
                     context = context,
                     badgeText = "$srcName → $tgtName",
-                    titleText = "Translating on device...",
-                    bodyText = "Running local ML Kit language detection and translation..."
+                    titleText = "Checking Translation availability...",
+                    bodyText = "The Translation engine is not included in this build."
                 ).apply { tag = TAG_LOADING_STATE }
             )
             return
@@ -914,7 +914,7 @@ class TranslationMiniAppInstance(
                     context = context,
                     badgeText = "MODEL REQUIRED FOR OFFLINE TRANSLATION",
                     titleText = "Missing language model: $missingNames",
-                    bodyText = "${detectedPrefix}Download the required ML Kit on-device model(s) before translating locally.$extraErr",
+                    bodyText = "${detectedPrefix}Offline model support is unavailable in this build.$extraErr",
                     actionLabel = if (downloadStatusMessage != null) "Retry Download" else "Download Model(s)",
                     actionTag = TAG_DOWNLOAD_MODEL_BUTTON,
                     onActionClick = {
@@ -953,7 +953,7 @@ class TranslationMiniAppInstance(
                         context = context,
                         badgeText = "UNSUPPORTED LANGUAGE",
                         titleText = "Language '${outcome.detectedLanguageTag}' is not supported",
-                        bodyText = "Detected language '${outcome.detectedLanguageTag}' is not supported by on-device ML Kit Translation."
+                        bodyText = "Detected language '${outcome.detectedLanguageTag}' is not supported by the configured Translation engine."
                     )
                 )
             }
