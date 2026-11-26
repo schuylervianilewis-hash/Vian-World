@@ -1,3 +1,48 @@
+package com.example.feature.settings
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.example.feature.language.translation.TranslationService
+import com.example.feature.language.translation.TranslationConfig
+
+/**
+ * Preserved Translation settings controls. Engine execution and model operations are unavailable
+ * in this build; language preferences remain stored and all controls are visibly disabled.
+ */
 @Composable
 fun TranslationSettingsDisabledSection(
     enabled: Boolean,
@@ -7,7 +52,7 @@ fun TranslationSettingsDisabledSection(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("settings_section_translation"),
+            .testTag("translation_settings_disabled_controls"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
@@ -69,25 +114,13 @@ fun TranslationSettingsDisabledSection(
     }
 }
 
-/**
- * Preserved Compose layout for language preferences and offline-model management. Its interactive
- * controls are disabled by design; model actions are not reachable from this settings page.
- */
 @Composable
 fun TranslationSettingsSectionReference() {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val translationService = remember(context) { TranslationService.getInstance(context) }
 
     var translationConfig by remember { mutableStateOf(TranslationConfig()) }
     val downloadedLanguages by translationService.downloadedLanguages.collectAsState()
-    val modelStates by translationService.modelStates.collectAsState()
-    var translationFeedback by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
-    var isRefreshingModels by remember { mutableStateOf(false) }
-    var showSourcePicker by remember { mutableStateOf(false) }
-    var showTargetPicker by remember { mutableStateOf(false) }
-    var showModelsBrowser by remember { mutableStateOf(false) }
-    var modelPendingDelete by remember { mutableStateOf<LanguageOption?>(null) }
 
     val sourceLanguageOptions = remember(translationService) {
         translationService.getSupportedSourceLanguages()
@@ -96,22 +129,6 @@ fun TranslationSettingsSectionReference() {
         translationService.getSupportedTargetLanguages()
     }
 
-    fun refreshTranslationModels() {
-        if (isRefreshingModels) return
-        coroutineScope.launch {
-            isRefreshingModels = true
-            val res = withContext(Dispatchers.IO) {
-                translationService.refreshDownloadedModels()
-            }
-            if (res.isFailure) {
-                translationFeedback = false to (
-                    res.exceptionOrNull()?.message
-                        ?: "Could not query downloaded ML Kit language models."
-                    )
-            }
-            isRefreshingModels = false
-        }
-    }
 
     LaunchedEffect(Unit) {
         translationConfig = withContext(Dispatchers.IO) {
@@ -133,7 +150,7 @@ fun TranslationSettingsSectionReference() {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("translation_settings_disabled_controls"),
+            .testTag("settings_section_translation"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
@@ -361,90 +378,6 @@ fun TranslationSettingsSectionReference() {
             }
         }
     }
-
-    if (showSourcePicker) {
-        LanguageSelectionDialog(
-            title = "Default Source Language",
-            options = sourceLanguageOptions,
-            selectedCode = translationConfig.sourceLanguageCode,
-            downloadedCodes = downloadedLanguages,
-            onSelect = { code ->
-                showSourcePicker = false
-                coroutineScope.launch {
-                    translationConfig = withContext(Dispatchers.IO) {
-                        translationService.updateConfig(sourceLanguageCode = code)
-                    }
-                }
-            },
-            onDismiss = { showSourcePicker = false }
-        )
-    }
-
-    if (showTargetPicker) {
-        LanguageSelectionDialog(
-            title = "Default Target Language",
-            options = targetLanguageOptions,
-            selectedCode = translationConfig.targetLanguageCode,
-            downloadedCodes = downloadedLanguages,
-            onSelect = { code ->
-                showTargetPicker = false
-                coroutineScope.launch {
-                    translationConfig = withContext(Dispatchers.IO) {
-                        translationService.updateConfig(targetLanguageCode = code)
-                    }
-                }
-            },
-            onDismiss = { showTargetPicker = false }
-        )
-    }
-
-    if (showModelsBrowser) {
-        TranslationModelsBrowserDialog(
-            languages = targetLanguageOptions,
-            downloadedCodes = downloadedLanguages,
-            modelStates = modelStates,
-            wifiOnlyDownloads = translationConfig.wifiOnlyDownloads,
-            onDownload = { code ->
-                translationFeedback = null
-                coroutineScope.launch {
-                    val res = withContext(Dispatchers.IO) {
-                        translationService.downloadModel(code)
-                    }
-                    val langName = translationService.getLanguageDisplayName(code)
-                    translationFeedback = if (res.isSuccess) {
-                        true to "Downloaded $langName offline model."
-                    } else {
-                        false to (res.exceptionOrNull()?.message ?: "Failed to download $langName model.")
-                    }
-                }
-            },
-            onRequestDelete = { lang -> modelPendingDelete = lang },
-            onDismiss = { showModelsBrowser = false }
-        )
-    }
-
-    modelPendingDelete?.let { lang ->
-        ConfirmDeleteDialog(
-            title = "Delete Language Model?",
-            message = "Remove the offline ${lang.displayName} (${lang.code.uppercase()}) ML Kit model from this device? You can re-download it later.",
-            onConfirm = {
-                modelPendingDelete = null
-                coroutineScope.launch {
-                    val res = withContext(Dispatchers.IO) {
-                        translationService.deleteModel(lang.code)
-                    }
-                    translationFeedback = if (res.isSuccess) {
-                        true to "Deleted ${lang.displayName} offline model."
-                    } else {
-                        false to (res.exceptionOrNull()?.message ?: "Failed to delete ${lang.displayName} model.")
-                    }
-                }
-            },
-            onDismiss = { modelPendingDelete = null }
-        )
-    }
-}
-
 
 @Composable
 private fun LanguagePreferenceRow(
