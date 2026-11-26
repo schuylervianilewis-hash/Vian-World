@@ -84,6 +84,7 @@ fun DictionarySettingsScreen(
     var dictionaryMasterEnabled by remember { mutableStateOf(true) }
     var translationMasterEnabled by remember { mutableStateOf(false) }
     var featureSwitchFeedback by remember { mutableStateOf<String?>(null) }
+    var featureSettingsLoaded by remember { mutableStateOf(false) }
 
     fun reloadDictionaries() {
         coroutineScope.launch {
@@ -97,6 +98,7 @@ fun DictionarySettingsScreen(
         val featureState = withContext(Dispatchers.IO) { featureSettings.getState() }
         dictionaryMasterEnabled = featureState.dictionaryEnabled
         translationMasterEnabled = featureState.translationEnabled
+        featureSettingsLoaded = true
         dictionaries = withContext(Dispatchers.IO) {
             dictionaryService.getInstalledDictionaries()
         }
@@ -220,6 +222,7 @@ fun DictionarySettingsScreen(
                         }
                         Switch(
                             checked = dictionaryMasterEnabled,
+                            enabled = featureSettingsLoaded,
                             onCheckedChange = { enabled ->
                                 coroutineScope.launch {
                                     val saved = withContext(Dispatchers.IO) {
@@ -399,6 +402,7 @@ fun DictionarySettingsScreen(
 
             TranslationSettingsDisabledSection(
                 enabled = translationMasterEnabled,
+                switchEnabled = featureSettingsLoaded,
                 onEnabledChange = { enabled ->
                     coroutineScope.launch {
                         val saved = withContext(Dispatchers.IO) {
