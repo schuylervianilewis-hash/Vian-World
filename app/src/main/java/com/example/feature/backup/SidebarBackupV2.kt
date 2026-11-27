@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.appwidget.AppWidgetManager
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Base64
 import com.example.core.HandleGestures
 import com.example.core.HandleManager
@@ -23,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.ByteArrayOutputStream
 
 /**
  * Complete, explicitly allowlisted Sidebar backup schema.
@@ -455,11 +458,12 @@ object SidebarBackupV2 {
                 metadata.browserPackage?.takeIf { it.isNotBlank() }?.let { item.put("browserPackage", it) }
                 metadata.account?.takeIf { it.isNotBlank() }?.let { item.put("account", it) }
                 val iconFile = metadata.iconPath.takeIf { it.isNotBlank() }?.let(::File)
-                if (iconFile != null && iconFile.exists()) {
-                    require(iconFile.isFile && iconFile.length() in 1..MAX_ICON_BYTES.toLong()) {
-                        "A Sidebar element icon is too large or unreadable to back up: ${metadata.id}"
+                if (iconFile != null) {
+                    require(iconFile.isFile && iconFile.exists()) {
+                        "A Sidebar element icon is missing or unreadable: ${metadata.id}"
                     }
-                    item.put("iconBase64", Base64.encodeToString(iconFile.readBytes(), Base64.NO_WRAP))
+                    val backupBytes = compressIconForBackup(iconFile, MAX_ICON_BYTES)
+                    item.put("iconBase64", Base64.encodeToString(backupBytes, Base64.NO_WRAP))
                 }
                 put(item)
             }
@@ -468,26 +472,89 @@ object SidebarBackupV2 {
 
     private fun exportCustomIconFiles(context: Context): JSONArray {
         val dir = File(context.filesDir, "custom_icons")
-        val files = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".webp", ignoreCase = true) }.orEmpty()
+        val listed = if (dir.exists()) dir.listFiles()
+            ?: error("Sidebar custom icon directory cannot be read")
+        else emptyArray()
+        val files = listed.filter { it.isFile && it.name.endsWith(".webp", ignoreCase = true) }
         require(files.size <= MAX_CUSTOM_ICONS) { "Too many Sidebar custom icons" }
         var totalBytes = 0L
         return JSONArray().apply {
             files.sortedBy { it.name }.forEach { file ->
                 require(safeIconNamePattern.matches(file.name)) { "Invalid custom icon filename" }
-                require(file.length() in 1..MAX_CUSTOM_ICON_BYTES.toLong()) {
-                    "A Sidebar custom icon is too large to back up: ${file.name}"
-                }
-                totalBytes += file.length()
+                val backupBytes = compressIconForBackup(file, MAX_CUSTOM_ICON_BYTES)
+                totalBytes += backupBytes.size
                 require(totalBytes <= MAX_CUSTOM_ICON_TOTAL_BYTES) {
-                    "Sidebar custom icons exceed the backup size limit"
+                    "Sidebar custom icons exceed the backup size limit after compression"
                 }
                 put(
                     JSONObject()
                         .put("fileName", file.name)
-                        .put("base64", Base64.encodeToString(file.readBytes(), Base64.NO_WRAP))
+                        .put("base64", Base64.encodeToString(backupBytes, Base64.NO_WRAP))
                 )
             }
         }
+    }
+
+    /**
+     * Creates a backup-only, aspect-ratio-preserving compressed image. The source file is
+     * never rewritten. Alpha is retained for transparent images; corrupt or unsupported files
+     * fail with a precise error instead of being silently omitted.
+     */
+    private fun compressIconForBackup(file: File, maxBytes: Int): ByteArray {
+        require(file.isFile && file.exists() && file.length() > 0L) {
+            "Icon file is missing or empty: ${file.name}"
+        }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) {
+            "Icon file is not a readable bitmap: ${file.name}"
+        }
+
+        var sampleSize = 1
+        while (maxOf(bounds.outWidth / sampleSize, bounds.outHeight / sampleSize) > 1024) {
+            sampleSize *= 2
+        }
+        val decoded = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+        ) ?: error("Icon file could not be decoded: ${file.name}")
+
+        val extension = file.extension.lowercase()
+        val format = when {
+            extension == "webp" -> Bitmap.CompressFormat.WEBP
+            extension in setOf("jpg", "jpeg") && !decoded.hasAlpha() -> Bitmap.CompressFormat.JPEG
+            else -> Bitmap.CompressFormat.PNG
+        }
+        var working = decoded
+        var quality = 90
+        try {
+            repeat(12) {
+                val output = ByteArrayOutputStream()
+                val encoded = working.compress(
+                    format,
+                    if (format == Bitmap.CompressFormat.PNG) 100 else quality,
+                    output
+                )
+                require(encoded) { "Icon compression failed: ${file.name}" }
+                val bytes = output.toByteArray()
+                if (bytes.size in 1..maxBytes) return bytes
+
+                val nextWidth = (working.width * 3 / 4).coerceAtLeast(1)
+                val nextHeight = (working.height * 3 / 4).coerceAtLeast(1)
+                if (nextWidth == working.width && nextHeight == working.height) break
+                val scaled = Bitmap.createScaledBitmap(working, nextWidth, nextHeight, true)
+                if (working !== decoded && working !== scaled) working.recycle()
+                working = scaled
+                quality = 90
+            }
+        } finally {
+            if (working !== decoded) working.recycle()
+            decoded.recycle()
+        }
+        error("Icon remains larger than the backup limit after compression: ${file.name}")
     }
 
     private fun exportScheduler(context: Context, prefs: SharedPreferences): JSONObject {
