@@ -391,11 +391,21 @@ object IconCacheManager {
             }
 
             val file = getCustomIconFile(context, targetId)
-            FileOutputStream(file).use { output ->
-                if (!bitmap.compress(Bitmap.CompressFormat.WEBP, 90, output)) {
-                    file.delete()
-                    return@withContext null
+            val tempFile = File(file.parentFile, "${file.name}.tmp")
+            try {
+                FileOutputStream(tempFile).use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.WEBP, 90, output)) {
+                        throw IllegalStateException("Bitmap encoder rejected the app icon")
+                    }
+                    output.fd.sync()
                 }
+                if (!tempFile.renameTo(file)) {
+                    tempFile.copyTo(file, overwrite = true)
+                    tempFile.delete()
+                }
+            } catch (error: Exception) {
+                tempFile.delete()
+                throw error
             }
             val displayBitmap = SquircleHelper.toSquircleBitmap(bitmap)
             memoryCache.put("custom_$targetId", displayBitmap)
