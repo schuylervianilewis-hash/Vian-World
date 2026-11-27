@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 /** Shared package-based allow-list for Vian visual overlays. Unlisted apps are allowed. */
 object OverlayAccessPolicy {
     const val ACTION_POLICY_CHANGED = "com.example.action.OVERLAY_POLICY_CHANGED"
+    const val ACTION_FOREGROUND_OBSERVED = "com.example.action.FOREGROUND_OBSERVED"
     const val EXTRA_EXCLUDED_PACKAGES = "excluded_packages"
     const val EXTRA_FOREGROUND_PACKAGE = "foreground_package"
     const val EXTRA_FOREGROUND_OBSERVED_AT = "foreground_observed_at"
@@ -21,7 +22,6 @@ object OverlayAccessPolicy {
 
     @Volatile private var excludedPackagesCache: Set<String>? = null
     @Volatile private var foregroundPackageCache: String? = null
-    @Volatile private var foregroundObservedAtCache: Long? = null
     @Volatile private var receiverRegistered = false
 
     fun getExcludedPackages(context: Context): Set<String> {
@@ -83,7 +83,6 @@ object OverlayAccessPolicy {
         // Read persisted time on every check because the foreground observer and App
         // Tracker may run in different processes.
         val observedAt = prefs.getLong(KEY_FOREGROUND_OBSERVED_AT, 0L)
-        foregroundObservedAtCache = observedAt
         val age = System.currentTimeMillis() - observedAt
         if (observedAt <= 0L || age !in 0..maxAgeMillis) return null
         val packageName = prefs.getString(KEY_FOREGROUND_PACKAGE, "").orEmpty()
@@ -94,40 +93,43 @@ object OverlayAccessPolicy {
     /** The app's own process is never excluded, so the user can always reopen settings. */
     fun updateForegroundPackage(context: Context, packageName: String?) {
         val normalized = packageName.orEmpty().takeUnless { it == context.packageName }.orEmpty()
+        val previous = getForegroundPackage(context)
         val now = System.currentTimeMillis()
-        foregroundObservedAtCache = now
         foregroundPackageCache = normalized
         getPrefs(context).edit()
             .putLong(KEY_FOREGROUND_OBSERVED_AT, now)
             .putString(KEY_FOREGROUND_PACKAGE, normalized)
             .apply()
-        // Broadcast the observation timestamp as well as the package so the :heavy process
-        // can enforce freshness without relying on cross-process SharedPreferences cache state.
+        val action = if (previous != normalized) ACTION_POLICY_CHANGED else ACTION_FOREGROUND_OBSERVED
         send(
             context,
-            Intent(ACTION_POLICY_CHANGED)
+            Intent(action)
                 .putExtra(EXTRA_FOREGROUND_PACKAGE, normalized)
                 .putExtra(EXTRA_FOREGROUND_OBSERVED_AT, now)
         )
     }
 
     fun applyBroadcast(context: Context, intent: Intent?) {
-        if (intent?.action != ACTION_POLICY_CHANGED) return
-        intent.getStringArrayListExtra(EXTRA_EXCLUDED_PACKAGES)?.let { values ->
-            val updated = values.toSet()
-            excludedPackagesCache = updated
-            getPrefs(context).edit().putStringSet(KEY_EXCLUDED_PACKAGES, updated).commit()
+        val action = intent?.action ?: return
+        if (action != ACTION_POLICY_CHANGED && action != ACTION_FOREGROUND_OBSERVED) return
+        if (action == ACTION_POLICY_CHANGED) {
+            intent.getStringArrayListExtra(EXTRA_EXCLUDED_PACKAGES)?.let { values ->
+                val updated = values.toSet()
+                excludedPackagesCache = updated
+                getPrefs(context).edit().putStringSet(KEY_EXCLUDED_PACKAGES, updated).apply()
+            }
         }
         if (intent.hasExtra(EXTRA_FOREGROUND_PACKAGE)) {
             val foreground = intent.getStringExtra(EXTRA_FOREGROUND_PACKAGE).orEmpty()
             foregroundPackageCache = foreground
             val editor = getPrefs(context).edit().putString(KEY_FOREGROUND_PACKAGE, foreground)
             if (intent.hasExtra(EXTRA_FOREGROUND_OBSERVED_AT)) {
-                val observedAt = intent.getLongExtra(EXTRA_FOREGROUND_OBSERVED_AT, 0L)
-                foregroundObservedAtCache = observedAt
-                editor.putLong(KEY_FOREGROUND_OBSERVED_AT, observedAt)
+                editor.putLong(
+                    KEY_FOREGROUND_OBSERVED_AT,
+                    intent.getLongExtra(EXTRA_FOREGROUND_OBSERVED_AT, 0L)
+                )
             }
-            editor.commit()
+            editor.apply()
         }
     }
 
@@ -141,11 +143,16 @@ object OverlayAccessPolicy {
                 override fun onReceive(ctx: Context?, intent: Intent?) {
                     val safeContext = ctx ?: appContext
                     applyBroadcast(safeContext, intent)
-                    onChanged(isForegroundExcluded(safeContext))
+                    if (intent?.action != ACTION_FOREGROUND_OBSERVED) {
+                        onChanged(isForegroundExcluded(safeContext))
+                    }
                 }
             }
             ContextCompat.registerReceiver(
-                appContext, receiver, IntentFilter(ACTION_POLICY_CHANGED),
+                appContext, receiver, IntentFilter().apply {
+                    addAction(ACTION_POLICY_CHANGED)
+                    addAction(ACTION_FOREGROUND_OBSERVED)
+                },
                 ContextCompat.RECEIVER_NOT_EXPORTED
             )
             receiverRegistered = true
