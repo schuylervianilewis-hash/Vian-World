@@ -62,8 +62,8 @@ class TriggerHandleView(
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (gestureHandled) return false
-            gestureHandled = true
             if (config.onDoubleTapAction != HandleManager.ACTION_NONE) {
+                gestureHandled = true
                 performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                 onGestureAction(config.onDoubleTapAction, HandleGestures.DOUBLE_TAP, config)
                 return true
