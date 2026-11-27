@@ -215,6 +215,8 @@ class HeavyPageHostManager private constructor(private val context: Context) {
                         LogKeeper.log(context, TAG, "Instantiating CalculatorPageView in :heavy for pageId='$pageId'")
                         CalculatorPageView(context) { newH ->
                             reportDesiredPageHeight(pageId, newH)
+                        }.apply {
+                            onHorizontalPageSwipe = { direction -> reportHorizontalPageSwipe(pageId, direction) }
                         }
                     }
                     "hybrid_grid", "default_hybrid", "tools" -> {
@@ -442,6 +444,23 @@ class HeavyPageHostManager private constructor(private val context: Context) {
     /**
      * Reports real content height calculated by a Heavy page back to Main across Binder.
      */
+    /** Forwards a completed Calculator swipe to Main, where the owning ViewPager2 lives. */
+    private fun reportHorizontalPageSwipe(pageId: String, direction: Int) {
+        if (direction != -1 && direction != 1) return
+        val event = HeavyEvent(
+            eventId = "swipe_${pageId}_${System.currentTimeMillis()}",
+            type = HeavyEventType.STATE_UPDATED,
+            sourceId = pageId,
+            payload = mapOf(
+                "action" to ACTION_PAGE_HORIZONTAL_SWIPE,
+                "pageId" to pageId,
+                "direction" to direction.toString()
+            )
+        )
+        LogKeeper.log(context, TAG, "Forwarding Calculator page swipe pageId=$pageId direction=$direction to Main")
+        HeavyProcessHost.getInstance(context).reportEvent(event)
+    }
+
     private fun reportDesiredPageHeight(pageId: String, newHeight: Int) {
         if (newHeight <= 0) return
         val previous = lastReportedHeights[pageId]
@@ -601,6 +620,7 @@ class HeavyPageHostManager private constructor(private val context: Context) {
                         CalculatorPageView(context) { newH ->
                             reportDesiredPageHeight(pageId, newH)
                         }.apply {
+                            onHorizontalPageSwipe = { direction -> reportHorizontalPageSwipe(pageId, direction) }
                             if (backgroundColor != 0) {
                                 applyThemeBackground(backgroundColor, isRight)
                             }
@@ -1045,6 +1065,7 @@ class HeavyPageHostManager private constructor(private val context: Context) {
     companion object {
         private const val TAG = "HeavyPageHostManager"
         const val ACTION_PAGE_HEIGHT_CHANGED = "page_height_changed"
+        const val ACTION_PAGE_HORIZONTAL_SWIPE = "page_horizontal_swipe"
 
         @Volatile
         private var instance: HeavyPageHostManager? = null

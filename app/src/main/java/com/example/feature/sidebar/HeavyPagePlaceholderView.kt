@@ -13,12 +13,14 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.view.ViewParent
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.RequiresApi
 import androidx.viewpager2.widget.ViewPager2
 import com.example.core.LogKeeper
+import com.example.feature.heavy.page.HeavyPageHostManager
 import com.example.core.SidebarPage
 import com.example.core.ipc.HeavyCommand
 import com.example.core.ipc.HeavyCommandType
@@ -26,6 +28,19 @@ import com.example.core.ipc.HeavyConnectionListener
 import com.example.core.ipc.HeavyEvent
 import com.example.core.ipc.HeavyProcessConnectionManager
 import java.util.UUID
+
+/** Resolves one page move for finite pagers and the Int.MAX_VALUE looped Sidebar adapter. */
+internal fun resolvePageSwipeTarget(currentItem: Int, itemCount: Int, direction: Int): Int? {
+    if (itemCount <= 1 || direction == 0 || direction !in -1..1 || currentItem !in 0 until itemCount) return null
+    if (itemCount == Int.MAX_VALUE) {
+        val candidate = currentItem.toLong() + direction.toLong()
+        return candidate.takeIf { it >= 0L && it < itemCount.toLong() }?.toInt()
+    }
+    val candidate = (currentItem.toLong() + direction.toLong())
+        .coerceIn(0L, itemCount.toLong() - 1L)
+        .toInt()
+    return candidate.takeIf { it != currentItem }
+}
 
 /**
  * HeavyPagePlaceholderView: Lightweight Main-process placeholder for pages hosted in :heavy (e.g. Calculator).
@@ -359,14 +374,46 @@ class HeavyPagePlaceholderView(
     override fun onHeavyEvent(event: HeavyEvent) {
         val action = event.payload["action"]
         val targetPageId = event.payload["pageId"] ?: event.sourceId
-        if (action == "page_height_changed" && targetPageId == config.id) {
-            val reportedH = event.payload["height"]?.toIntOrNull() ?: return
-            if (reportedH > 0) {
+        if (targetPageId != config.id) return
+
+        when (action) {
+            "page_height_changed" -> {
+                val reportedH = event.payload["height"]?.toIntOrNull() ?: return
+                if (reportedH > 0) {
+                    post {
+                        applyDesiredHeight(reportedH)
+                    }
+                }
+            }
+            HeavyPageHostManager.ACTION_PAGE_HORIZONTAL_SWIPE -> {
+                val direction = event.payload["direction"]?.toIntOrNull() ?: return
+                if (direction != -1 && direction != 1) return
                 post {
-                    applyDesiredHeight(reportedH)
+                    if (!isSelected) return@post
+                    val pager = findParentViewPager2() ?: return@post
+                    val target = resolvePageSwipeTarget(
+                        currentItem = pager.currentItem,
+                        itemCount = pager.adapter?.itemCount ?: 0,
+                        direction = direction
+                    ) ?: return@post
+                    LogKeeper.log(
+                        context,
+                        TAG,
+                        "Applying Heavy Calculator swipe to ViewPager2 pageId=${config.id} target=$target direction=$direction"
+                    )
+                    pager.setCurrentItem(target, true)
                 }
             }
         }
+    }
+
+    private fun findParentViewPager2(): ViewPager2? {
+        var ancestor: ViewParent? = parent
+        while (ancestor != null) {
+            if (ancestor is ViewPager2) return ancestor
+            ancestor = ancestor.parent
+        }
+        return null
     }
 
     fun getReportedDesiredHeightPx(): Int = desiredHeightPx.takeIf { it > 0 } ?: pendingDesiredHeightPx.takeIf { it > 0 } ?: 0

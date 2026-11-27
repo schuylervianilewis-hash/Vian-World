@@ -1019,5 +1019,39 @@ class HeavyCalculatorSplitTest {
         val bg = gridView.themeBackgroundDrawable ?: gridView.background
         assertTrue("Heavy Hybrid Grid must have GradientDrawable background", bg is android.graphics.drawable.GradientDrawable)
     }
-}
 
+    @Test
+    fun testCalculatorHorizontalSwipeDetectorPrioritizesScrollableDisplayAndReportsDirection() {
+        val detector = CalculatorHorizontalSwipeDetector(touchSlopPx = 8f, minimumSwipeDistancePx = 24f)
+
+        detector.onDown(100f, 100f)
+        assertFalse("Expression/result scroll keeps priority while it can scroll", detector.onMove(70f, 102f, childCanScroll = true))
+        assertTrue("Page swipe takes over once the display reaches its scroll edge", detector.onMove(60f, 103f, childCanScroll = false))
+        assertEquals("Swipe left advances to the next page", 1, detector.onUp(40f, 103f))
+
+        detector.onDown(100f, 100f)
+        assertTrue(detector.onMove(130f, 101f, childCanScroll = false))
+        assertEquals("Swipe right moves to the previous page", -1, detector.onUp(160f, 101f))
+
+        detector.onDown(100f, 100f)
+        assertFalse("Vertical gestures must not be captured as page swipes", detector.onMove(102f, 140f, childCanScroll = false))
+        assertNull(detector.onUp(102f, 140f))
+
+        detector.onDown(100f, 100f)
+        assertTrue(detector.onMove(90f, 100f, childCanScroll = false))
+        assertNull("A short horizontal drag must not change pages", detector.onUp(90f, 100f))
+    }
+
+    @Test
+    fun testHeavyPageSwipeTargetHandlesFiniteAndLoopedViewPagers() {
+        assertEquals(1, resolvePageSwipeTarget(currentItem = 0, itemCount = 3, direction = 1))
+        assertEquals(0, resolvePageSwipeTarget(currentItem = 1, itemCount = 3, direction = -1))
+        assertNull("Finite pager clamps at its first page", resolvePageSwipeTarget(0, 3, -1))
+        assertNull("Finite pager clamps at its last page", resolvePageSwipeTarget(2, 3, 1))
+        assertNull("A single-page Sidebar has no adjacent page", resolvePageSwipeTarget(0, 1, 1))
+        assertEquals(
+            Int.MAX_VALUE / 2 + 1,
+            resolvePageSwipeTarget(Int.MAX_VALUE / 2, Int.MAX_VALUE, 1)
+        )
+    }
+}

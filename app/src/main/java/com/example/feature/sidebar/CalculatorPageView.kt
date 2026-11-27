@@ -13,6 +13,8 @@ import android.text.style.StyleSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -22,6 +24,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.example.R
 import java.text.DecimalFormat
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -42,6 +45,18 @@ class CalculatorPageView(
     private val layoutExtendedDrawer: View
     private val ivDrawerArrow: ImageView
     private val btnCopyResult: ImageView?
+
+    /** Receives a completed horizontal page swipe detected inside the Heavy-hosted Calculator. */
+    internal var onHorizontalPageSwipe: ((Int) -> Unit)? = null
+
+    private var gestureDownX = 0f
+    private var gestureDownY = 0f
+    private var isPageSwipeCaptured = false
+    private val horizontalSwipeDetector by lazy {
+        val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+        val minimumDistance = maxOf(touchSlop * 2f, 48f * resources.displayMetrics.density)
+        CalculatorHorizontalSwipeDetector(touchSlop, minimumDistance)
+    }
 
     init {
         layoutParams = ViewGroup.LayoutParams(
@@ -144,6 +159,87 @@ class CalculatorPageView(
             }
         }
         background = bgDrawable
+    }
+
+    /**
+     * Calculator runs in :heavy, behind a SurfaceControlViewHost or a legacy overlay. Its touch
+     * stream never reaches Main's ViewPager2 parent, so forward completed horizontal swipes over
+     * Binder while leaving taps and the display's own horizontal scrolling intact.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                gestureDownX = event.x
+                gestureDownY = event.y
+                isPageSwipeCaptured = false
+                horizontalSwipeDetector.onDown(event.x, event.y)
+                super.dispatchTouchEvent(event)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.x - gestureDownX
+                if (!isPageSwipeCaptured && horizontalSwipeDetector.onMove(
+                        event.x,
+                        event.y,
+                        canDisplayScrollAtGestureStart(dx)
+                    )
+                ) {
+                    isPageSwipeCaptured = true
+                    val cancelEvent = MotionEvent.obtain(event)
+                    try {
+                        cancelEvent.action = MotionEvent.ACTION_CANCEL
+                        super.dispatchTouchEvent(cancelEvent)
+                    } finally {
+                        cancelEvent.recycle()
+                    }
+                    return true
+                }
+                if (!isPageSwipeCaptured) super.dispatchTouchEvent(event)
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (isPageSwipeCaptured) {
+                    val direction = horizontalSwipeDetector.onUp(event.x, event.y)
+                    isPageSwipeCaptured = false
+                    direction?.let { onHorizontalPageSwipe?.invoke(it) }
+                    return true
+                }
+                super.dispatchTouchEvent(event)
+                horizontalSwipeDetector.reset()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                val wasCaptured = isPageSwipeCaptured
+                isPageSwipeCaptured = false
+                horizontalSwipeDetector.reset()
+                if (!wasCaptured) super.dispatchTouchEvent(event)
+                return true
+            }
+            else -> {
+                if (!isPageSwipeCaptured) super.dispatchTouchEvent(event)
+                return true
+            }
+        }
+    }
+
+    private fun canDisplayScrollAtGestureStart(dx: Float): Boolean {
+        if (dx == 0f) return false
+        val direction = if (dx > 0f) -1 else 1
+        return (isTouchInsideView(scrollExpression, gestureDownX, gestureDownY) &&
+            scrollExpression.canScrollHorizontally(direction)) ||
+            (isTouchInsideView(scrollResult, gestureDownX, gestureDownY) &&
+                scrollResult.canScrollHorizontally(direction))
+    }
+
+    private fun isTouchInsideView(view: View, x: Float, y: Float): Boolean {
+        val rootLocation = IntArray(2)
+        val viewLocation = IntArray(2)
+        getLocationOnScreen(rootLocation)
+        view.getLocationOnScreen(viewLocation)
+        val screenX = rootLocation[0] + x
+        val screenY = rootLocation[1] + y
+        return screenX >= viewLocation[0] && screenX < viewLocation[0] + view.width &&
+            screenY >= viewLocation[1] && screenY < viewLocation[1] + view.height
     }
 
     private fun notifyHeight() {
@@ -381,5 +477,54 @@ class CalculatorPageView(
                 return x
             }
         }.parse()
+    }
+}
+
+/** Pure gesture state machine so swipe thresholds and nested-scroll priority can be unit tested. */
+internal class CalculatorHorizontalSwipeDetector(
+    private val touchSlopPx: Float,
+    private val minimumSwipeDistancePx: Float
+) {
+    private var downX = 0f
+    private var downY = 0f
+    private var isTracking = false
+    private var isCaptured = false
+
+    fun onDown(x: Float, y: Float) {
+        downX = x
+        downY = y
+        isTracking = true
+        isCaptured = false
+    }
+
+    /** childCanScroll is evaluated in the finger's current horizontal direction. */
+    fun onMove(x: Float, y: Float, childCanScroll: Boolean): Boolean {
+        if (!isTracking || isCaptured) return isCaptured
+        val dx = x - downX
+        val dy = y - downY
+        if (abs(dx) > touchSlopPx && abs(dx) > abs(dy) && !childCanScroll) {
+            isCaptured = true
+        }
+        return isCaptured
+    }
+
+    /** Returns +1 for next page (swipe left), -1 for previous page (swipe right). */
+    fun onUp(x: Float, y: Float): Int? {
+        if (!isTracking) return null
+        val dx = x - downX
+        val direction = if (isCaptured && abs(dx) >= minimumSwipeDistancePx) {
+            if (dx < 0f) 1 else -1
+        } else {
+            null
+        }
+        reset()
+        return direction
+    }
+
+    fun reset() {
+        isTracking = false
+        isCaptured = false
+        downX = 0f
+        downY = 0f
     }
 }
