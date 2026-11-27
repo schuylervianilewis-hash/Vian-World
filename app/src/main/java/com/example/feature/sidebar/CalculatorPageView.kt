@@ -502,7 +502,11 @@ internal class CalculatorHorizontalSwipeDetector(
         if (!isTracking || isCaptured) return isCaptured
         val dx = x - downX
         val dy = y - downY
-        if (abs(dx) > touchSlopPx && abs(dx) > abs(dy) && !childCanScroll) {
+        if (abs(dx) > touchSlopPx &&
+            abs(dx) >= minimumSwipeDistancePx &&
+            abs(dx) > abs(dy) &&
+            !childCanScroll
+        ) {
             isCaptured = true
         }
         return isCaptured
