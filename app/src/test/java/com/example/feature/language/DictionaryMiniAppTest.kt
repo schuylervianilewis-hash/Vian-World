@@ -165,7 +165,7 @@ class DictionaryMiniAppTest {
     }
 
     @Test
-    fun testDictionaryLaunchesWithCompactBoundsAndSharedChrome() {
+    fun testDictionaryLaunchesWithSmallSquareBoundsAndSharedChrome() {
         assertTrue(bridge.isMainOnlyMiniApp("dictionary"))
         assertTrue("Translation is also Main-only", bridge.isMainOnlyMiniApp("translation"))
 
@@ -174,8 +174,9 @@ class DictionaryMiniAppTest {
 
         assertNotNull(dictWin.getBottomRightStickerViewForTesting())
         assertTrue(dictWin.isStickerResizeVisibleForTesting())
-        assertTrue("Dictionary initial width must fit screen compactly", dictWin.bounds.width in 200..960)
-        assertTrue("Dictionary initial height must be compact", dictWin.bounds.height < 850)
+        val expectedSize = (240f * context.resources.displayMetrics.density).toInt()
+        assertEquals("Dictionary initial width uses the common 240dp size", expectedSize, dictWin.bounds.width)
+        assertEquals("Dictionary initial height matches its width", dictWin.bounds.width, dictWin.bounds.height)
         assertNotNull(dictWin.getDictionaryInstanceForTesting())
     }
 
@@ -313,6 +314,11 @@ class DictionaryMiniAppTest {
         assertTrue(dictionaryService.importFromFile(zip) is DictionaryImportResult.Success)
 
         val firstWin = bridge.openDictionaryWithQuery("ephemeral")
+        assertEquals(
+            "A new Dictionary window opened from a selected word must also start square",
+            firstWin.bounds.width,
+            firstWin.bounds.height
+        )
         val firstInstance = firstWin.getDictionaryInstanceForTesting()!!
         assertEquals("miniapp_dictionary", firstWin.instanceId)
         assertEquals("ephemeral", firstInstance.getLastSubmittedQueryForTesting())
