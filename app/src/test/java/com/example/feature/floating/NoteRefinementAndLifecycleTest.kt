@@ -452,4 +452,78 @@ class NoteRefinementAndLifecycleTest {
         assertEquals("1.4", savedAfterRecovery.payload["line_spacing"])
         assertEquals("#A6E3A1", savedAfterRecovery.payload[NotePersistenceCoordinator.KEY_ACCENT_COLOR])
     }
+
+    @Test
+    fun testEveryNoteActivationPathSpawnsAnIndependentInstance() {
+        val dispatcher = resolveProjectPath(
+            "app/src/main/java/com/example/feature/element/ElementActionDispatcher.kt"
+        ).readText()
+
+        val pageWindow = dispatcher.substringAfter("is SidebarItem.PageWindow -> {")
+            .substringBefore("is SidebarItem.FloatingTrigger -> {")
+        val pageWindowNoteBranch = pageWindow
+            .substringAfter("if (baseType == \"test_notes\" || baseType == \"note\")")
+            .substringBefore("} else {")
+        assertTrue(
+            "Sidebar Note elements must create a fresh instance on each tap",
+            pageWindowNoteBranch.contains("openNewNoteInstance(baseType)")
+        )
+        assertTrue(
+            "Other PageWindow mini-apps must keep their existing toggle routing",
+            pageWindow.contains("MiniAppManager.toggleApp(context, baseType, instanceId)")
+        )
+
+        val systemAction = dispatcher.substringAfter("internal fun handleSystemAction")
+            .substringBefore("return when (action)")
+        val systemNoteBranch = systemAction
+            .substringAfter("if (action == \"test_notes\"")
+            .substringBefore("return true")
+        assertTrue(
+            "SystemAction Note must create a fresh instance on each activation",
+            systemNoteBranch.contains("openNewNoteInstance(baseType)")
+        )
+        assertFalse(
+            "SystemAction Note must not toggle/reuse the stable default instance",
+            systemNoteBranch.contains("MiniAppManager.toggleApp")
+        )
+    }
+
+    @Test
+    fun testNewNoteInstancesHaveUniqueIdsAndIndependentPersistence() {
+        val first = bridge.openNewNoteInstance()
+        val second = bridge.openNewNoteInstance()
+
+        assertTrue("Each Note activation must create a different instance ID", first.instanceId != second.instanceId)
+        assertFalse("Each Note activation must create a different window object", first === second)
+        assertTrue(
+            "Staggered Notes must not occupy exactly the same starting position",
+            first.bounds.x != second.bounds.x || first.bounds.y != second.bounds.y
+        )
+
+        first.notePersistence.updateStateSnapshot(
+            text = "First independent note",
+            fontSize = 15f,
+            fontStyle = "regular",
+            wordWrap = true,
+            lineSpacing = 1f,
+            bounds = first.bounds
+        )
+        second.notePersistence.updateStateSnapshot(
+            text = "Second independent note",
+            fontSize = 17f,
+            fontStyle = "bold",
+            wordWrap = false,
+            lineSpacing = 1.2f,
+            bounds = second.bounds
+        )
+
+        assertEquals(
+            "First independent note",
+            store.loadSnapshot(first.instanceId)?.payload?.get(TestNotesMiniAppInstance.KEY_TEXT)
+        )
+        assertEquals(
+            "Second independent note",
+            store.loadSnapshot(second.instanceId)?.payload?.get(TestNotesMiniAppInstance.KEY_TEXT)
+        )
+    }
 }
