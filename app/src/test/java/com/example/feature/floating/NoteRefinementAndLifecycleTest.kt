@@ -508,6 +508,7 @@ class NoteRefinementAndLifecycleTest {
             lineSpacing = 1f,
             bounds = first.bounds
         )
+        first.notePersistence.scheduleDebouncedSave(0L)
         second.notePersistence.updateStateSnapshot(
             text = "Second independent note",
             fontSize = 17f,
@@ -516,6 +517,7 @@ class NoteRefinementAndLifecycleTest {
             lineSpacing = 1.2f,
             bounds = second.bounds
         )
+        second.notePersistence.scheduleDebouncedSave(0L)
 
         assertEquals(
             "First independent note",
