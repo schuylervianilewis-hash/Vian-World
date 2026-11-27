@@ -531,7 +531,7 @@ object SidebarBackupV2 {
         var working = decoded
         var quality = 90
         try {
-            repeat(12) {
+            for (attempt in 0 until 12) {
                 val output = ByteArrayOutputStream()
                 val encoded = working.compress(
                     format,
