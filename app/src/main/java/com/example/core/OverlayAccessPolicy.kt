@@ -13,6 +13,7 @@ object OverlayAccessPolicy {
     const val ACTION_POLICY_CHANGED = "com.example.action.OVERLAY_POLICY_CHANGED"
     const val EXTRA_EXCLUDED_PACKAGES = "excluded_packages"
     const val EXTRA_FOREGROUND_PACKAGE = "foreground_package"
+    const val EXTRA_FOREGROUND_OBSERVED_AT = "foreground_observed_at"
     private const val PREFS_NAME = "OverlayExclusionsPrefs"
     private const val KEY_EXCLUDED_PACKAGES = "excluded_packages"
     private const val KEY_FOREGROUND_PACKAGE = "foreground_package"
@@ -94,12 +95,21 @@ object OverlayAccessPolicy {
     fun updateForegroundPackage(context: Context, packageName: String?) {
         val normalized = packageName.orEmpty().takeUnless { it == context.packageName }.orEmpty()
         val now = System.currentTimeMillis()
+        val changed = getForegroundPackage(context) != normalized
         foregroundObservedAtCache = now
-        getPrefs(context).edit().putLong(KEY_FOREGROUND_OBSERVED_AT, now).apply()
-        if (getForegroundPackage(context) == normalized) return
         foregroundPackageCache = normalized
-        getPrefs(context).edit().putString(KEY_FOREGROUND_PACKAGE, normalized).apply()
-        send(context, Intent(ACTION_POLICY_CHANGED).putExtra(EXTRA_FOREGROUND_PACKAGE, normalized))
+        getPrefs(context).edit()
+            .putLong(KEY_FOREGROUND_OBSERVED_AT, now)
+            .putString(KEY_FOREGROUND_PACKAGE, normalized)
+            .apply()
+        // Broadcast the observation timestamp as well as the package so the :heavy process
+        // can enforce freshness without relying on cross-process SharedPreferences cache state.
+        send(
+            context,
+            Intent(ACTION_POLICY_CHANGED)
+                .putExtra(EXTRA_FOREGROUND_PACKAGE, normalized)
+                .putExtra(EXTRA_FOREGROUND_OBSERVED_AT, now)
+        )
     }
 
     fun applyBroadcast(context: Context, intent: Intent?) {
@@ -112,7 +122,13 @@ object OverlayAccessPolicy {
         if (intent.hasExtra(EXTRA_FOREGROUND_PACKAGE)) {
             val foreground = intent.getStringExtra(EXTRA_FOREGROUND_PACKAGE).orEmpty()
             foregroundPackageCache = foreground
-            getPrefs(context).edit().putString(KEY_FOREGROUND_PACKAGE, foreground).commit()
+            val editor = getPrefs(context).edit().putString(KEY_FOREGROUND_PACKAGE, foreground)
+            if (intent.hasExtra(EXTRA_FOREGROUND_OBSERVED_AT)) {
+                val observedAt = intent.getLongExtra(EXTRA_FOREGROUND_OBSERVED_AT, 0L)
+                foregroundObservedAtCache = observedAt
+                editor.putLong(KEY_FOREGROUND_OBSERVED_AT, observedAt)
+            }
+            editor.commit()
         }
     }
 
