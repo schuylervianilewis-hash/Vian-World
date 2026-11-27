@@ -186,6 +186,8 @@ class MainActivity : SimpleActivity(), FlingListener {
             if (isFinishing || isDestroyed) return
 
             LogCatcher.log("MainActivity", "Launcher backup restored; refreshing live home grid and folder previews")
+            // BackupHelper runs in :heavy; its IconCache.clear() cannot invalidate :home's process cache.
+            IconCache.clear()
             binding.homeScreenGrid.root.closeFolder(redraw = true)
             needsAppListRefresh = false
             ensureBackgroundThread { refreshLaunchers() }
