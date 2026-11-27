@@ -108,8 +108,8 @@ object AppTrackerHelper {
 
         // Covers an app already foregrounded before the bounded UsageEvents window.
         try {
-            val foreground = com.example.core.OverlayAccessPolicy.getForegroundPackage(context)
-            if (foreground.isNotBlank() && foreground != context.packageName) {
+            val foreground = com.example.core.OverlayAccessPolicy.getFreshForegroundPackage(context)
+            if (!foreground.isNullOrBlank() && foreground != context.packageName) {
                 candidateTimes[foreground] = now
             }
         } catch (_: Throwable) {
