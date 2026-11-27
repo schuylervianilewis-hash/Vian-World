@@ -25,6 +25,46 @@ import java.util.UUID
  *    tears down Heavy runtime (reaching 0 MB Heavy idle), and displays a lightweight launcher bubble in Main.
  * 5. Independent Geometry: Keeps persistent launcher buttonPosition and windowBounds strictly separate.
  */
+/**
+ * Shared default geometry for newly created floating mini-app windows.
+ * The normal window manager still performs its final inset-aware clamp when attaching the view.
+ */
+internal fun computeSmallSquareMiniAppBounds(
+    context: Context,
+    screenWidthPx: Int,
+    screenHeightPx: Int,
+    staggerSlot: Int = 0
+): WindowBounds {
+    val metrics = context.resources.displayMetrics
+    val density = metrics.density.takeIf { it > 0f } ?: 1f
+    val screenWidth = screenWidthPx.takeIf { it > 0 }
+        ?: metrics.widthPixels.takeIf { it > 0 }
+        ?: (360f * density).toInt().coerceAtLeast(1)
+    val screenHeight = screenHeightPx.takeIf { it > 0 }
+        ?: metrics.heightPixels.takeIf { it > 0 }
+        ?: (640f * density).toInt().coerceAtLeast(1)
+
+    val targetSize = (240f * density).toInt().coerceAtLeast(1)
+    val horizontalMargin = (16f * density).toInt()
+    val topMargin = (48f * density).toInt()
+    val bottomMargin = (72f * density).toInt()
+    val availableWidth = (screenWidth - horizontalMargin * 2).coerceAtLeast(1)
+    val availableHeight = (screenHeight - topMargin - bottomMargin).coerceAtLeast(1)
+    val size = minOf(targetSize, availableWidth, availableHeight)
+
+    val maxX = (screenWidth - size - horizontalMargin).coerceAtLeast(0)
+    val minX = horizontalMargin.coerceAtMost(maxX)
+    val maxY = (screenHeight - size - bottomMargin).coerceAtLeast(0)
+    val minY = topMargin.coerceAtMost(maxY)
+    val slot = staggerSlot.coerceIn(0, 5)
+    val stepPx = (28f * density).toInt().coerceAtLeast(1)
+    val offset = slot * stepPx
+    val x = ((screenWidth - size) / 2 + offset).coerceIn(minX, maxX)
+    val y = ((screenHeight - size) / 2 + offset).coerceIn(minY, maxY)
+
+    return WindowBounds(x, y, size, size)
+}
+
 class FloatingMiniAppBridge private constructor(private val context: Context) {
 
     private val windowManager = FloatingWindowManager.getInstance(context)
@@ -349,22 +389,16 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
     fun openNewNoteInstance(appType: String = "test_notes"): FloatingMiniAppWindow {
         val normalizedType = if (appType == "note") "test_notes" else appType
         val newInstanceId = "note_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(4)}"
-        val density = context.resources.displayMetrics.density
-        val stepPx = (28 * density).toInt().coerceAtLeast(16)
         val openNoteCount = windowManager.getAllWindows()
             .count { it is FloatingMiniAppWindow && isNoteMiniApp(it.appType) }
         val slot = (openNoteCount + noteStaggerIndex) % 6
         noteStaggerIndex = (noteStaggerIndex + 1) % 60
-
-        val screenW = windowManager.screenWidth.takeIf { it > 0 } ?: 1080
-        val screenH = windowManager.screenHeight.takeIf { it > 0 } ?: 1920
-        val width = minOf(650, maxOf((260 * density).toInt(), screenW - (48 * density).toInt()))
-        val height = minOf(850, maxOf((240 * density).toInt(), screenH - (160 * density).toInt()))
-        val baseX = (80 * density).toInt()
-        val baseY = (110 * density).toInt()
-        val x = (baseX + slot * stepPx).coerceIn(0, maxOf(0, screenW - width))
-        val y = (baseY + slot * stepPx).coerceIn(0, maxOf(0, screenH - height))
-        val staggeredBounds = WindowBounds(x, y, width, height)
+        val staggeredBounds = computeSmallSquareMiniAppBounds(
+            context = context,
+            screenWidthPx = windowManager.screenWidth,
+            screenHeightPx = windowManager.screenHeight,
+            staggerSlot = slot
+        )
 
         LogKeeper.log(
             context,
@@ -422,23 +456,15 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
             return existing
         }
 
-        // Determine bounds from initialBounds, saved snapshot, or compact type-aware defaults
+        // Preserve explicit or saved geometry; only brand-new windows receive the common square default.
         val savedSnapshot = durableStore.loadSnapshot(instanceId)
         val bounds = initialBounds?.copyBounds()
             ?: savedSnapshot?.windowBounds?.copyBounds()
-            ?: when {
-                isDictionaryMiniApp(appType) -> com.example.feature.language.LanguageMiniAppUiHelper.computeCompactDictionaryBounds(
-                    context = context,
-                    screenWidth = windowManager.screenWidth,
-                    screenHeight = windowManager.screenHeight
-                )
-                isTranslationMiniApp(appType) -> com.example.feature.language.LanguageMiniAppUiHelper.computeCompactTranslationBounds(
-                    context = context,
-                    screenWidth = windowManager.screenWidth,
-                    screenHeight = windowManager.screenHeight
-                )
-                else -> WindowBounds(120, 150, 650, 850)
-            }
+            ?: computeSmallSquareMiniAppBounds(
+                context = context,
+                screenWidthPx = windowManager.screenWidth,
+                screenHeightPx = windowManager.screenHeight
+            )
 
         val isReader = isReaderMiniApp(appType)
         val isWarmReaderSession = isReader && com.example.feature.reader.ReaderSessionTracker.isWarmSession(instanceId)

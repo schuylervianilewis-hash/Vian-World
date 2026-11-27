@@ -148,6 +148,8 @@ class NoteRefinementAndLifecycleTest {
             )
         )
         val win = bridge.openMiniApp("legacy_note_1", "test_notes")
+        assertEquals("Saved Note width must be preserved", 600, win.bounds.width)
+        assertEquals("Saved Note height must be preserved", 700, win.bounds.height)
         assertEquals("Note", win.getWindowTitleForTesting())
         assertEquals("Existing saved user note", win.getAuthoritativeNoteText())
         assertEquals("#CBA6F7", win.currentAccentColorHex)
@@ -495,6 +497,8 @@ class NoteRefinementAndLifecycleTest {
 
         assertTrue("Each Note activation must create a different instance ID", first.instanceId != second.instanceId)
         assertFalse("Each Note activation must create a different window object", first === second)
+        assertEquals("New Note windows start square", first.bounds.width, first.bounds.height)
+        assertEquals("Every new Note window starts square", second.bounds.width, second.bounds.height)
         assertTrue(
             "Staggered Notes must not occupy exactly the same starting position",
             first.bounds.x != second.bounds.x || first.bounds.y != second.bounds.y
@@ -527,5 +531,26 @@ class NoteRefinementAndLifecycleTest {
             "Second independent note",
             store.loadSnapshot(second.instanceId)?.payload?.get(TestNotesMiniAppInstance.KEY_TEXT)
         )
+    }
+
+    @Test
+    fun testFreshMiniAppDefaultBoundsAreSmallSquareAndClampedToScreen() {
+        val expectedSize = (240f * context.resources.displayMetrics.density).toInt()
+        val fresh = bridge.openMiniApp("fresh_square_default", "test_notes")
+        assertEquals("New mini-app width uses the common 240dp default", expectedSize, fresh.bounds.width)
+        assertEquals("New mini-app height matches its width", expectedSize, fresh.bounds.height)
+
+        val smallScreen = computeSmallSquareMiniAppBounds(
+            context = context,
+            screenWidthPx = 360,
+            screenHeightPx = 500
+        )
+        assertEquals("Small screens still receive square windows", smallScreen.width, smallScreen.height)
+        assertTrue("Square width must fit the available screen width", smallScreen.width <= 360)
+        assertTrue("Square height must fit the available screen height", smallScreen.height <= 500)
+
+        val directFallback = FloatingMiniAppWindow("direct_square_fallback", context, "test_notes")
+        assertEquals("Directly created mini-app windows also default square", expectedSize, directFallback.bounds.width)
+        assertEquals(expectedSize, directFallback.bounds.height)
     }
 }

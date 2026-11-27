@@ -557,6 +557,16 @@ class FloatingMiniAppWindow(
         val saved = durableStore.loadSnapshot(instanceId)
         maximizeRestoreBounds = saved?.maximizeRestoreBounds
         normalFloatingBounds = saved?.windowBounds?.copyBounds() ?: bounds.copyBounds()
+        if (saved == null) {
+            val metrics = context.resources.displayMetrics
+            setWindowBounds(
+                computeSmallSquareMiniAppBounds(
+                    context = context,
+                    screenWidthPx = metrics.widthPixels,
+                    screenHeightPx = metrics.heightPixels
+                )
+            )
+        }
         val initialSavedText = saved?.payload?.get(TestNotesMiniAppInstance.KEY_TEXT)
             ?: saved?.payload?.get("text")
             ?: saved?.payload?.get("note_content")
