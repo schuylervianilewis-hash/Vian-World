@@ -638,10 +638,10 @@ class FloatingMiniAppBridge private constructor(private val context: Context) {
         if (trimmedQuery.isNotEmpty()) {
             val existingSnapshot = durableStore.loadSnapshot(instanceId)
             val bounds = existingSnapshot?.windowBounds?.copyBounds()
-                ?: com.example.feature.language.LanguageMiniAppUiHelper.computeCompactDictionaryBounds(
+                ?: computeSmallSquareMiniAppBounds(
                     context = context,
-                    screenWidth = windowManager.screenWidth,
-                    screenHeight = windowManager.screenHeight
+                    screenWidthPx = windowManager.screenWidth,
+                    screenHeightPx = windowManager.screenHeight
                 )
             val snapshot = existingSnapshot ?: MiniAppRecoverySnapshot(
                 instanceId = instanceId,
