@@ -79,8 +79,10 @@ object OverlayAccessPolicy {
         maxAgeMillis: Long = 60_000L
     ): String? {
         val prefs = getPrefs(context)
-        val observedAt = foregroundObservedAtCache
-            ?: prefs.getLong(KEY_FOREGROUND_OBSERVED_AT, 0L).also { foregroundObservedAtCache = it }
+        // Read persisted time on every check because the foreground observer and App
+        // Tracker may run in different processes.
+        val observedAt = prefs.getLong(KEY_FOREGROUND_OBSERVED_AT, 0L)
+        foregroundObservedAtCache = observedAt
         val age = System.currentTimeMillis() - observedAt
         if (observedAt <= 0L || age !in 0..maxAgeMillis) return null
         return getForegroundPackage(context).takeIf { it.isNotBlank() }
