@@ -38,20 +38,34 @@ class AppTrackerOpenerActivity : Activity() {
     }
 
     private fun openNext() {
-        if (currentIndex < packageNames.size) {
-            val pkg = packageNames[currentIndex]
-            currentIndex++
+        // Iterate rather than recurse: a long list of stale/unavailable packages must not
+        // grow the call stack. Returning from each App Info screen re-enters this method.
+        while (currentIndex < packageNames.size) {
+            val pkg = packageNames[currentIndex++]
+            val appInfo = try {
+                packageManager.getApplicationInfo(pkg, 0)
+            } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+                continue
+            } catch (_: SecurityException) {
+                continue
+            }
+
+            // A previous manual Force stop can mark the package stopped before the next
+            // item is reached (for example if duplicate/stale candidates are supplied).
+            if ((appInfo.flags and android.content.pm.ApplicationInfo.FLAG_STOPPED) != 0) {
+                continue
+            }
+
             try {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.parse("package:$pkg")
                 }
-                startActivity(intent)
-            } catch (e: Exception) {
-                // If this package fails to open, immediately proceed to the next
-                openNext()
+                startActivity(appInfoIntent)
+                return
+            } catch (_: Exception) {
+                // This package's settings page is unavailable; continue to the next candidate.
             }
-        } else {
-            finish()
         }
+        finish()
     }
 }
