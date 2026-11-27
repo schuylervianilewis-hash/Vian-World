@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
 import com.example.core.HandleGestures
+import com.example.core.IconCacheManager
 import com.example.core.HandleManager
 import com.example.core.OverlaySyncManager
 import com.example.core.PageManager
@@ -457,8 +458,13 @@ object SidebarBackupV2 {
                     .put("label", metadata.label.take(200))
                 metadata.browserPackage?.takeIf { it.isNotBlank() }?.let { item.put("browserPackage", it) }
                 metadata.account?.takeIf { it.isNotBlank() }?.let { item.put("account", it) }
+                // A target-owned custom icon is exported separately below. It takes
+                // precedence over the original package icon path, which may be evicted when
+                // the source app is uninstalled.
+                val hasIndependentCustomIcon = IconCacheManager
+                    .getCustomIconFile(context, metadata.id).let { it.isFile && it.length() > 0L }
                 val iconFile = metadata.iconPath.takeIf { it.isNotBlank() }?.let(::File)
-                if (iconFile != null) {
+                if (!hasIndependentCustomIcon && iconFile != null) {
                     require(iconFile.isFile && iconFile.exists()) {
                         "A Sidebar element icon is missing or unreadable: ${metadata.id}"
                     }
