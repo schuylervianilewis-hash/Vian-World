@@ -365,6 +365,48 @@ object IconCacheManager {
         }
     }
 
+    /**
+     * Copies an installed app's launcher icon into an independent Sidebar-owned file.
+     * The file is keyed by the Sidebar target ID, never by the source package name, so
+     * uninstalling or updating the source app cannot remove the assigned icon.
+     */
+    suspend fun saveCustomIconFromPackage(
+        context: Context,
+        targetId: String,
+        sourcePackageName: String
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val drawable = context.packageManager.getApplicationIcon(sourcePackageName)
+            val maxPx = Math.round(TARGET_ICON_SIZE_DP * context.resources.displayMetrics.density)
+                .coerceIn(48, 128)
+            val sourceWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: maxPx
+            val sourceHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: maxPx
+            val scale = minOf(1f, maxPx.toFloat() / maxOf(sourceWidth, sourceHeight))
+            val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
+            val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            Canvas(bitmap).also { canvas ->
+                drawable.setBounds(0, 0, width, height)
+                drawable.draw(canvas)
+            }
+
+            val file = getCustomIconFile(context, targetId)
+            FileOutputStream(file).use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.WEBP, 90, output)) {
+                    file.delete()
+                    return@withContext null
+                }
+            }
+            val displayBitmap = SquircleHelper.toSquircleBitmap(bitmap)
+            memoryCache.put("custom_$targetId", displayBitmap)
+            memoryCache.put(targetId, displayBitmap)
+            displayBitmap
+        } catch (e: Exception) {
+            LogKeeper.writeLog(TAG, "Unable to snapshot installed app icon: ${e.message}")
+            null
+        }
+    }
+
     fun evictIcon(context: Context, packageName: String) {
         memoryCache.remove(packageName)
         memoryCache.remove("custom_$packageName")
