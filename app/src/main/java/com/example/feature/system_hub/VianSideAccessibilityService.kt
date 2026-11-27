@@ -72,28 +72,8 @@ open class VianSideAccessibilityService : AccessibilityService() {
             OverlayAccessPolicy.updateForegroundPackage(this, foregroundPackage)
         }
 
-        if (isForceStopping) {
-            val rootNode = rootInActiveWindow ?: return
-
-            val forceStopNodes = rootNode.findAccessibilityNodeInfosByText("Force stop")
-            var buttonIsDisabled = false
-            for (node in forceStopNodes) {
-                if (node.isClickable && !node.isEnabled) {
-                    buttonIsDisabled = true
-                    node.recycle()
-                    break
-                } else if (node.parent?.isClickable == true && node.parent?.isEnabled == false) {
-                    buttonIsDisabled = true
-                    node.recycle()
-                    break
-                }
-                node.recycle()
-            }
-
-            if (buttonIsDisabled) {
-                performSystemGlobalAction(GLOBAL_ACTION_BACK)
-            }
-        }
+        // App Tracker's sequence is intentionally manual. Do not inspect Android's
+        // Force stop button or navigate Back automatically, regardless of legacy settings.
     }
 
     override fun onInterrupt() {
