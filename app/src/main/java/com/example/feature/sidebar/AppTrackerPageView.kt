@@ -363,24 +363,23 @@ class AppTrackerPageView(
 
         val pm = context.packageManager
         // Only installed packages are eligible; never include stale uninstalled package records.
-        val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA)
+        val packages = pm.getInstalledApplications(0)
         val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
             ?: return emptyList()
         val userHandle = Process.myUserHandle()
         val uuid = StorageManager.UUID_DEFAULT
         val apps = mutableListOf<TrackedAppInfo>()
 
-        for (pi in packages) {
-            if (pi.packageName == context.packageName || pi.packageName in whitelist) continue
-            val appInfo = pi.applicationInfo ?: continue
+        for (appInfo in packages) {
+            if (appInfo.packageName == context.packageName || appInfo.packageName in whitelist) continue
             try {
                 // StorageStatsManager requires the platform's package-usage permission. If the
                 // query is denied, omit the unknown value instead of fabricating a cache size.
-                val cacheSize = storageStatsManager.queryStatsForPackage(uuid, pi.packageName, userHandle).cacheBytes
+                val cacheSize = storageStatsManager.queryStatsForPackage(uuid, appInfo.packageName, userHandle).cacheBytes
                 val appName = pm.getApplicationLabel(appInfo).toString()
                 apps.add(
                     TrackedAppInfo(
-                        packageName = pi.packageName,
+                        packageName = appInfo.packageName,
                         appName = appName,
                         cacheSize = cacheSize
                     )
