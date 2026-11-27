@@ -19,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.R
@@ -31,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -41,13 +43,19 @@ class SchedulerPageView(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val onHeightChanged: ((Int) -> Unit)? = null
 ) : FrameLayout(context), SidebarPageControllable {
-    private val db: AppDatabase? by lazy {
-        try {
-            AppDatabase.getDatabase(context)
-        } catch (_: Throwable) {
-            null
+    // Cache only a successfully initialized database. A transient initialization/migration
+    // failure must not be memoized forever as null; later page selections can retry.
+    private var cachedDatabase: AppDatabase? = null
+    private val db: AppDatabase?
+        get() {
+            cachedDatabase?.let { return it }
+            return try {
+                AppDatabase.getDatabase(context).also { cachedDatabase = it }
+            } catch (error: Throwable) {
+                LogKeeper.logError(context, "SchedulerPageView", "Database initialization failed", error)
+                null
+            }
         }
-    }
     private val recyclerView: RecyclerView?
     private val tvEmpty: TextView?
     private val adapter: TaskAdapter
@@ -273,44 +281,54 @@ class SchedulerPageView(
 
     fun loadTasks() {
         if (taskJob?.isActive == true) return
-        val database = db ?: return
+        val database = db
+        if (database == null) {
+            LogKeeper.writeLog("Scheduler", "Task load deferred because database initialization is unavailable")
+            Toast.makeText(context, "Reminders are temporarily unavailable. Reopen this page to retry.", Toast.LENGTH_LONG).show()
+            return
+        }
         taskJob = scope.launch(Dispatchers.Main) {
-            database.schedulerTaskDao().getAllTasks().collect { tasks ->
-                val activeTasks = tasks.filter { it.status == "PENDING" }.sortedBy { it.timeMillis }
-                adapter.submitList(activeTasks)
-                
-                // Automatically mark past tasks as unfinished
-                val now = System.currentTimeMillis()
-                tasks.filter { it.status == "PENDING" && it.timeMillis < now }.forEach { pastTask ->
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            database.schedulerTaskDao().update(pastTask.copy(status = "UNFINISHED"))
-                        } catch (e: Throwable) {
-                            LogKeeper.logError(context, "SchedulerPageView", "Failed to update past task status", e)
+            try {
+                database.schedulerTaskDao().getAllTasks().collect { tasks ->
+                    val activeTasks = tasks.filter { it.status == "PENDING" }.sortedBy { it.timeMillis }
+                    adapter.submitList(activeTasks)
+
+                    // Automatically mark past tasks as unfinished.
+                    val now = System.currentTimeMillis()
+                    tasks.filter { it.status == "PENDING" && it.timeMillis < now }.forEach { pastTask ->
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                database.schedulerTaskDao().update(pastTask.copy(status = "UNFINISHED"))
+                            } catch (error: Throwable) {
+                                LogKeeper.logError(context, "SchedulerPageView", "Failed to update past task status", error)
+                            }
                         }
                     }
+
+                    if (activeTasks.isEmpty()) {
+                        tvEmpty?.visibility = View.VISIBLE
+                        recyclerView?.visibility = View.GONE
+                    } else {
+                        tvEmpty?.visibility = View.GONE
+                        recyclerView?.visibility = View.VISIBLE
+                    }
+                    post {
+                        val density = try { resources?.displayMetrics?.density ?: 1f } catch (_: Throwable) { 1f }
+                        val w = width.takeIf { it > 0 } ?: (330 * density).toInt()
+                        measure(
+                            MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+                        )
+                        val minH = if (activeTasks.isEmpty()) (100 * density).toInt() else (140 * density).toInt()
+                        val maxH = (520 * density).toInt()
+                        val targetH = measuredHeight.coerceIn(minH, maxH)
+                        lastCalculatedHeightPx = targetH
+                        onHeightChanged?.invoke(targetH)
+                    }
                 }
-                
-                if (activeTasks.isEmpty()) {
-                    tvEmpty?.visibility = View.VISIBLE
-                    recyclerView?.visibility = View.GONE
-                } else {
-                    tvEmpty?.visibility = View.GONE
-                    recyclerView?.visibility = View.VISIBLE
-                }
-                post {
-                    val density = try { resources?.displayMetrics?.density ?: 1f } catch (_: Throwable) { 1f }
-                    val w = width.takeIf { it > 0 } ?: (330 * density).toInt()
-                    measure(
-                        MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                    )
-                    val minH = if (activeTasks.isEmpty()) (100 * density).toInt() else (140 * density).toInt()
-                    val maxH = (520 * density).toInt()
-                    val targetH = measuredHeight.coerceIn(minH, maxH)
-                    lastCalculatedHeightPx = targetH
-                    onHeightChanged?.invoke(targetH)
-                }
+            } catch (error: Throwable) {
+                LogKeeper.logError(context, "SchedulerPageView", "Failed to load reminders", error)
+                Toast.makeText(context, "Unable to load reminders. Reopen this page to retry.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -405,21 +423,32 @@ class SchedulerPageView(
         )
         
         val database = db
-        if (database != null) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    if (editingTask != null) {
-                        database.schedulerTaskDao().update(task)
-                    } else {
-                        database.schedulerTaskDao().insert(task)
-                    }
-                } catch (e: Throwable) {
-                    LogKeeper.logError(context, "SchedulerPageView", "Failed to save task", e)
+        if (database == null) {
+            Toast.makeText(context, "Reminders are unavailable. Your changes have not been saved.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val existingTask = editingTask
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (existingTask != null) {
+                    database.schedulerTaskDao().update(task)
+                } else {
+                    database.schedulerTaskDao().insert(task)
+                }
+                withContext(Dispatchers.Main) {
+                    hideEditUi()
+                }
+            } catch (error: Throwable) {
+                LogKeeper.logError(context, "SchedulerPageView", "Failed to save task", error)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        context,
+                        "Reminder was not saved. Your changes are still open.",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
-        
-        hideEditUi()
     }
     
     private fun markAsDone(task: SchedulerTask) {
