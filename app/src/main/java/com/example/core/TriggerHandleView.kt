@@ -61,64 +61,28 @@ class TriggerHandleView(
         }
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
-            if (!gestureHandled) {
-                if (config.onDoubleTapAction != HandleManager.ACTION_NONE) {
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    onGestureAction(config.onDoubleTapAction, HandleGestures.DOUBLE_TAP, config)
-                    return true
-                }
+            if (gestureHandled) return false
+            gestureHandled = true
+            if (config.onDoubleTapAction != HandleManager.ACTION_NONE) {
+                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                onGestureAction(config.onDoubleTapAction, HandleGestures.DOUBLE_TAP, config)
+                return true
             }
             return false
         }
 
         override fun onLongPress(e: MotionEvent) {
-            if (!gestureHandled) {
-                if (config.onLongPressAction != HandleManager.ACTION_NONE && config.onLongPressAction != HandleManager.ACTION_MOVE_HANDLE) {
-                    performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                    onGestureAction(config.onLongPressAction, HandleGestures.LONG_PRESS, config)
-                }
+            if (gestureHandled) return
+            gestureHandled = true
+            if (config.onLongPressAction != HandleManager.ACTION_NONE &&
+                config.onLongPressAction != HandleManager.ACTION_MOVE_HANDLE
+            ) {
+                performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                onGestureAction(config.onLongPressAction, HandleGestures.LONG_PRESS, config)
             }
         }
 
-        override fun onFling(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            velocityX: Float,
-            velocityY: Float
-        ): Boolean {
-            if (gestureHandled) return false
-            val startX = e1?.rawX ?: initialTouchX
-            val startY = e1?.rawY ?: initialTouchY
-            val dx = e2.rawX - startX
-            val dy = e2.rawY - startY
 
-            if (Math.abs(dx) > Math.abs(dy)) {
-                if (dx > 40 && config.onSwipeRightAction != HandleManager.ACTION_NONE) {
-                    gestureHandled = true
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    onGestureAction(config.onSwipeRightAction, HandleGestures.SWIPE_RIGHT, config)
-                    return true
-                } else if (dx < -40 && config.onSwipeLeftAction != HandleManager.ACTION_NONE) {
-                    gestureHandled = true
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    onGestureAction(config.onSwipeLeftAction, HandleGestures.SWIPE_LEFT, config)
-                    return true
-                }
-            } else {
-                if (dy > 40 && config.onSwipeDownAction != HandleManager.ACTION_NONE) {
-                    gestureHandled = true
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    onGestureAction(config.onSwipeDownAction, HandleGestures.SWIPE_DOWN, config)
-                    return true
-                } else if (dy < -40 && config.onSwipeUpAction != HandleManager.ACTION_NONE) {
-                    gestureHandled = true
-                    performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                    onGestureAction(config.onSwipeUpAction, HandleGestures.SWIPE_UP, config)
-                    return true
-                }
-            }
-            return false
-        }
     })
 
     init {
@@ -202,40 +166,36 @@ class TriggerHandleView(
                 initialTouchY = event.rawY
                 gestureHandled = false
             }
-            MotionEvent.ACTION_MOVE -> {
+            MotionEvent.ACTION_UP -> {
                 if (!gestureHandled) {
                     val dx = event.rawX - initialTouchX
                     val dy = event.rawY - initialTouchY
-                    val density = resources.displayMetrics.density
-                    val swipeThresholdPx = 32f * density
-
-                    if (Math.abs(dx) > swipeThresholdPx || Math.abs(dy) > swipeThresholdPx) {
-                        if (Math.abs(dx) > Math.abs(dy)) {
-                            if (dx < -swipeThresholdPx && config.onSwipeLeftAction != HandleManager.ACTION_NONE) {
-                                gestureHandled = true
-                                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                                onGestureAction(config.onSwipeLeftAction, HandleGestures.SWIPE_LEFT, config)
-                            } else if (dx > swipeThresholdPx && config.onSwipeRightAction != HandleManager.ACTION_NONE) {
-                                gestureHandled = true
-                                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                                onGestureAction(config.onSwipeRightAction, HandleGestures.SWIPE_RIGHT, config)
-                            }
-                        } else {
-                            if (dy > swipeThresholdPx && config.onSwipeDownAction != HandleManager.ACTION_NONE) {
-                                gestureHandled = true
-                                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                                onGestureAction(config.onSwipeDownAction, HandleGestures.SWIPE_DOWN, config)
-                            } else if (dy < -swipeThresholdPx && config.onSwipeUpAction != HandleManager.ACTION_NONE) {
-                                gestureHandled = true
-                                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                                onGestureAction(config.onSwipeUpAction, HandleGestures.SWIPE_UP, config)
-                            }
-                        }
+                    val threshold = 24f * resources.displayMetrics.density
+                    val horizontal = kotlin.math.abs(dx) > kotlin.math.abs(dy)
+                    val actionAndGesture = when {
+                        horizontal && dx <= -threshold ->
+                            config.onSwipeLeftAction to HandleGestures.SWIPE_LEFT
+                        horizontal && dx >= threshold ->
+                            config.onSwipeRightAction to HandleGestures.SWIPE_RIGHT
+                        !horizontal && dy <= -threshold ->
+                            config.onSwipeUpAction to HandleGestures.SWIPE_UP
+                        !horizontal && dy >= threshold ->
+                            config.onSwipeDownAction to HandleGestures.SWIPE_DOWN
+                        else -> HandleManager.ACTION_NONE to ""
+                    }
+                    val (action, gesture) = actionAndGesture
+                    if (action != HandleManager.ACTION_NONE) {
+                        gestureHandled = true
+                        performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        onGestureAction(action, gesture, config)
                     }
                 }
             }
         }
 
+        // GestureDetector owns tap, double-tap and long-press recognition. Swipe recognition
+        // is handled once, from the final displacement above, so slow swipes cannot be lost
+        // between ACTION_MOVE and fling thresholds and no fling callback can double-dispatch.
         gestureDetector.onTouchEvent(event)
         return true
     }
