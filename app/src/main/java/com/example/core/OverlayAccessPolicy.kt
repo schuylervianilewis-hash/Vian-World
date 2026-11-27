@@ -16,9 +16,11 @@ object OverlayAccessPolicy {
     private const val PREFS_NAME = "OverlayExclusionsPrefs"
     private const val KEY_EXCLUDED_PACKAGES = "excluded_packages"
     private const val KEY_FOREGROUND_PACKAGE = "foreground_package"
+    private const val KEY_FOREGROUND_OBSERVED_AT = "foreground_observed_at"
 
     @Volatile private var excludedPackagesCache: Set<String>? = null
     @Volatile private var foregroundPackageCache: String? = null
+    @Volatile private var foregroundObservedAtCache: Long? = null
     @Volatile private var receiverRegistered = false
 
     fun getExcludedPackages(context: Context): Set<String> {
@@ -68,9 +70,28 @@ object OverlayAccessPolicy {
         ))
     }
 
+    /**
+     * Returns only a recently observed foreground package. The persisted package string alone
+     * is not proof of current foreground state because it can survive service disconnection.
+     */
+    fun getFreshForegroundPackage(
+        context: Context,
+        maxAgeMillis: Long = 60_000L
+    ): String? {
+        val prefs = getPrefs(context)
+        val observedAt = foregroundObservedAtCache
+            ?: prefs.getLong(KEY_FOREGROUND_OBSERVED_AT, 0L).also { foregroundObservedAtCache = it }
+        val age = System.currentTimeMillis() - observedAt
+        if (observedAt <= 0L || age !in 0..maxAgeMillis) return null
+        return getForegroundPackage(context).takeIf { it.isNotBlank() }
+    }
+
     /** The app's own process is never excluded, so the user can always reopen settings. */
     fun updateForegroundPackage(context: Context, packageName: String?) {
         val normalized = packageName.orEmpty().takeUnless { it == context.packageName }.orEmpty()
+        val now = System.currentTimeMillis()
+        foregroundObservedAtCache = now
+        getPrefs(context).edit().putLong(KEY_FOREGROUND_OBSERVED_AT, now).apply()
         if (getForegroundPackage(context) == normalized) return
         foregroundPackageCache = normalized
         getPrefs(context).edit().putString(KEY_FOREGROUND_PACKAGE, normalized).apply()
