@@ -176,6 +176,21 @@ class MainActivity : SimpleActivity(), FlingListener {
     }
 
     private var isPackageUpdateReceiverRegistered = false
+    private var isLauncherRestoreReceiverRegistered = false
+
+    // MainActivity lives in :home; launcher restore runs in :heavy. Keep this receiver
+    // registered for the Activity lifetime so it can refresh even while Settings is on top.
+    private val launcherRestoreReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != shura.home.helpers.BackupHelper.ACTION_LAUNCHER_BACKUP_RESTORED) return
+            if (isFinishing || isDestroyed) return
+
+            LogCatcher.log("MainActivity", "Launcher backup restored; refreshing live home grid and folder previews")
+            binding.homeScreenGrid.root.closeFolder(redraw = true)
+            needsAppListRefresh = false
+            ensureBackgroundThread { refreshLaunchers() }
+        }
+    }
 
     private val packageUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -238,6 +253,15 @@ class MainActivity : SimpleActivity(), FlingListener {
 
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        if (!isLauncherRestoreReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                launcherRestoreReceiver,
+                IntentFilter(shura.home.helpers.BackupHelper.ACTION_LAUNCHER_BACKUP_RESTORED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            isLauncherRestoreReceiverRegistered = true
+        }
         appLaunched(applicationContext.packageName)
         AppLockManager.init(this)
         setupEdgeToEdge(
@@ -480,6 +504,14 @@ class MainActivity : SimpleActivity(), FlingListener {
     override fun onDestroy() {
         super.onDestroy()
         packageUpdateDebounceHandler.removeCallbacksAndMessages(null)
+        if (isLauncherRestoreReceiverRegistered) {
+            try {
+                unregisterReceiver(launcherRestoreReceiver)
+            } catch (_: Exception) {
+            } finally {
+                isLauncherRestoreReceiverRegistered = false
+            }
+        }
         if (isPackageUpdateReceiverRegistered) {
             try {
                 unregisterReceiver(packageUpdateReceiver)

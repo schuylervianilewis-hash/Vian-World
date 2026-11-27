@@ -1,6 +1,7 @@
 package shura.home.helpers
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -28,6 +29,7 @@ import java.io.OutputStream
  * 5. Custom application icons (Base64 PNG encoded).
  */
 object BackupHelper {
+    const val ACTION_LAUNCHER_BACKUP_RESTORED = "shura.home.action.LAUNCHER_BACKUP_RESTORED"
     private const val TAG = "BackupHelper"
     private const val CURRENT_SCHEMA_VERSION = 2
 
@@ -529,6 +531,18 @@ object BackupHelper {
             // Evict in-memory icon and app caches, reload app locks
             IconCache.clear()
             AppLockManager.reload(context)
+
+            // MainActivity runs in :home while restore runs in :heavy. Notify that process
+            // only after the database transaction and all launcher restore writes have finished.
+            try {
+                context.applicationContext.sendBroadcast(
+                    Intent(ACTION_LAUNCHER_BACKUP_RESTORED).setPackage(context.packageName)
+                )
+            } catch (refreshError: Exception) {
+                // The restore itself succeeded; a transient refresh signal failure must not
+                // misreport the restored archive as failed.
+                LogCatcher.log(TAG, "Restore completed but launcher refresh signal failed", refreshError)
+            }
 
             LogCatcher.log(TAG, "Backup restored successfully")
             true
