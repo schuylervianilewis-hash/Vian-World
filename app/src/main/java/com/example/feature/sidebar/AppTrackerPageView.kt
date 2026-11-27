@@ -29,6 +29,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.R
 import com.example.utils.AppTrackerHelper
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -346,6 +347,15 @@ class AppTrackerPageView(
                 }
                 if (selectedTab == 1) setTab(1)
                 lastDataLoadAt = android.os.SystemClock.elapsedRealtime()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                com.example.core.LogKeeper.logError(
+                    context,
+                    "AppTrackerPageView",
+                    "Failed to refresh App Tracker data",
+                    error
+                )
             } finally {
                 dataLoadJob = null
             }
