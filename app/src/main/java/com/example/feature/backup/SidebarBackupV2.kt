@@ -605,7 +605,7 @@ object SidebarBackupV2 {
             val actions = linkedMapOf<String, String>()
             HandleGestures.ALL.forEach { gesture ->
                 val action = gestures.optString(gesture, HandleManager.ACTION_NONE)
-                require(Regex("^[a-zA-Z0-9_]{1,96}$").matches(action)) { "Invalid gesture action" }
+                require(actionPattern.matches(action)) { "Invalid gesture action" }
                 actions[gesture] = action
                 if (id == "handle_1" && action == HandleManager.ACTION_OPEN_SIDEBAR) {
                     firstHandleHasSidebarGesture = true
