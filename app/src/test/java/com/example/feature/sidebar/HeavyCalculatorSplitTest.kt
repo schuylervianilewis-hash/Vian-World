@@ -1038,7 +1038,10 @@ class HeavyCalculatorSplitTest {
         assertNull(detector.onUp(102f, 140f))
 
         detector.onDown(100f, 100f)
-        assertTrue(detector.onMove(90f, 100f, childCanScroll = false))
+        assertFalse(
+            "A sub-threshold horizontal drag must not cancel child clicks or scrolling",
+            detector.onMove(90f, 100f, childCanScroll = false)
+        )
         assertNull("A short horizontal drag must not change pages", detector.onUp(90f, 100f))
     }
 
