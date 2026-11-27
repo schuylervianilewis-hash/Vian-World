@@ -93,10 +93,20 @@ object AppTrackerHelper {
                     }
                 }
             }
-        } catch (_: SecurityException) {
-            return emptyList()
-        } catch (_: RuntimeException) {
-            return emptyList()
+        } catch (error: SecurityException) {
+            com.example.core.LogKeeper.logError(
+                context,
+                "AppTrackerHelper",
+                "Usage event query was denied; using only a fresh foreground observation",
+                error
+            )
+        } catch (error: RuntimeException) {
+            com.example.core.LogKeeper.logError(
+                context,
+                "AppTrackerHelper",
+                "Usage event query failed; using only a fresh foreground observation",
+                error
+            )
         }
 
         val candidateTimes = latestLifecycle
