@@ -189,6 +189,10 @@ class MainActivity : SimpleActivity(), FlingListener {
             // BackupHelper runs in :heavy; its IconCache.clear() cannot invalidate :home's process cache.
             IconCache.clear()
             binding.homeScreenGrid.root.closeFolder(redraw = true)
+            // The live HomeScreenGrid keeps its own in-memory gridItems list. Re-read the
+            // restored rows and rebuild folder preview drawables instead of only redrawing
+            // the stale list after the cross-process restore notification.
+            binding.homeScreenGrid.root.fetchGridItems()
             needsAppListRefresh = false
             ensureBackgroundThread { refreshLaunchers() }
         }
