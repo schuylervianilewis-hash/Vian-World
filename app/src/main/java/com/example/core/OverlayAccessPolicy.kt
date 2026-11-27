@@ -85,7 +85,9 @@ object OverlayAccessPolicy {
         foregroundObservedAtCache = observedAt
         val age = System.currentTimeMillis() - observedAt
         if (observedAt <= 0L || age !in 0..maxAgeMillis) return null
-        return getForegroundPackage(context).takeIf { it.isNotBlank() }
+        val packageName = prefs.getString(KEY_FOREGROUND_PACKAGE, "").orEmpty()
+        foregroundPackageCache = packageName
+        return packageName.takeIf { it.isNotBlank() && it != context.packageName }
     }
 
     /** The app's own process is never excluded, so the user can always reopen settings. */
