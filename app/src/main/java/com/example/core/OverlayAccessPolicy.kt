@@ -95,7 +95,6 @@ object OverlayAccessPolicy {
     fun updateForegroundPackage(context: Context, packageName: String?) {
         val normalized = packageName.orEmpty().takeUnless { it == context.packageName }.orEmpty()
         val now = System.currentTimeMillis()
-        val changed = getForegroundPackage(context) != normalized
         foregroundObservedAtCache = now
         foregroundPackageCache = normalized
         getPrefs(context).edit()
