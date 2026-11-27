@@ -49,97 +49,117 @@ object AppTrackerHelper {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
+    /**
+     * Returns best-effort active-app candidates from recent activity lifecycle events.
+     *
+     * Android does not expose a complete list of other apps' live background processes to
+     * ordinary apps. This avoids presenting 24-hour/7-day usage history as a process inventory.
+     * Candidates are activities observed as resumed/paused without a later stop/background event
+     * in a bounded observation window, plus the current package reported by Vian's observer.
+     */
     fun getRecentApps(context: Context, containerId: String = "sidebar"): List<TrackedAppInfo> {
         if (!checkUsageStatsPermission(context)) return emptyList()
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return emptyList()
 
-        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return emptyList()
+        val now = System.currentTimeMillis()
+        val windowStart = now - ACTIVE_CANDIDATE_WINDOW_MS
+        val latestLifecycle = linkedMapOf<String, Pair<Int, Long>>()
 
-        val endTime = System.currentTimeMillis()
-        val startTime = endTime - TimeUnit.HOURS.toMillis(24)
-
-        val appLastUsed = mutableMapOf<String, Long>()
-
-        // 1. Primary retrieval via UsageEvents
         try {
-            val events = usageStatsManager.queryEvents(startTime, endTime)
-            val event = UsageEvents.Event()
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                    event.eventType == 1 /* UsageEvents.Event.MOVE_TO_FOREGROUND */) {
-                    appLastUsed[event.packageName] = event.timeStamp
-                }
-            }
-        } catch (e: Exception) {}
-
-        // 2. Query aggregate usage stats (reliable across interval bucket boundaries)
-        try {
-            val aggregated = usageStatsManager.queryAndAggregateUsageStats(startTime, endTime)
-            for ((pkg, stats) in aggregated) {
-                val lastTime = stats.lastTimeUsed
-                if (lastTime > 0) {
-                    val current = appLastUsed[pkg] ?: 0L
-                    if (lastTime > current) {
-                        appLastUsed[pkg] = lastTime
+            val events = usageStatsManager.queryEvents(windowStart, now)
+            if (events != null) {
+                val event = UsageEvents.Event()
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    val pkg = event.packageName?.toString()?.takeIf { it.isNotBlank() } ?: continue
+                    val type = event.eventType
+                    val isForeground = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        type == UsageEvents.Event.ACTIVITY_RESUMED ||
+                            type == UsageEvents.Event.ACTIVITY_PAUSED
+                    } else {
+                        type == UsageEvents.Event.MOVE_TO_FOREGROUND
                     }
-                }
-            }
-        } catch (e: Exception) {}
-
-        // 3. Fallback / supplement via queryUsageStats in case events were pruned
-        try {
-            val statsList = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
-                ?: usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, startTime, endTime)
-            if (statsList != null) {
-                for (stats in statsList) {
-                    val lastTime = stats.lastTimeUsed
-                    if (lastTime > 0) {
-                        val current = appLastUsed[stats.packageName] ?: 0L
-                        if (lastTime > current) {
-                            appLastUsed[stats.packageName] = lastTime
+                    val isBackground = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        type == UsageEvents.Event.ACTIVITY_STOPPED
+                    } else {
+                        type == UsageEvents.Event.MOVE_TO_BACKGROUND
+                    }
+                    if (isForeground || isBackground) {
+                        val previous = latestLifecycle[pkg]
+                        if (previous == null || event.timeStamp >= previous.second) {
+                            latestLifecycle[pkg] = type to event.timeStamp
                         }
                     }
                 }
             }
-        } catch (e: Exception) {}
+        } catch (_: SecurityException) {
+            return emptyList()
+        } catch (_: RuntimeException) {
+            return emptyList()
+        }
 
-        // 4. If still empty (e.g. recent device reboot or fresh install), expand query window to 7 days
-        if (appLastUsed.isEmpty()) {
-            val weekStart = endTime - TimeUnit.DAYS.toMillis(7)
-            try {
-                val aggregated = usageStatsManager.queryAndAggregateUsageStats(weekStart, endTime)
-                for ((pkg, stats) in aggregated) {
-                    val lastTime = stats.lastTimeUsed
-                    if (lastTime > 0) {
-                        val current = appLastUsed[pkg] ?: 0L
-                        if (lastTime > current) {
-                            appLastUsed[pkg] = lastTime
-                        }
-                    }
-                }
-            } catch (e: Exception) {}
+        val candidateTimes = latestLifecycle
+            .filterValues { (type, timestamp) ->
+                timestamp in windowStart..now && isForegroundLifecycleEvent(type)
+            }
+            .mapValues { it.value.second }
+            .toMutableMap()
+
+        // Covers an app already foregrounded before the bounded UsageEvents window.
+        try {
+            val foreground = com.example.core.OverlayAccessPolicy.getForegroundPackage(context)
+            if (foreground.isNotBlank() && foreground != context.packageName) {
+                candidateTimes[foreground] = now
+            }
+        } catch (_: Throwable) {
+            // UsageEvents remains a best-effort source when Accessibility is unavailable.
         }
 
         val whitelist = getWhitelist(context, containerId)
-
         val pm = context.packageManager
         val trackedApps = mutableListOf<TrackedAppInfo>()
 
-        for ((packageName, lastUsed) in appLastUsed) {
+        for ((packageName, lastObserved) in candidateTimes) {
             if (packageName == context.packageName) continue
             if (packageName.contains("launcher", ignoreCase = true)) continue
-            if (whitelist.contains(packageName)) continue
+            if (packageName in whitelist) continue
 
             try {
                 val appInfo = pm.getApplicationInfo(packageName, 0)
+                if ((appInfo.flags and ApplicationInfo.FLAG_STOPPED) != 0) continue
                 val appName = pm.getApplicationLabel(appInfo).toString()
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                trackedApps.add(TrackedAppInfo(packageName = packageName, appName = appName, lastUsedTime = lastUsed, isSystem = isSystem))
-            } catch (e: Exception) {}
+                trackedApps.add(
+                    TrackedAppInfo(
+                        packageName = packageName,
+                        appName = appName,
+                        lastUsedTime = lastObserved,
+                        isSystem = isSystem
+                    )
+                )
+            } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+                // The package may have been uninstalled after its usage event.
+            } catch (_: SecurityException) {
+                // Ignore package metadata unavailable to this process.
+            }
         }
 
-        return trackedApps.sortedByDescending { it.lastUsedTime }.take(28)
+        return trackedApps.sortedWith(
+            compareByDescending<TrackedAppInfo> { it.lastUsedTime }.thenBy { it.packageName }
+        ).take(MAX_ACTIVE_CANDIDATES)
     }
+
+    private fun isForegroundLifecycleEvent(eventType: Int): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                eventType == UsageEvents.Event.ACTIVITY_PAUSED
+        } else {
+            eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+        }
+
+    private const val ACTIVE_CANDIDATE_WINDOW_MS = 30L * 60L * 1000L
+    private const val MAX_ACTIVE_CANDIDATES = 28
 
     fun getContainerWhitelistKey(containerId: String): String =
         if (containerId.isNotBlank() && containerId != "sidebar") "handle_${containerId}_app_tracker_whitelist" else "app_tracker_whitelist_current"
@@ -234,7 +254,7 @@ object AppTrackerHelper {
         return getRecentApps(context, containerId).map { it.packageName }
     }
 
-    fun startForceStopSequence(context: Context, containerId: String = "sidebar") {
+    fun startForceStopSequence(context: Context, containerId: String = "sidebar"): Boolean {
         if (!checkUsageStatsPermission(context)) {
             Toast.makeText(context, "Grant Usage Access to track active apps", Toast.LENGTH_LONG).show()
             val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
@@ -242,20 +262,26 @@ object AppTrackerHelper {
             }
             try {
                 context.startActivity(intent)
-            } catch (e: Exception) {}
-            return
+            } catch (_: Exception) {}
+            return false
         }
 
         val packagesToStop = getRunningPackagesToStop(context, containerId)
         if (packagesToStop.isEmpty()) {
-            Toast.makeText(context, "No running apps to stop", Toast.LENGTH_SHORT).show()
-            return
+            Toast.makeText(context, "No active app candidates found", Toast.LENGTH_SHORT).show()
+            return false
         }
 
         val intent = Intent(context, AppTrackerOpenerActivity::class.java).apply {
             putStringArrayListExtra("packages", ArrayList(packagesToStop))
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            Toast.makeText(context, "Unable to open the app sequence", Toast.LENGTH_SHORT).show()
+            false
+        }
     }
 }
