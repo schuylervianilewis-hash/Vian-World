@@ -480,7 +480,7 @@ class FloatingTriggerTest {
             addItem(android.R.drawable.ic_menu_more, "Folder")"""))
         assertTrue("Fallback picker must mark trigger-selection mode", source.contains("putExtra(\"IS_FLOATING_TRIGGER_SELECTION\", true)"))
         assertTrue("Fallback picker must force IS_HYBRID_GRID=false", source.contains("putExtra(\"IS_HYBRID_GRID\", false)"))
-        assertTrue("Selected target must be sent to Main for authoritative activation", source.contains("\"subAction\" to \"ENSURE_ACTIVE\""))
+        assertFalse("Adding a Floating Trigger must not activate it; activation happens only on element tap", source.contains("\"subAction\" to \"ENSURE_ACTIVE\""))
 
         val managerCandidates = listOf(
             File("src/main/java/com/example/feature/floating/trigger/FloatingTriggerManager.kt"),
