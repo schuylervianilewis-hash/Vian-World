@@ -28,6 +28,7 @@ import com.example.feature.settings.TagManagementActivity
 import com.example.data.AppDatabase
 import com.example.data.SchedulerTask
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -326,6 +327,8 @@ class SchedulerPageView(
                         onHeightChanged?.invoke(targetH)
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 LogKeeper.logError(context, "SchedulerPageView", "Failed to load reminders", error)
                 Toast.makeText(context, "Unable to load reminders. Reopen this page to retry.", Toast.LENGTH_LONG).show()
@@ -438,6 +441,8 @@ class SchedulerPageView(
                 withContext(Dispatchers.Main) {
                     hideEditUi()
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 LogKeeper.logError(context, "SchedulerPageView", "Failed to save task", error)
                 withContext(Dispatchers.Main) {
