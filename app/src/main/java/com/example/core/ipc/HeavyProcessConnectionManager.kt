@@ -698,6 +698,17 @@ class HeavyProcessConnectionManager internal constructor(
                                                 safeLog("HeavyProcessConnectionManager", "Floating Trigger ensure active target=$targetId success=${record != null}")
                                             }
                                         }
+                                        "REMOVE" -> {
+                                            val targetId = request.parameters["targetElementId"].orEmpty()
+                                            if (targetId.isNotBlank()) {
+                                                val triggerId = com.example.feature.floating.trigger.FloatingTriggerCompat
+                                                    .triggerIdForElement(targetId)
+                                                com.example.feature.floating.trigger.FloatingTriggerManager
+                                                    .getInstance(ctx)
+                                                    .removeTrigger(triggerId)
+                                                safeLog("HeavyProcessConnectionManager", "Floating Trigger removed target=$targetId id=$triggerId")
+                                            }
+                                        }
                                     }
                                 }
                                 "MINIAPP_WINDOW_FOCUS" -> {

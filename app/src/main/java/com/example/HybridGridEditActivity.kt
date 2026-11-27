@@ -560,6 +560,8 @@ fun HybridGridEditorCanvas(
                                 val removed = newItems.removeAt(index)
                                 LogKeeper.writeLog("HybridGridEdit", "Deleted ${removed.id}")
                                 onUpdateItems(newItems)
+                                com.example.feature.floating.trigger.FloatingTriggerRemovalClient
+                                    .removeForElement(context, removed.id)
                             }
                         },
                         modifier = Modifier

@@ -492,22 +492,8 @@ class AddElementActivity : ComponentActivity() {
             val displayName = data.getStringExtra("DISPLAY_NAME")
             if (id != null) {
                 if (requestCode == 700) {
-                    try {
-                        com.example.core.ipc.HeavyProcessHost.getInstance(this).requestMainAction(
-                            com.example.core.ipc.MainCommandRequest(
-                                requestId = java.util.UUID.randomUUID().toString(),
-                                action = com.example.core.ipc.MainActionType.CUSTOM,
-                                targetId = "FLOATING_TRIGGER_ACTION",
-                                parameters = mapOf(
-                                    "subAction" to "ENSURE_ACTIVE",
-                                    "targetElementId" to id,
-                                    "label" to (displayName ?: "Floating Trigger")
-                                )
-                            )
-                        )
-                    } catch (t: Throwable) {
-                        com.example.core.LogKeeper.logError(this, "FloatingTriggerPicker", "Could not request Main trigger activation", t)
-                    }
+                    // Selecting a target only creates the Sidebar association. The button is
+                    // activated later by tapping the Floating Trigger element itself.
                     handleElementSelected("floating_trigger:$id", displayName ?: "Trigger: $id")
                     return
                 }

@@ -257,6 +257,38 @@ class FloatingTriggerTest {
     }
 
     @Test
+    fun testSidebarTriggerTapTogglesOnThenOff() {
+        val manager = FloatingTriggerManager.getInstance(context)
+        manager.canDrawOverlaysCheck = { true }
+        val targetId = "quicktile:torch"
+        val triggerId = FloatingTriggerCompat.triggerIdForElement(targetId)
+
+        assertTrue("First tap should activate the trigger", manager.toggleTriggerForElement(targetId, "Flashlight"))
+        assertTrue("Active state should be persisted", FloatingTriggerStore.getInstance(context).getTrigger(triggerId)?.active == true)
+        assertNotNull("Active trigger should have a visible window", manager.getActiveWindow(triggerId))
+
+        assertTrue("Second tap should deactivate the trigger", manager.toggleTriggerForElement(targetId, "Flashlight"))
+        assertFalse("Inactive state should be persisted", FloatingTriggerStore.getInstance(context).getTrigger(triggerId)?.active ?: true)
+        assertNull("Inactive trigger window should be detached", manager.getActiveWindow(triggerId))
+    }
+
+    @Test
+    fun testRemoveTriggerDeletesRecordAndOverlayWindow() {
+        val manager = FloatingTriggerManager.getInstance(context)
+        manager.canDrawOverlaysCheck = { true }
+        val targetId = "quicktile:torch"
+        val record = manager.ensureActiveTrigger(targetId, "Flashlight")
+        assertNotNull(record)
+        val windowId = "${FloatingTriggerButtonWindow.WINDOW_ID_PREFIX}${record!!.triggerId}"
+        assertNotNull(FloatingWindowManager.getInstance(context).getWindow(windowId))
+
+        manager.removeTrigger(record.triggerId)
+
+        assertNull("Removed trigger record must not persist", FloatingTriggerStore.getInstance(context).getTrigger(record.triggerId))
+        assertNull("Removed trigger window must be detached", FloatingWindowManager.getInstance(context).getWindow(windowId))
+    }
+
+    @Test
     fun testFloatingTriggerDoesNotInterfereWithMiniAppWindows() {
         val bridge = FloatingMiniAppBridge.getInstance(context)
         val dictWindow = bridge.openMiniApp("miniapp_dictionary_coexist", "dictionary")
