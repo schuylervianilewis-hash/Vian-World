@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -45,6 +46,61 @@ class IconPickerActivity : ComponentActivity() {
         } else {
             finish()
         }
+    }
+
+    private fun showInstalledAppPicker() {
+        val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val installedApps = packageManager.queryIntentActivities(launchIntent, 0)
+            .mapNotNull { resolveInfo ->
+                val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
+                val packageName = activityInfo.packageName
+                if (packageName == this@IconPickerActivity.packageName) return@mapNotNull null
+                val label = resolveInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+                if (label.isBlank()) return@mapNotNull null
+                packageName to label
+            }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
+
+        if (installedApps.isEmpty()) {
+            Toast.makeText(this, "No installed app icons are available", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Choose an installed app icon")
+            .setItems(installedApps.map { it.second }.toTypedArray()) { dialog, which ->
+                val sourcePackage = installedApps[which].first
+                val targetId = targetItemId ?: return@setItems
+                lifecycleScope.launch {
+                    val bitmap = IconCacheManager.saveCustomIconFromPackage(
+                        this@IconPickerActivity,
+                        targetId,
+                        sourcePackage
+                    )
+                    if (bitmap != null) {
+                        Toast.makeText(
+                            this@IconPickerActivity,
+                            "Icon copied and saved",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        sendBroadcast(Intent("com.example.UPDATE_SIDEBAR_ICONS").apply {
+                            putExtra("item_id", targetId)
+                        })
+                        setResult(Activity.RESULT_OK)
+                        finish()
+                    } else {
+                        Toast.makeText(
+                            this@IconPickerActivity,
+                            "Unable to copy that app icon",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,7 +173,16 @@ class IconPickerActivity : ComponentActivity() {
         }
         rootLayout.addView(galleryBtn)
 
-        // Option 2: Reset Icon
+        // Option 2: Snapshot an installed launcher's icon into this Sidebar element.
+        val installedAppBtn = createOptionButton(
+            "Choose Icon from Installed App",
+            android.R.drawable.ic_menu_view
+        ) {
+            showInstalledAppPicker()
+        }
+        rootLayout.addView(installedAppBtn)
+
+        // Option 3: Reset Icon
         val resetBtn = createOptionButton("Reset to Default Icon", android.R.drawable.ic_menu_revert) {
             targetItemId?.let { id ->
                 IconCacheManager.evictIcon(this, id)
