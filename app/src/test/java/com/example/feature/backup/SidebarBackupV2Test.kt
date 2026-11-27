@@ -150,6 +150,38 @@ class SidebarBackupV2Test {
         assertTrue(failure is IllegalStateException)
     }
 
+    @Test
+    fun acceptsNamespacedSystemGestureActions() {
+        val payload = validPayload()
+        payload.getJSONArray("handles").getJSONObject(0)
+            .getJSONObject("gestures")
+            .put(HandleGestures.TAP, "system:force_stop_running_apps")
+
+        SidebarBackupV2.validate(payload)
+    }
+
+    @Test
+    fun rejectsGestureActionsOutsideSupportedIdentifierSyntax() {
+        val payload = validPayload()
+        payload.getJSONArray("handles").getJSONObject(0)
+            .getJSONObject("gestures")
+            .put(HandleGestures.TAP, "system:force stop apps")
+
+        val failure = runCatching { SidebarBackupV2.validate(payload) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun stillRequiresHandleOneSidebarRecoveryGesture() {
+        val payload = validPayload()
+        payload.getJSONArray("handles").getJSONObject(0)
+            .getJSONObject("gestures")
+            .put(HandleGestures.SWIPE_LEFT, HandleManager.ACTION_NONE)
+
+        val failure = runCatching { SidebarBackupV2.validate(payload) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
     private fun validPayload(): JSONObject {
         val handleId = "handle_1"
         val gesture = HandleGestures.SWIPE_LEFT
