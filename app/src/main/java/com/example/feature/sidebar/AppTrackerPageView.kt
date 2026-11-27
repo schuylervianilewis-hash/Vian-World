@@ -128,14 +128,9 @@ class AppTrackerPageView(
         tabCache?.setOnClickListener { setTab(1) }
 
         fabStopAll?.setOnClickListener {
-            if (selectedTab == 0 && recentApps.isNotEmpty()) {
-                val intent = Intent(context, com.example.AppTrackerOpenerActivity::class.java).apply {
-                    putStringArrayListExtra("packages", ArrayList(recentApps.map { it.packageName }))
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                try {
-                    context.startActivity(intent)
-                } catch (e: Exception) {}
+            if (selectedTab == 0 &&
+                AppTrackerHelper.startForceStopSequence(context, containerId)
+            ) {
                 onCloseSidebar()
             }
         }
@@ -248,9 +243,10 @@ class AppTrackerPageView(
         } catch (_: Throwable) {
             false
         }
+        val permissionChanged = perm != hasUsageStatsPermission
         hasUsageStatsPermission = perm
         llPermissionBanner?.visibility = if (hasUsageStatsPermission) View.GONE else View.VISIBLE
-        loadData()
+        loadData(forceRefresh = permissionChanged)
     }
 
     override fun onPageSelected() {
@@ -325,67 +321,77 @@ class AppTrackerPageView(
         }
     }
 
-    private fun loadData() {
-        scope.launch {
-            if (hasUsageStatsPermission) {
-                val apps = withContext(Dispatchers.IO) { AppTrackerHelper.getRecentApps(context, containerId) }
-                recentApps = apps
-            } else {
-                recentApps = emptyList()
-            }
-            if (selectedTab == 0) {
-                setTab(0)
-            }
-            
-            val caches = withContext(Dispatchers.IO) { getAppsWithCache(context) }
-            cacheApps = caches
-            if (selectedTab == 1) {
-                setTab(1)
+    private var dataLoadJob: Job? = null
+    private var lastDataLoadAt = 0L
+
+    private fun loadData(forceRefresh: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (dataLoadJob?.isActive == true) return
+        if (!forceRefresh && lastDataLoadAt != 0L && now - lastDataLoadAt < DATA_REFRESH_INTERVAL_MS) return
+
+        dataLoadJob = scope.launch {
+            try {
+                recentApps = if (hasUsageStatsPermission) {
+                    withContext(Dispatchers.IO) {
+                        AppTrackerHelper.getRecentApps(context.applicationContext, containerId)
+                    }
+                } else {
+                    emptyList()
+                }
+                if (selectedTab == 0) setTab(0)
+
+                // Keep the existing Cache tab and its presentation. Only load real values.
+                cacheApps = withContext(Dispatchers.IO) {
+                    getAppsWithCache(context.applicationContext)
+                }
+                if (selectedTab == 1) setTab(1)
+                lastDataLoadAt = android.os.SystemClock.elapsedRealtime()
+            } finally {
+                dataLoadJob = null
             }
         }
+    }
+
+    private companion object {
+        const val DATA_REFRESH_INTERVAL_MS = 30_000L
     }
     
     private fun getAppsWithCache(context: Context): List<TrackedAppInfo> {
         val prefs = context.getSharedPreferences("FloatingReaderPrefs", Context.MODE_PRIVATE)
         val whitelist = prefs.getStringSet("app_tracker_whitelist_cache", emptySet()) ?: emptySet()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return emptyList()
 
         val pm = context.packageManager
-        // Query all installed packages including system packages
-        val packages = pm.getInstalledPackages(PackageManager.MATCH_UNINSTALLED_PACKAGES or PackageManager.GET_META_DATA)
+        // Only installed packages are eligible; never include stale uninstalled package records.
+        val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA)
+        val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
+            ?: return emptyList()
+        val userHandle = Process.myUserHandle()
+        val uuid = StorageManager.UUID_DEFAULT
         val apps = mutableListOf<TrackedAppInfo>()
 
-        val storageStatsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
-        } else null
-        val userHandle = Process.myUserHandle()
-        val uuid = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) StorageManager.UUID_DEFAULT else null
-        
         for (pi in packages) {
+            if (pi.packageName == context.packageName || pi.packageName in whitelist) continue
+            val appInfo = pi.applicationInfo ?: continue
             try {
-                if (pi.packageName == context.packageName) continue
-                if (whitelist.contains(pi.packageName)) continue
-
-                val appInfo = pi.applicationInfo ?: continue
-
-                var cacheSize = 0L
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && storageStatsManager != null && uuid != null) {
-                    try {
-                        val stats = storageStatsManager.queryStatsForPackage(uuid, pi.packageName, userHandle)
-                        cacheSize = stats.cacheBytes
-                    } catch (e: Exception) {
-                        cacheSize = (1..50).random() * 1024L * 1024L
-                    }
-                } else {
-                    cacheSize = (1..50).random() * 1024L * 1024L
-                }
-
+                // StorageStatsManager requires the platform's package-usage permission. If the
+                // query is denied, omit the unknown value instead of fabricating a cache size.
+                val cacheSize = storageStatsManager.queryStatsForPackage(uuid, pi.packageName, userHandle).cacheBytes
                 val appName = pm.getApplicationLabel(appInfo).toString()
-                apps.add(TrackedAppInfo(
-                    packageName = pi.packageName,
-                    appName = appName,
-                    cacheSize = cacheSize
-                ))
-            } catch (e: Exception) {}
+                apps.add(
+                    TrackedAppInfo(
+                        packageName = pi.packageName,
+                        appName = appName,
+                        cacheSize = cacheSize
+                    )
+                )
+            } catch (_: SecurityException) {
+                // Keep the Cache UI unchanged; only display cache values Android actually returns.
+            } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+                // Package removed while the list was being queried.
+            } catch (_: RuntimeException) {
+                // Storage stats may be unavailable for a package on this device.
+            }
         }
         return apps.sortedByDescending { it.cacheSize }.take(50)
     }
