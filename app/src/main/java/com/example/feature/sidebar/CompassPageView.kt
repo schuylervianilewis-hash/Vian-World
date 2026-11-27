@@ -130,18 +130,60 @@ class CompassPageView(
 
     fun startListening() {
         if (!isListening) {
-            accelerometer?.let { sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
-            magnetometer?.let { sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
-            isListening = true
+            val manager = sensorManager
+            val accelerationSensor = accelerometer
+            val magneticSensor = magnetometer
+            if (manager == null || accelerationSensor == null || magneticSensor == null) {
+                isListening = false
+                gravity = null
+                geomagnetic = null
+                tvAzimuth.text = "--"
+                tvDirection.text = "Unavailable"
+                LogKeeper.writeLog(
+                    "Compass",
+                    "Sensor registration unavailable: accelerometer=${accelerationSensor != null}, magnetometer=${magneticSensor != null}"
+                )
+                notifyHeight()
+                return
+            }
+
+            val accelerationRegistered = try {
+                manager.registerListener(this, accelerationSensor, SensorManager.SENSOR_DELAY_UI)
+            } catch (error: RuntimeException) {
+                LogKeeper.writeLog("Compass", "Accelerometer registration failed: ${error.message}")
+                false
+            }
+            val magneticRegistered = try {
+                manager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_UI)
+            } catch (error: RuntimeException) {
+                LogKeeper.writeLog("Compass", "Magnetometer registration failed: ${error.message}")
+                false
+            }
+
+            if (accelerationRegistered && magneticRegistered) {
+                isListening = true
+                tvDirection.text = "N"
+            } else {
+                manager.unregisterListener(this)
+                isListening = false
+                gravity = null
+                geomagnetic = null
+                tvAzimuth.text = "--"
+                tvDirection.text = "Unavailable"
+                LogKeeper.writeLog(
+                    "Compass",
+                    "Sensor registration incomplete: accelerometer=$accelerationRegistered, magnetometer=$magneticRegistered"
+                )
+            }
         }
         notifyHeight()
     }
 
     fun stopListening() {
-        if (isListening) {
-            sensorManager?.unregisterListener(this)
-            isListening = false
-        }
+        sensorManager?.unregisterListener(this)
+        isListening = false
+        gravity = null
+        geomagnetic = null
     }
 
     fun isSensorListening(): Boolean = isListening
@@ -165,6 +207,7 @@ class CompassPageView(
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
+        if (!isListening) return
         event ?: return
         if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
             gravity = event.values.clone()
