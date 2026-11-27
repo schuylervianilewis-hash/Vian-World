@@ -385,12 +385,9 @@ class AppTrackerPageView(
                         cacheSize = cacheSize
                     )
                 )
-            } catch (_: SecurityException) {
+            } catch (_: Exception) {
                 // Keep the Cache UI unchanged; only display cache values Android actually returns.
-            } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
-                // Package removed while the list was being queried.
-            } catch (_: RuntimeException) {
-                // Storage stats may be unavailable for a package on this device.
+                // A package may be removed or its stats query may be denied/unavailable.
             }
         }
         return apps.sortedByDescending { it.cacheSize }.take(50)
