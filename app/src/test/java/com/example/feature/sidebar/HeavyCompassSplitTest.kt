@@ -165,28 +165,39 @@ class HeavyCompassSplitTest {
         assertTrue("Secondary hybrid grid must route to HeavyPagePlaceholderView", view is HeavyPagePlaceholderView)
     }
 
-    // 5. Compass sensor/runtime lifecycle is registered when active and cleaned up when released
+    // 5. A context without real sensor hardware must never report a false listening state.
+    // FakeContext does not provide a device-backed accelerometer/magnetometer registration.
     @Test
-    fun testCompassSensorLifecycleRegisteredAndCleanedUp() {
+    fun testCompassDoesNotClaimListeningWhenSensorsAreUnavailable() {
         val compassView = CompassPageView(fakeContext)
-        // Initially not attached/selected, so not listening
-        assertFalse("Compass sensor should not be active initially before attach/select", compassView.isSensorListening())
+        assertFalse(
+            "Compass sensor should not be active before attach/select",
+            compassView.isSensorListening()
+        )
 
-        // Start listening (simulating onAttachedToWindow or onPageSelected)
         compassView.startListening()
-        assertTrue("Compass sensor must be listening after startListening()", compassView.isSensorListening())
+        assertFalse(
+            "Compass must remain unavailable when required sensors cannot be registered",
+            compassView.isSensorListening()
+        )
 
-        // Stop listening (simulating onDetachedFromWindow or onPageUnselected or host release)
         compassView.stopListening()
-        assertFalse("Compass sensor must not be listening after stopListening()", compassView.isSensorListening())
+        assertFalse(
+            "Compass must remain stopped after stopListening()",
+            compassView.isSensorListening()
+        )
 
-        // Test onPageSelected
         compassView.onPageSelected()
-        assertTrue("Compass sensor must be listening after onPageSelected()", compassView.isSensorListening())
+        assertFalse(
+            "Page selection must not claim listening without successful sensor registration",
+            compassView.isSensorListening()
+        )
 
-        // Test onPageUnselected
         compassView.onPageUnselected()
-        assertFalse("Compass sensor must stop listening after onPageUnselected()", compassView.isSensorListening())
+        assertFalse(
+            "Compass must stop listening after onPageUnselected()",
+            compassView.isSensorListening()
+        )
     }
 
     // 6. Compass theme background and height measurement
